@@ -35,9 +35,15 @@ class ClarificationAgent:
 
     def _parse_response(self, content: str) -> dict:
         content = content.strip()
+        # 去掉 markdown 代码块包裹
         if content.startswith("```"):
             lines = content.split("\n")
-            content = "\n".join(lines[1:-1])
+            content = "\n".join(lines[1:-1]).strip()
+        # 提取第一个完整 JSON 对象
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        if start != -1 and end > start:
+            content = content[start:end]
         return json.loads(content)
 
     def run(self, initial_input: str, user_replies: list = None) -> dict:
@@ -80,7 +86,10 @@ class ClarificationAgent:
                 user_reply = reply_queue.pop(0)
             else:
                 print(f"\nAgent: {question}")
-                user_reply = input("你: ").strip()
+                try:
+                    user_reply = input("用户: ").strip()
+                except EOFError:
+                    break
 
             self.db.save_message(session_id, "user", user_reply)
             messages.append({"role": "user", "content": user_reply})

@@ -35,7 +35,7 @@ def run():
 
     try:
         while True:
-            initial_input = input("你: ").strip()
+            initial_input = input("用户: ").strip()
             if not initial_input:
                 continue
 
