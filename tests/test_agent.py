@@ -3,31 +3,26 @@ from unittest.mock import MagicMock, patch
 from src.agent import ClarificationAgent
 
 
-def make_mock_response(content: str):
-    msg = MagicMock()
-    msg.content = [MagicMock(text=content)]
-    return msg
+def make_tool_response(is_clear: bool, question: str = None, definition: str = None,
+                        clarity_level: str = "低", tags: list = None):
+    tool_use = MagicMock()
+    tool_use.type = "tool_use"
+    tool_use.id = "tu_test"
+    tool_use.input = {
+        "is_clear": is_clear,
+        "question": question,
+        "definition": definition,
+        "clarity_level": clarity_level,
+        "tags": tags or [],
+    }
+    response = MagicMock()
+    response.content = [tool_use]
+    return response
 
 
 def test_agent_initializes():
     agent = ClarificationAgent(api_key="test-key")
     assert agent is not None
-
-
-def test_agent_detects_clear_problem():
-    agent = ClarificationAgent(api_key="test-key")
-    response = '{"is_clear": true, "question": null, "definition": "帮助用户追踪待办事项", "clarity_level": "高", "tags": ["任务管理"]}'
-    result = agent._parse_response(response)
-    assert result["is_clear"] is True
-    assert result["definition"] == "帮助用户追踪待办事项"
-
-
-def test_agent_detects_unclear_problem():
-    agent = ClarificationAgent(api_key="test-key")
-    response = '{"is_clear": false, "question": "你想解决什么具体问题？", "definition": null, "clarity_level": "低", "tags": []}'
-    result = agent._parse_response(response)
-    assert result["is_clear"] is False
-    assert result["question"] is not None
 
 
 def test_agent_runs_clarification_loop(tmp_path):
@@ -37,8 +32,9 @@ def test_agent_runs_clarification_loop(tmp_path):
         mock_client = MagicMock()
         MockAnthropic.return_value = mock_client
         mock_client.messages.create.side_effect = [
-            make_mock_response('{"is_clear": false, "question": "你的目标用户是谁？", "definition": null, "clarity_level": "低", "tags": []}'),
-            make_mock_response('{"is_clear": true, "question": null, "definition": "帮助独立开发者追踪项目进度", "clarity_level": "高", "tags": ["开发者", "项目管理"]}'),
+            make_tool_response(False, question="你的目标用户是谁？", clarity_level="低"),
+            make_tool_response(True, definition="帮助独立开发者追踪项目进度",
+                               clarity_level="高", tags=["开发者", "项目管理"]),
         ]
 
         agent = ClarificationAgent(api_key="test-key", db_path=db_path)
@@ -46,3 +42,21 @@ def test_agent_runs_clarification_loop(tmp_path):
 
         assert result["definition"] == "帮助独立开发者追踪项目进度"
         assert result["session_id"] is not None
+        assert result["rounds"] == 2
+
+
+def test_agent_forces_finish_at_max_rounds(tmp_path):
+    db_path = str(tmp_path / "test.db")
+
+    with patch("src.agent.anthropic.Anthropic") as MockAnthropic:
+        mock_client = MagicMock()
+        MockAnthropic.return_value = mock_client
+        mock_client.messages.create.return_value = make_tool_response(
+            False, question="还有什么补充？", clarity_level="中"
+        )
+
+        agent = ClarificationAgent(api_key="test-key", db_path=db_path)
+        agent.max_rounds = 2
+        result = agent.run("我想做点什么", user_replies=["不知道", "随便"])
+
+        assert result["rounds"] == 2

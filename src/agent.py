@@ -1,29 +1,48 @@
-import json
 import os
 import anthropic
 from src.db import Database
 
-SYSTEM_PROMPT = """你是一个问题澄清专家。你的唯一工作是帮助用户把模糊的想法变成清晰、可执行的问题定义。
-
-每次回复必须是严格的 JSON 格式，不能有任何其他文字：
-
-{
-  "is_clear": true/false,
-  "question": "如果不清晰，问用户的下一个问题（只问一个）",
-  "definition": "如果清晰了，给出简洁的问题定义（一句话）",
-  "clarity_level": "低/中/高",
-  "tags": ["关键词1", "关键词2"]
-}
+SYSTEM_PROMPT = """你是一个问题澄清专家。帮助用户把模糊的想法变成清晰、可执行的问题定义。
 
 判断标准：
-- 低：意图完全模糊，不知道要做什么
+- 低：意图完全模糊
 - 中：大方向有了，但缺少关键细节（目标用户、具体场景、成功标准）
 - 高：问题清晰，知道是什么、为谁、解决什么
 
-追问策略：
-- 每次只问一个最关键的问题
-- 最多追问 5 次，超过则强制输出当前最佳理解
-- 问题要具体，不要泛泛而谈"""
+追问策略：每次只问一个最关键的问题，问题要具体。"""
+
+CLARIFY_TOOL = {
+    "name": "clarify",
+    "description": "评估问题清晰度，若不清晰则追问，若清晰则输出正式定义",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "is_clear": {
+                "type": "boolean",
+                "description": "问题是否已经足够清晰"
+            },
+            "question": {
+                "type": "string",
+                "description": "若不清晰，向用户提出的下一个问题（只问一个）"
+            },
+            "definition": {
+                "type": "string",
+                "description": "若清晰，给出简洁的问题定义（一句话）"
+            },
+            "clarity_level": {
+                "type": "string",
+                "enum": ["低", "中", "高"],
+                "description": "当前问题的清晰程度"
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "关键词标签列表"
+            }
+        },
+        "required": ["is_clear", "clarity_level", "tags"]
+    }
+}
 
 
 class ClarificationAgent:
@@ -32,26 +51,6 @@ class ClarificationAgent:
         self.client = anthropic.Anthropic(api_key=self.api_key)
         self.db = Database(db_path)
         self.max_rounds = 5
-
-    def _parse_response(self, content: str) -> dict:
-        content = content.strip()
-        # 去掉 markdown 代码块包裹
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1]).strip()
-        # 提取第一个完整 JSON 对象（括号匹配）
-        start = content.find("{")
-        if start != -1:
-            depth = 0
-            for i, ch in enumerate(content[start:], start):
-                if ch == "{":
-                    depth += 1
-                elif ch == "}":
-                    depth -= 1
-                    if depth == 0:
-                        content = content[start:i + 1]
-                        break
-        return json.loads(content)
 
     def run(self, initial_input: str, user_replies: list = None) -> dict:
         session_id = self.db.create_session(initial_input)
@@ -65,18 +64,26 @@ class ClarificationAgent:
                 model="claude-sonnet-4-6",
                 max_tokens=512,
                 system=SYSTEM_PROMPT,
+                tools=[CLARIFY_TOOL],
+                tool_choice={"type": "tool", "name": "clarify"},
                 messages=messages,
             )
 
-            raw = response.content[0].text
-            result = self._parse_response(raw)
-            self.db.save_message(session_id, "assistant", raw)
-            messages.append({"role": "assistant", "content": raw})
+            tool_use = next(b for b in response.content if b.type == "tool_use")
+            result = tool_use.input
+
+            raw_str = str(result)
+            self.db.save_message(session_id, "assistant", raw_str)
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": tool_use.id, "content": "ok"}]
+            })
 
             if result.get("is_clear") or round_num == self.max_rounds - 1:
                 self.db.save_problem(
                     session_id,
-                    result.get("definition", "（未能完全澄清）"),
+                    result.get("definition") or "（未能完全澄清）",
                     result.get("clarity_level", "低"),
                     result.get("tags", []),
                 )
@@ -88,7 +95,7 @@ class ClarificationAgent:
                     "rounds": round_num + 1,
                 }
 
-            question = result["question"]
+            question = result.get("question", "")
             if reply_queue:
                 user_reply = reply_queue.pop(0)
             else:
