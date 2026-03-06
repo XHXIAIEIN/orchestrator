@@ -39,11 +39,18 @@ class ClarificationAgent:
         if content.startswith("```"):
             lines = content.split("\n")
             content = "\n".join(lines[1:-1]).strip()
-        # 提取第一个完整 JSON 对象
+        # 提取第一个完整 JSON 对象（括号匹配）
         start = content.find("{")
-        end = content.rfind("}") + 1
-        if start != -1 and end > start:
-            content = content[start:end]
+        if start != -1:
+            depth = 0
+            for i, ch in enumerate(content[start:], start):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        content = content[start:i + 1]
+                        break
         return json.loads(content)
 
     def run(self, initial_input: str, user_replies: list = None) -> dict:
