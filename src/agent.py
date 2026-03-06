@@ -108,4 +108,4 @@ class ClarificationAgent:
             self.db.save_message(session_id, "user", user_reply)
             messages.append({"role": "user", "content": user_reply})
 
-        return {"session_id": session_id, "definition": None, "rounds": self.max_rounds}
+        return {"session_id": session_id, "definition": None, "clarity_level": "低", "tags": [], "rounds": self.max_rounds}
