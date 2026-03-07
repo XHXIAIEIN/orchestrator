@@ -9,6 +9,7 @@ from src.collectors.git_collector import GitCollector
 from src.collectors.steam_collector import SteamCollector
 from src.collectors.youtube_music_collector import YouTubeMusicCollector
 from src.analyst import DailyAnalyst
+from src.insights import InsightEngine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -43,12 +44,18 @@ def run_analysis():
         log.warning("No API key, skipping analysis")
         return
     db = EventsDB(DB_PATH)
-    analyst = DailyAnalyst(api_key=api_key, db=db)
     try:
+        analyst = DailyAnalyst(api_key=api_key, db=db)
         result = analyst.run()
         log.info(f"Analysis done: {result.get('summary', '')[:80]}")
     except Exception as e:
         log.error(f"Analysis failed: {e}")
+    try:
+        engine = InsightEngine(api_key=api_key, db=db)
+        engine.run()
+        log.info("Insights generated")
+    except Exception as e:
+        log.error(f"Insights failed: {e}")
 
 
 def start():

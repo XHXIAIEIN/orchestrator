@@ -59,6 +59,14 @@ app.get('/api/events', (req, res) => {
   res.json(events.map(e => ({ ...e, tags: JSON.parse(e.tags || '[]') })));
 });
 
+app.get('/api/insights', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({});
+  const row = dbAll(db, "SELECT data_json FROM insights ORDER BY generated_at DESC LIMIT 1");
+  db.close();
+  res.json(row[0] ? JSON.parse(row[0].data_json) : {});
+});
+
 app.get('/api/stats', (req, res) => {
   const db = getDb();
   if (!db) return res.json({ bySource: [], total: 0 });

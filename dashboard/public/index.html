@@ -6,18 +6,44 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #0a0a0a; color: #d0d0d0; padding: 24px; }
-h1 { font-size: 1rem; color: #555; margin-bottom: 24px; letter-spacing: 2px; text-transform: uppercase; }
+h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; text-transform: uppercase; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-.card { background: #141414; border: 1px solid #222; border-radius: 6px; padding: 20px; }
-.card h2 { font-size: 0.7rem; text-transform: uppercase; color: #444; margin-bottom: 16px; letter-spacing: 1.5px; }
+.card { background: #111; border: 1px solid #1e1e1e; border-radius: 6px; padding: 20px; }
+.card.wide { grid-column: 1 / -1; }
+.card h2 { font-size: 0.65rem; text-transform: uppercase; color: #3a3a3a; margin-bottom: 14px; letter-spacing: 1.5px; }
 .stat-big { font-size: 2.5rem; font-weight: 200; color: #fff; }
-.row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #1e1e1e; font-size: 0.82rem; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #181818; font-size: 0.8rem; }
 .row:last-child { border-bottom: none; }
-.dim { color: #444; font-size: 0.75rem; }
-.tag { display: inline-block; background: #1e1e1e; color: #666; font-size: 0.68rem; padding: 2px 7px; border-radius: 2px; margin: 2px; }
-.insight { font-size: 0.88rem; line-height: 1.7; color: #aaa; }
-.src-badge { font-size: 0.65rem; padding: 1px 5px; border-radius: 2px; background: #1e1e1e; color: #555; margin-right: 6px; }
-#dot { position: fixed; bottom: 12px; right: 16px; font-size: 0.65rem; color: #333; }
+.dim { color: #3a3a3a; font-size: 0.72rem; }
+.tag { display: inline-block; background: #181818; color: #555; font-size: 0.65rem; padding: 2px 7px; border-radius: 2px; margin: 2px; }
+.src-badge { font-size: 0.6rem; padding: 1px 5px; border-radius: 2px; background: #181818; color: #444; margin-right: 6px; white-space: nowrap; }
+.insight-text { font-size: 0.85rem; line-height: 1.75; color: #999; }
+#dot { position: fixed; bottom: 12px; right: 16px; font-size: 0.6rem; color: #2a2a2a; }
+
+/* Insights styles */
+.overview { font-size: 0.88rem; line-height: 1.8; color: #bbb; margin-bottom: 16px; border-left: 2px solid #222; padding-left: 12px; }
+.section-title { font-size: 0.6rem; text-transform: uppercase; color: #333; letter-spacing: 1px; margin: 14px 0 6px; }
+.interest-item { margin: 6px 0; }
+.interest-topic { font-size: 0.82rem; color: #ccc; }
+.interest-evidence { font-size: 0.72rem; color: #444; margin-top: 2px; line-height: 1.5; }
+.strength-strong { color: #5a7a5a; }
+.strength-moderate { color: #6a6a4a; }
+.strength-emerging { color: #4a5a6a; }
+.pattern { font-size: 0.8rem; color: #777; padding: 5px 0; border-bottom: 1px solid #161616; line-height: 1.6; }
+.pattern:last-child { border-bottom: none; }
+.rec-item { padding: 8px 0; border-bottom: 1px solid #161616; }
+.rec-item:last-child { border-bottom: none; }
+.rec-action { font-size: 0.82rem; color: #ccc; }
+.rec-reason { font-size: 0.72rem; color: #444; margin-top: 3px; line-height: 1.5; }
+.priority { font-size: 0.6rem; padding: 1px 6px; border-radius: 2px; margin-left: 6px; }
+.priority-high { background: #2a1a1a; color: #7a3a3a; }
+.priority-medium { background: #1a1e1a; color: #3a5a3a; }
+.priority-low { background: #1a1a1e; color: #3a3a6a; }
+.goal { font-size: 0.88rem; line-height: 1.75; color: #aaa; background: #0d1117; border-radius: 4px; padding: 12px; border-left: 2px solid #2a2a4a; }
+.time-bar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin: 8px 0 4px; }
+.time-bar span { height: 100%; }
+.anomaly { font-size: 0.78rem; color: #5a4a3a; padding: 4px 0; }
+.no-data { color: #2a2a2a; font-size: 0.8rem; padding: 8px 0; }
 </style>
 </head>
 <body>
@@ -28,25 +54,95 @@ h1 { font-size: 1rem; color: #555; margin-bottom: 24px; letter-spacing: 2px; tex
     <div id="stats"></div>
   </div>
   <div class="card">
-    <h2>今日洞察</h2>
-    <div id="insight" class="insight">加载中...</div>
+    <h2>今日摘要</h2>
+    <div id="daily" class="insight-text"></div>
   </div>
   <div class="card">
     <h2>最近活动（24h）</h2>
     <div id="events"></div>
   </div>
+
+  <div class="card wide" id="insights-card">
+    <h2>深度洞察 · 过去7天 <span id="insights-ts" class="dim"></span></h2>
+    <div id="insights"><div class="no-data">等待首次洞察生成（每小时更新）</div></div>
+  </div>
 </div>
 <div id="dot">◉ 连接中</div>
 
 <script>
+const COLORS = ['#3a5a4a','#4a4a6a','#5a4a3a','#3a4a5a','#4a5a3a','#5a3a4a'];
+
+function renderInsights(d) {
+  if (!d || !d.overview) return '<div class="no-data">等待首次洞察生成（每小时更新）</div>';
+  let html = '';
+
+  html += `<div class="overview">${d.overview}</div>`;
+
+  // Time distribution bar
+  if (d.time_distribution?.length) {
+    const total = d.time_distribution.reduce((s, x) => s + (x.hours || 0), 0) || 1;
+    html += `<div class="section-title">时间分布</div>`;
+    html += `<div class="time-bar">` +
+      d.time_distribution.map((t, i) =>
+        `<span title="${t.label}: ${t.hours?.toFixed(1)}h" style="width:${(t.hours/total*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></span>`
+      ).join('') + `</div>`;
+    html += d.time_distribution.map((t, i) =>
+      `<div class="row"><span><span class="src-badge" style="background:${COLORS[i%COLORS.length]}33;color:${COLORS[i%COLORS.length]}">${t.source}</span>${t.label||''}</span><span class="dim">${t.hours?.toFixed(1)}h · ${t.pct?.toFixed(0)}%</span></div>`
+    ).join('');
+  }
+
+  // Top interests
+  if (d.top_interests?.length) {
+    html += `<div class="section-title">核心兴趣</div>`;
+    html += d.top_interests.map(i =>
+      `<div class="interest-item">
+        <div class="interest-topic"><span class="strength-${i.strength}">●</span> ${i.topic}</div>
+        <div class="interest-evidence">${i.evidence}</div>
+      </div>`
+    ).join('');
+  }
+
+  // Patterns
+  if (d.patterns?.length) {
+    html += `<div class="section-title">行为规律</div>`;
+    const patterns = Array.isArray(d.patterns) ? d.patterns : JSON.parse(d.patterns);
+    html += patterns.map(p => `<div class="pattern">${p}</div>`).join('');
+  }
+
+  // Anomalies
+  if (d.anomalies?.length) {
+    html += `<div class="section-title">异常发现</div>`;
+    html += d.anomalies.map(a => `<div class="anomaly">△ ${a}</div>`).join('');
+  }
+
+  // Recommendations
+  if (d.recommendations?.length) {
+    html += `<div class="section-title">建议</div>`;
+    html += d.recommendations.map(r =>
+      `<div class="rec-item">
+        <div class="rec-action">${r.action}<span class="priority priority-${r.priority}">${r.priority}</span></div>
+        <div class="rec-reason">${r.reason}</div>
+      </div>`
+    ).join('');
+  }
+
+  // Goal hypothesis
+  if (d.goal_hypothesis) {
+    html += `<div class="section-title">目标假设</div><div class="goal">${d.goal_hypothesis}</div>`;
+  }
+
+  return html;
+}
+
 async function load() {
-  const [stats, events, summary] = await Promise.all([
+  const [stats, events, summary, insights] = await Promise.all([
     fetch('/api/stats').then(r=>r.json()).catch(()=>({})),
     fetch('/api/events?days=1').then(r=>r.json()).catch(()=>[]),
     fetch('/api/summary').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/insights').then(r=>r.json()).catch(()=>({})),
   ]);
 
-  // 统计
+  // Stats
   const s = document.getElementById('stats');
   s.innerHTML = `<div class="stat-big">${stats.total??0}</div><div class="dim" style="margin-top:4px">总事件</div>` +
     (stats.bySource||[]).map(r=>`
@@ -55,27 +151,34 @@ async function load() {
         <span class="dim">${r.count}条 · ${Math.round(r.total_min||0)}min</span>
       </div>`).join('');
 
-  // 洞察
+  // Daily summary
   const latest = summary.summaries?.[0];
-  const ins = document.getElementById('insight');
+  const daily = document.getElementById('daily');
   if (latest) {
     const d = JSON.parse(latest.summary||'{}');
-    ins.innerHTML =
+    daily.innerHTML =
       `<p>${d.summary||'—'}</p>` +
       (d.top_topics?.length ? `<p style="margin-top:10px">${d.top_topics.map(t=>`<span class="tag">${t}</span>`).join('')}</p>` : '') +
-      (d.behavioral_insights ? `<p style="margin-top:10px;color:#555;font-size:0.78rem">${d.behavioral_insights}</p>` : '');
+      (d.behavioral_insights ? `<p style="margin-top:10px;color:#3a3a3a;font-size:0.76rem">${d.behavioral_insights}</p>` : '');
   } else {
-    ins.innerHTML = '<p style="color:#333">等待今日 22:00 首次分析</p>';
+    daily.innerHTML = '<p class="no-data">等待首次分析</p>';
   }
 
-  // 活动
+  // Events
   const ev = document.getElementById('events');
   ev.innerHTML = events.slice(0,25).map(e=>
     `<div class="row">
-      <span><span class="src-badge">${e.source}</span>${(e.title||'').slice(0,40)}</span>
+      <span><span class="src-badge">${e.source}</span>${(e.title||'').slice(0,38)}</span>
       <span class="dim">${Math.round(e.duration_minutes||0)}m</span>
     </div>`
-  ).join('') || '<div class="dim" style="padding:8px 0">暂无数据</div>';
+  ).join('') || '<div class="no-data">暂无数据</div>';
+
+  // Deep insights
+  document.getElementById('insights').innerHTML = renderInsights(insights);
+  if (insights?.generated_at) {
+    const ts = new Date(insights.generated_at).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    document.getElementById('insights-ts').textContent = ts + ' 更新';
+  }
 }
 
 const ws = new WebSocket(`ws://${location.host}`);
@@ -84,7 +187,7 @@ ws.onmessage = load;
 ws.onclose = () => document.getElementById('dot').textContent = '◌ 已断开';
 
 load();
-setInterval(load, 30000);
+setInterval(load, 60000);
 </script>
 </body>
 </html>

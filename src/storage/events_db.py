@@ -44,6 +44,12 @@ class EventsDB:
                     profile_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS insights (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data_json TEXT NOT NULL,
+                    generated_at TEXT NOT NULL
+                );
             """)
 
     def get_tables(self) -> list:
@@ -113,6 +119,21 @@ class EventsDB:
                 "INSERT INTO user_profile (profile_json, updated_at) VALUES (?, ?)",
                 (json.dumps(profile, ensure_ascii=False), now)
             )
+
+    def save_insights(self, data: dict):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO insights (data_json, generated_at) VALUES (?, ?)",
+                (json.dumps(data, ensure_ascii=False), now)
+            )
+
+    def get_latest_insights(self) -> dict:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT data_json FROM insights ORDER BY generated_at DESC LIMIT 1"
+            ).fetchone()
+        return json.loads(row["data_json"]) if row else {}
 
     def get_latest_profile(self) -> dict:
         with self._connect() as conn:
