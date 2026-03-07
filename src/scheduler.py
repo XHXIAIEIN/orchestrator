@@ -1,7 +1,6 @@
 import logging
 from pathlib import Path
 from apscheduler.schedulers.blocking import BlockingScheduler
-from apscheduler.triggers.cron import CronTrigger
 from src.config import load_api_key
 from src.storage.events_db import EventsDB
 from src.collectors.claude_collector import ClaudeCollector
@@ -55,9 +54,9 @@ def run_analysis():
 def start():
     scheduler = BlockingScheduler()
     scheduler.add_job(run_collectors, "interval", hours=1, id="collectors")
-    scheduler.add_job(run_analysis, CronTrigger(hour=22, minute=0), id="analysis")
+    scheduler.add_job(run_analysis, "interval", hours=1, id="analysis")
 
-    log.info("Scheduler started. Collectors: hourly. Analysis: 22:00 daily.")
+    log.info("Scheduler started. Collectors: hourly. Analysis: hourly.")
     log.info("Running initial collection...")
     run_collectors()
 
