@@ -44,6 +44,34 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
 .time-bar span { height: 100%; }
 .anomaly { font-size: 0.78rem; color: #5a4a3a; padding: 4px 0; }
 .no-data { color: #2a2a2a; font-size: 0.8rem; padding: 8px 0; }
+
+/* Tasks panel */
+.task-card { padding: 10px 0; border-bottom: 1px solid #161616; }
+.task-card:last-child { border-bottom: none; }
+.task-summary { font-size: 0.82rem; color: #ccc; }
+.task-meta { font-size: 0.68rem; color: #3a3a3a; margin-top: 3px; }
+.status-badge { font-size: 0.6rem; padding: 1px 6px; border-radius: 2px; margin-right: 6px; }
+.status-pending    { background: #1a1a1e; color: #4a4a7a; }
+.status-awaiting   { background: #1e1a0e; color: #7a5a1a; }
+.status-running    { background: #0e1a0e; color: #2a6a2a; }
+.status-done       { background: #0a1a0a; color: #2a5a2a; }
+.status-failed     { background: #1a0a0a; color: #7a2a2a; }
+.task-output { font-size: 0.72rem; color: #555; margin-top: 6px; background: #0d0d0d; padding: 6px 8px; border-radius: 3px; white-space: pre-wrap; word-break: break-word; }
+.btn-exec { font-size: 0.65rem; padding: 2px 8px; border-radius: 2px; border: 1px solid #2a2a3a; background: #111; color: #4a4a7a; cursor: pointer; margin-left: 8px; }
+.btn-exec:hover { background: #1a1a2a; color: #8a8ab0; }
+/* Preview modal */
+#task-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; }
+#task-modal.open { display: flex; }
+.modal-box { background: #111; border: 1px solid #1e1e1e; border-radius: 6px; padding: 24px; width: min(680px, 92vw); max-height: 80vh; overflow-y: auto; }
+.modal-box h3 { font-size: 0.7rem; text-transform: uppercase; color: #333; letter-spacing: 1px; margin-bottom: 16px; }
+.spec-field { margin: 10px 0; }
+.spec-label { font-size: 0.6rem; text-transform: uppercase; color: #333; letter-spacing: 1px; }
+.spec-value { font-size: 0.8rem; color: #aaa; margin-top: 3px; line-height: 1.6; }
+.modal-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+.btn-cancel { font-size: 0.72rem; padding: 5px 14px; border-radius: 3px; border: 1px solid #2a2a2a; background: #0a0a0a; color: #444; cursor: pointer; }
+.btn-confirm { font-size: 0.72rem; padding: 5px 14px; border-radius: 3px; border: 1px solid #2a3a2a; background: #0a1a0a; color: #3a7a3a; cursor: pointer; }
+.btn-confirm:hover { background: #0f2a0f; }
+.btn-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -65,6 +93,24 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
   <div class="card wide" id="insights-card">
     <h2>深度洞察 · 过去7天 <span id="insights-ts" class="dim"></span></h2>
     <div id="insights"><div class="no-data">等待首次洞察生成（每小时更新）</div></div>
+  </div>
+
+  <!-- Tasks Panel -->
+  <div class="card wide" id="tasks-card">
+    <h2>执行任务</h2>
+    <div id="tasks-list"><span class="no-data">暂无任务</span></div>
+  </div>
+</div>
+
+<!-- Manual execution modal -->
+<div id="task-modal">
+  <div class="modal-box">
+    <h3>任务预览</h3>
+    <div id="modal-spec"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-confirm" id="modal-confirm-btn" onclick="confirmExec()">确认执行</button>
+    </div>
   </div>
 </div>
 <div id="dot">◉ 连接中</div>
@@ -183,11 +229,99 @@ async function load() {
 
 const ws = new WebSocket(`ws://${location.host}`);
 ws.onopen = () => { document.getElementById('dot').textContent = '◉ 已连接'; load(); };
-ws.onmessage = load;
+ws.onmessage = () => { load(); loadTasks(); };
 ws.onclose = () => document.getElementById('dot').textContent = '◌ 已断开';
 
 load();
 setInterval(load, 60000);
+
+// ── Tasks panel ──────────────────────────────────────────────
+let pendingTaskId = null;
+
+function statusBadge(s) {
+  const cls = { pending: 'status-pending', awaiting_approval: 'status-awaiting',
+                running: 'status-running', done: 'status-done', failed: 'status-failed' };
+  const label = { pending: '待执行', awaiting_approval: '待确认',
+                  running: '执行中', done: '完成', failed: '失败' };
+  return `<span class="status-badge ${cls[s] || ''}">${label[s] || s}</span>`;
+}
+
+async function loadTasks() {
+  try {
+    const r = await fetch('/api/tasks');
+    const tasks = await r.json();
+    const el = document.getElementById('tasks-list');
+    if (!tasks.length) { el.innerHTML = '<span class="no-data">暂无任务</span>'; return; }
+    el.innerHTML = tasks.map(t => `
+      <div class="task-card">
+        <div class="task-summary">
+          ${statusBadge(t.status)}${t.spec.summary || t.action}
+          ${t.status === 'awaiting_approval'
+            ? `<button class="btn-exec" onclick="openModal(${t.id})">查看 + 执行</button>`
+            : ''}
+        </div>
+        <div class="task-meta">${t.priority} · ${t.source} · ${(t.created_at || '').slice(0, 16)}</div>
+        ${t.output ? `<div class="task-output">${t.output.slice(0, 400)}</div>` : ''}
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error('loadTasks error:', e);
+  }
+}
+
+async function openModal(taskId) {
+  try {
+    const r = await fetch(`/api/tasks/${taskId}`);
+    const t = await r.json();
+    pendingTaskId = taskId;
+    const s = t.spec || {};
+    const fields = [
+      ['问题描述', s.problem],
+      ['行为链', s.behavior_chain],
+      ['观察结果', s.observation],
+      ['预期结果', s.expected],
+      ['为什么重要', s.importance],
+      ['执行计划', t.action],
+      ['执行原因', t.reason],
+    ];
+    document.getElementById('modal-spec').innerHTML = fields
+      .filter(([, v]) => v)
+      .map(([l, v]) => `<div class="spec-field"><div class="spec-label">${l}</div><div class="spec-value">${v}</div></div>`)
+      .join('');
+    const btn = document.getElementById('modal-confirm-btn');
+    btn.disabled = false;
+    btn.textContent = '确认执行';
+    document.getElementById('task-modal').classList.add('open');
+  } catch (e) {
+    console.error('openModal error:', e);
+  }
+}
+
+function closeModal() {
+  document.getElementById('task-modal').classList.remove('open');
+  pendingTaskId = null;
+}
+
+async function confirmExec() {
+  if (!pendingTaskId) return;
+  const btn = document.getElementById('modal-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = '执行中...';
+  try {
+    const r = await fetch(`/api/tasks/${pendingTaskId}/approve`, { method: 'POST' });
+    const result = await r.json();
+    if (result.error) throw new Error(result.error);
+    closeModal();
+    await loadTasks();
+  } catch (e) {
+    btn.textContent = `失败: ${e.message || '重试'}`;
+    btn.disabled = false;
+  }
+}
+
+// Initial load + polling
+loadTasks();
+setInterval(loadTasks, 30000);
 </script>
 </body>
 </html>
