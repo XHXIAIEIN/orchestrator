@@ -1,7 +1,6 @@
 import logging
 from pathlib import Path
 from apscheduler.schedulers.blocking import BlockingScheduler
-from src.config import load_api_key
 from src.storage.events_db import EventsDB
 from src.collectors.claude_collector import ClaudeCollector
 from src.collectors.browser_collector import BrowserCollector
@@ -10,6 +9,7 @@ from src.collectors.steam_collector import SteamCollector
 from src.collectors.youtube_music_collector import YouTubeMusicCollector
 from src.analyst import DailyAnalyst
 from src.insights import InsightEngine
+from src.governor import Governor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -39,31 +39,32 @@ def run_collectors():
 
 
 def run_analysis():
-    api_key = load_api_key()
-    if not api_key:
-        log.warning("No API key, skipping analysis")
-        return
     db = EventsDB(DB_PATH)
     try:
-        analyst = DailyAnalyst(api_key=api_key, db=db)
+        analyst = DailyAnalyst(db=db)
         result = analyst.run()
         log.info(f"Analysis done: {result.get('summary', '')[:80]}")
     except Exception as e:
         log.error(f"Analysis failed: {e}")
     try:
-        engine = InsightEngine(api_key=api_key, db=db)
+        engine = InsightEngine(db=db)
         engine.run()
         log.info("Insights generated")
     except Exception as e:
         log.error(f"Insights failed: {e}")
+    try:
+        governor = Governor(db=db)
+        governor.run()
+    except Exception as e:
+        log.error(f"Governor failed: {e}")
 
 
 def start():
     scheduler = BlockingScheduler()
     scheduler.add_job(run_collectors, "interval", hours=1, id="collectors")
-    scheduler.add_job(run_analysis, "interval", hours=1, id="analysis")
+    scheduler.add_job(run_analysis, "interval", hours=6, id="analysis")
 
-    log.info("Scheduler started. Collectors: hourly. Analysis: hourly.")
+    log.info("Scheduler started. Collectors: hourly. Analysis: every 6 hours.")
     log.info("Running initial collection...")
     run_collectors()
 
