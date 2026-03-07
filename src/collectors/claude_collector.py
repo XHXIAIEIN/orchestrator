@@ -38,14 +38,11 @@ class ClaudeCollector:
     def __init__(self, db: EventsDB, claude_home: str = None):
         import os
         self.db = db
-        env_root = os.environ.get("CLAUDE_PROJECTS_ROOT")
         if claude_home:
             self.claude_home = Path(claude_home)
-        elif env_root:
-            # In Docker, CLAUDE_PROJECTS_ROOT points directly to the projects dir
-            self.claude_home = Path(env_root).parent
         else:
-            self.claude_home = Path.home() / ".claude"
+            env_home = os.environ.get("CLAUDE_HOME")
+            self.claude_home = Path(env_home) if env_home else Path.home() / ".claude"
 
     def collect(self) -> int:
         projects_dir = self.claude_home / "projects"
@@ -60,10 +57,17 @@ class ClaudeCollector:
         return new_count
 
     def _process_session(self, session_file: Path, project_name: str) -> int:
-        # Dedup by session UUID — one event per conversation
         dedup_key = f"claude:session:{session_file.stem}"
 
-        messages = []
+        # Stream file — never load entire file into memory (some files are 2GB+)
+        slug = None
+        first_user_text = ""
+        occurred_at = None
+        sample_text_parts = []  # only first 200 lines for tag extraction
+        user_msg_count = 0
+        lines_read = 0
+        MAX_SAMPLE_LINES = 200
+
         try:
             with open(session_file, encoding="utf-8", errors="ignore") as f:
                 for line in f:
@@ -71,44 +75,48 @@ class ClaudeCollector:
                     if not line:
                         continue
                     try:
-                        messages.append(json.loads(line))
+                        obj = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+
+                    if not slug and isinstance(obj.get("slug"), str):
+                        slug = obj["slug"]
+                    if not occurred_at and isinstance(obj.get("timestamp"), str):
+                        occurred_at = obj["timestamp"]
+
+                    if obj.get("type") == "user" and isinstance(obj.get("message"), dict):
+                        user_msg_count += 1
+                        text = _get_text(obj["message"].get("content", ""))
+                        if text and not first_user_text:
+                            first_user_text = text[:120]
+                        if lines_read < MAX_SAMPLE_LINES:
+                            sample_text_parts.append(text[:300])
+                    elif obj.get("type") == "assistant" and lines_read < MAX_SAMPLE_LINES:
+                        if isinstance(obj.get("message"), dict):
+                            text = _get_text(obj["message"].get("content", ""))
+                            sample_text_parts.append(text[:300])
+
+                    lines_read += 1
+                    # Once we have all metadata and enough sample text, stop reading
+                    if lines_read >= MAX_SAMPLE_LINES and slug and first_user_text and occurred_at:
+                        break
         except OSError:
             return 0
 
-        if not messages:
+        if not occurred_at and not first_user_text:
             return 0
 
-        # Extract slug and first user message for readable title
-        slug = None
-        first_user_text = ""
-        occurred_at = None
-        all_text_parts = []
+        sample_text = " ".join(sample_text_parts)
+        tags = extract_tags(sample_text)
+        # Estimate total tokens from file size rather than reading everything
+        try:
+            file_size = session_file.stat().st_size
+            approx_tokens = file_size // 8  # rough: ~8 bytes per token in JSONL
+        except OSError:
+            approx_tokens = len(sample_text) // 4
+        score = min(1.0, user_msg_count / 20)
+        duration = user_msg_count * 2.0
 
-        for m in messages:
-            if not slug and isinstance(m.get("slug"), str):
-                slug = m["slug"]
-            if not occurred_at and isinstance(m.get("timestamp"), str):
-                occurred_at = m["timestamp"]
-
-            if m.get("type") == "user" and isinstance(m.get("message"), dict):
-                text = _get_text(m["message"].get("content", ""))
-                if text and not first_user_text:
-                    first_user_text = text[:120]
-                all_text_parts.append(text)
-            elif m.get("type") == "assistant" and isinstance(m.get("message"), dict):
-                text = _get_text(m["message"].get("content", ""))
-                all_text_parts.append(text[:500])
-
-        all_text = " ".join(all_text_parts)
-        tags = extract_tags(all_text)
-        approx_tokens = len(all_text) // 4
-        score = min(1.0, approx_tokens / 2000)
-        user_msgs = [m for m in messages if m.get("type") == "user"]
-        duration = len(user_msgs) * 2.0  # ~2 min per exchange
-
-        # Title: prefer slug, fallback to first user message
         if slug:
             title = f"[{project_name[:30]}] {slug}"
         elif first_user_text:
@@ -126,7 +134,7 @@ class ClaudeCollector:
             metadata={
                 "project": project_name,
                 "session_id": session_file.stem,
-                "messages": len(user_msgs),
+                "messages": user_msg_count,
                 "approx_tokens": approx_tokens,
                 "slug": slug or "",
             },

@@ -11,7 +11,8 @@ services:
       - PORT=23714
       # Tell collectors where to find mounted data
       - CHROME_HISTORY_ROOT=/chrome-data
-      - CLAUDE_PROJECTS_ROOT=/claude-projects
+      - ORCHESTRATOR_CLAUDE_HOME=/claude-home
+      - CLAUDE_HOME=/claude-home
       - GIT_REPOS_ROOT=/git-repos
     volumes:
       # Persist events database on host
@@ -21,10 +22,10 @@ services:
         source: ${CHROME_USER_DATA:-C:/Users/test/AppData/Local/Google/Chrome/User Data}
         target: /chrome-data
         read_only: true
-      # Claude Code conversation history (read-only)
+      # Claude Code conversation history (read-only) — mount entire .claude dir
       - type: bind
-        source: ${CLAUDE_PROJECTS:-C:/Users/test/.claude/projects}
-        target: /claude-projects
+        source: ${CLAUDE_HOME_HOST:-C:/Users/test/.claude}
+        target: /claude-home
         read_only: true
       # Git repos (read-only, optional)
       - type: bind

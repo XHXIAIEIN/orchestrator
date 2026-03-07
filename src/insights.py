@@ -97,8 +97,8 @@ SYSTEM_PROMPT = """你是一个洞察力极强的生活分析师。你能从数�
 def _read_recent_sessions(days: int = 7, limit: int = 30) -> list[dict]:
     """Directly read recent JSONL sessions and extract conversation snippets."""
     import time
-    env_root = os.environ.get("CLAUDE_PROJECTS_ROOT")
-    claude_home = Path(env_root) if env_root else Path.home() / ".claude" / "projects"
+    env_home = os.environ.get("CLAUDE_HOME")
+    claude_home = (Path(env_home) / "projects") if env_home else Path.home() / ".claude" / "projects"
     if not claude_home.exists():
         return []
 
@@ -120,7 +120,9 @@ def _read_recent_sessions(days: int = 7, limit: int = 30) -> list[dict]:
         user_msgs = []
         try:
             with open(fpath, encoding="utf-8", errors="ignore") as f:
-                for line in f:
+                for i, line in enumerate(f):
+                    if i >= 300:  # cap at 300 lines — files can be 2GB+
+                        break
                     line = line.strip()
                     if not line:
                         continue

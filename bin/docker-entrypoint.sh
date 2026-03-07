@@ -7,7 +7,7 @@ alias claude="claude --dangerously-skip-permissions"
 
 # Apply path mappings so collectors can find mounted volumes
 export CHROME_HISTORY_ROOT="${CHROME_HISTORY_ROOT:-/chrome-data}"
-export CLAUDE_PROJECTS_ROOT="${CLAUDE_PROJECTS_ROOT:-/claude-projects}"
+export CLAUDE_HOME="${ORCHESTRATOR_CLAUDE_HOME:-/claude-home}"
 export GIT_REPOS_ROOT="${GIT_REPOS_ROOT:-/git-repos}"
 
 echo "[entrypoint] Starting orchestrator dashboard on port ${PORT:-23714}..."
