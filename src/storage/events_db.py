@@ -50,6 +50,21 @@ class EventsDB:
                     data_json TEXT NOT NULL,
                     generated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    spec TEXT NOT NULL DEFAULT '{}',
+                    action TEXT NOT NULL,
+                    reason TEXT,
+                    priority TEXT DEFAULT 'medium',
+                    source TEXT DEFAULT 'auto',
+                    status TEXT DEFAULT 'pending',
+                    output TEXT,
+                    created_at TEXT NOT NULL,
+                    approved_at TEXT,
+                    started_at TEXT,
+                    finished_at TEXT
+                );
             """)
 
     def get_tables(self) -> list:
@@ -135,9 +150,76 @@ class EventsDB:
             ).fetchone()
         return json.loads(row["data_json"]) if row else {}
 
+    def get_daily_summaries(self, days: int = 7) -> list:
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT date, summary FROM daily_summaries WHERE date >= ? ORDER BY date DESC",
+                (since,)
+            ).fetchall()
+        result = []
+        for r in rows:
+            try:
+                result.append({"date": r["date"], **json.loads(r["summary"])})
+            except Exception:
+                pass
+        return result
+
     def get_latest_profile(self) -> dict:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT profile_json FROM user_profile ORDER BY updated_at DESC LIMIT 1"
             ).fetchone()
         return json.loads(row["profile_json"]) if row else {}
+
+    def create_task(self, action: str, reason: str, priority: str,
+                    spec: dict, source: str = 'auto') -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        status = 'pending' if source == 'auto' else 'awaiting_approval'
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO tasks (spec, action, reason, priority, source, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (json.dumps(spec, ensure_ascii=False), action, reason, priority, source, status, now)
+            )
+            return cur.lastrowid
+
+    def update_task(self, task_id: int, **kwargs):
+        if not kwargs:
+            return
+        sets = ', '.join(f"{k} = ?" for k in kwargs)
+        vals = list(kwargs.values()) + [task_id]
+        with self._connect() as conn:
+            conn.execute(f"UPDATE tasks SET {sets} WHERE id = ?", vals)
+
+    def get_tasks(self, limit: int = 50) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            d['spec'] = json.loads(d['spec'])
+            result.append(d)
+        return result
+
+    def get_task(self, task_id: int) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d['spec'] = json.loads(d['spec'])
+        return d
+
+    def get_running_task(self) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE status = 'running' LIMIT 1"
+            ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d['spec'] = json.loads(d['spec'])
+        return d
