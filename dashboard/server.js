@@ -3,6 +3,7 @@ const { WebSocketServer } = require('ws');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const initSqlJs = require('sql.js');
 
 const PORT = process.env.PORT || 23714;
@@ -13,6 +14,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 let SQL = null;
 initSqlJs().then(s => { SQL = s; });
@@ -65,6 +67,84 @@ app.get('/api/insights', (req, res) => {
   const row = dbAll(db, "SELECT data_json FROM insights ORDER BY generated_at DESC LIMIT 1");
   db.close();
   res.json(row[0] ? JSON.parse(row[0].data_json) : {});
+});
+
+app.get('/api/tasks', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  const rows = dbAll(db,
+    'SELECT * FROM tasks ORDER BY created_at DESC LIMIT 50'
+  );
+  db.close();
+  res.json(rows.map(r => ({ ...r, spec: JSON.parse(r.spec || '{}') })));
+});
+
+app.get('/api/tasks/:id', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(404).json({ error: 'db not available' });
+  const rows = dbAll(db, 'SELECT * FROM tasks WHERE id = ?', [req.params.id]);
+  db.close();
+  if (!rows.length) return res.status(404).json({ error: 'not found' });
+  const r = rows[0];
+  res.json({ ...r, spec: JSON.parse(r.spec || '{}') });
+});
+
+app.post('/api/tasks', (req, res) => {
+  const { action, reason, priority, spec } = req.body || {};
+  if (!action) return res.status(400).json({ error: 'action is required' });
+
+  const payload = JSON.stringify({ action, reason: reason || '', priority: priority || 'medium', spec: spec || {} });
+  const proc = spawn('python3', ['-c', `
+import sys, json
+sys.path.insert(0, '/orchestrator')
+from src.storage.events_db import EventsDB
+db = EventsDB('/orchestrator/events.db')
+data = json.loads(sys.stdin.read())
+tid = db.create_task(
+    action=data['action'],
+    reason=data.get('reason', ''),
+    priority=data.get('priority', 'medium'),
+    spec=data.get('spec', {}),
+    source='manual'
+)
+print(json.dumps({'id': tid}))
+  `]);
+
+  proc.stdin.write(payload);
+  proc.stdin.end();
+
+  let out = '';
+  let err = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.stderr.on('data', d => { err += d; });
+  proc.on('close', code => {
+    try {
+      res.json(JSON.parse(out));
+    } catch {
+      res.status(500).json({ error: err || out || 'unknown error' });
+    }
+  });
+});
+
+app.post('/api/tasks/:id/approve', (req, res) => {
+  const taskId = parseInt(req.params.id);
+  if (isNaN(taskId)) return res.status(400).json({ error: 'invalid task id' });
+
+  const proc = spawn('python3', ['/orchestrator/src/governor_cli.py', 'approve', String(taskId)]);
+  let out = '';
+  let err = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.stderr.on('data', d => { err += d; });
+  proc.on('close', () => {
+    try {
+      const result = JSON.parse(out);
+      if (result.error) return res.status(400).json(result);
+      broadcast({ type: 'task_update', task: result });
+      res.json(result);
+    } catch {
+      res.status(500).json({ error: err || out || 'unknown error' });
+    }
+  });
 });
 
 app.get('/api/stats', (req, res) => {
