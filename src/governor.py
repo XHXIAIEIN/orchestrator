@@ -86,6 +86,8 @@ class Governor:
         self.db.update_task(task_id, status="running", started_at=now)
         log.info(f"Governor: executing task #{task_id}")
 
+        output = "(no output)"
+        status = "failed"
         try:
             result = subprocess.run(
                 ["claude", "--dangerously-skip-permissions", "--print", prompt],
@@ -98,16 +100,17 @@ class Governor:
             status = "done" if result.returncode == 0 else "failed"
         except subprocess.TimeoutExpired:
             output = f"timeout after {CLAUDE_TIMEOUT}s"
-            status = "failed"
         except FileNotFoundError:
             output = "claude CLI not found"
-            status = "failed"
             log.error("Governor: claude CLI not found in PATH")
         except Exception as e:
             output = str(e)
-            status = "failed"
+        finally:
+            finished = datetime.now(timezone.utc).isoformat()
+            try:
+                self.db.update_task(task_id, status=status, output=output, finished_at=finished)
+            except Exception as e:
+                log.error(f"Governor: failed to update task #{task_id} status: {e}")
+            log.info(f"Governor: task #{task_id} {status}")
 
-        finished = datetime.now(timezone.utc).isoformat()
-        self.db.update_task(task_id, status=status, output=output, finished_at=finished)
-        log.info(f"Governor: task #{task_id} {status}")
         return self.db.get_task(task_id)
