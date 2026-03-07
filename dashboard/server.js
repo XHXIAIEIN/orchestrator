@@ -72,21 +72,29 @@ app.get('/api/insights', (req, res) => {
 app.get('/api/tasks', (req, res) => {
   const db = getDb();
   if (!db) return res.json([]);
-  const rows = dbAll(db,
-    'SELECT * FROM tasks ORDER BY created_at DESC LIMIT 50'
-  );
-  db.close();
-  res.json(rows.map(r => ({ ...r, spec: JSON.parse(r.spec || '{}') })));
+  try {
+    const rows = dbAll(db, 'SELECT * FROM tasks ORDER BY created_at DESC LIMIT 50');
+    res.json(rows.map(r => ({ ...r, spec: JSON.parse(r.spec || '{}') })));
+  } catch {
+    res.json([]);
+  } finally {
+    db.close();
+  }
 });
 
 app.get('/api/tasks/:id', (req, res) => {
   const db = getDb();
   if (!db) return res.status(404).json({ error: 'db not available' });
-  const rows = dbAll(db, 'SELECT * FROM tasks WHERE id = ?', [req.params.id]);
-  db.close();
-  if (!rows.length) return res.status(404).json({ error: 'not found' });
-  const r = rows[0];
-  res.json({ ...r, spec: JSON.parse(r.spec || '{}') });
+  try {
+    const rows = dbAll(db, 'SELECT * FROM tasks WHERE id = ?', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    const r = rows[0];
+    res.json({ ...r, spec: JSON.parse(r.spec || '{}') });
+  } catch {
+    res.status(404).json({ error: 'not found' });
+  } finally {
+    db.close();
+  }
 });
 
 app.post('/api/tasks', (req, res) => {
