@@ -4,6 +4,12 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 
+_ALLOWED_TASK_COLUMNS = {
+    'spec', 'action', 'reason', 'priority', 'source',
+    'status', 'output', 'approved_at', 'started_at', 'finished_at'
+}
+
+
 class EventsDB:
     def __init__(self, db_path: str = "events.db"):
         self.db_path = db_path
@@ -180,13 +186,16 @@ class EventsDB:
             cur = conn.execute(
                 """INSERT INTO tasks (spec, action, reason, priority, source, status, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (json.dumps(spec, ensure_ascii=False), action, reason, priority, source, status, now)
+                (json.dumps(spec, ensure_ascii=False, default=str), action, reason, priority, source, status, now)
             )
             return cur.lastrowid
 
     def update_task(self, task_id: int, **kwargs):
         if not kwargs:
             return
+        invalid = set(kwargs) - _ALLOWED_TASK_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid task columns: {invalid}")
         sets = ', '.join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [task_id]
         with self._connect() as conn:
@@ -204,7 +213,7 @@ class EventsDB:
             result.append(d)
         return result
 
-    def get_task(self, task_id: int) -> dict | None:
+    def get_task(self, task_id: int):
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
@@ -213,7 +222,7 @@ class EventsDB:
         d['spec'] = json.loads(d['spec'])
         return d
 
-    def get_running_task(self) -> dict | None:
+    def get_running_task(self):
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM tasks WHERE status = 'running' LIMIT 1"
