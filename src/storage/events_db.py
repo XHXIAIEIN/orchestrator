@@ -55,8 +55,9 @@ class EventsDB:
 
     def insert_event(self, source: str, category: str, title: str,
                      duration_minutes: float, score: float, tags: list,
-                     metadata: dict, dedup_key: str = None) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
+                     metadata: dict, dedup_key: str = None,
+                     occurred_at: str = None) -> bool:
+        ts = occurred_at or datetime.now(timezone.utc).isoformat()
         try:
             with self._connect() as conn:
                 conn.execute(
@@ -66,7 +67,7 @@ class EventsDB:
                     (source, category, title, duration_minutes, score,
                      json.dumps(tags, ensure_ascii=False),
                      json.dumps(metadata, ensure_ascii=False, default=str),
-                     dedup_key, now)
+                     dedup_key, ts)
                 )
             return True
         except sqlite3.IntegrityError:

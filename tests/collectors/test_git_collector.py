@@ -1,9 +1,11 @@
 import subprocess
+import sys
 import pytest
 from src.collectors.git_collector import GitCollector
 from src.storage.events_db import EventsDB
 
-_SILENT = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+_SILENT = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "creationflags": _flags}
 
 
 def make_fake_repo(tmp_path):

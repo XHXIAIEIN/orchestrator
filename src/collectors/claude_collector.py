@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from src.storage.events_db import EventsDB
 
@@ -21,6 +22,18 @@ def extract_tags(text: str) -> list:
     return list(found)[:10]
 
 
+def _get_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for c in content:
+            if isinstance(c, dict) and c.get("type") == "text":
+                parts.append(c.get("text", ""))
+        return " ".join(parts)
+    return ""
+
+
 class ClaudeCollector:
     def __init__(self, db: EventsDB, claude_home: str = None):
         self.db = db
@@ -39,12 +52,8 @@ class ClaudeCollector:
         return new_count
 
     def _process_session(self, session_file: Path, project_name: str) -> int:
-        try:
-            mtime = session_file.stat().st_mtime
-        except OSError:
-            return 0
-
-        dedup_hash = hashlib.md5(f"claude:{mtime}:{session_file.name}".encode()).hexdigest()
+        # Dedup by session UUID — one event per conversation
+        dedup_key = f"claude:session:{session_file.stem}"
 
         messages = []
         try:
@@ -63,24 +72,57 @@ class ClaudeCollector:
         if not messages:
             return 0
 
-        all_text = " ".join(
-            m.get("content", "") if isinstance(m.get("content"), str)
-            else str(m.get("content", ""))
-            for m in messages
-        )
+        # Extract slug and first user message for readable title
+        slug = None
+        first_user_text = ""
+        occurred_at = None
+        all_text_parts = []
+
+        for m in messages:
+            if not slug and isinstance(m.get("slug"), str):
+                slug = m["slug"]
+            if not occurred_at and isinstance(m.get("timestamp"), str):
+                occurred_at = m["timestamp"]
+
+            if m.get("type") == "user" and isinstance(m.get("message"), dict):
+                text = _get_text(m["message"].get("content", ""))
+                if text and not first_user_text:
+                    first_user_text = text[:120]
+                all_text_parts.append(text)
+            elif m.get("type") == "assistant" and isinstance(m.get("message"), dict):
+                text = _get_text(m["message"].get("content", ""))
+                all_text_parts.append(text[:500])
+
+        all_text = " ".join(all_text_parts)
         tags = extract_tags(all_text)
         approx_tokens = len(all_text) // 4
         score = min(1.0, approx_tokens / 2000)
-        duration = len(messages) * 1.5
+        user_msgs = [m for m in messages if m.get("type") == "user"]
+        duration = len(user_msgs) * 2.0  # ~2 min per exchange
+
+        # Title: prefer slug, fallback to first user message
+        if slug:
+            title = f"[{project_name[:30]}] {slug}"
+        elif first_user_text:
+            title = f"[{project_name[:30]}] {first_user_text[:60]}"
+        else:
+            title = f"[{project_name[:30]}] {session_file.stem[:20]}"
 
         inserted = self.db.insert_event(
             source="claude",
             category="conversation",
-            title=f"[{project_name}] {session_file.stem[:40]}",
+            title=title[:200],
             duration_minutes=duration,
             score=score,
             tags=tags,
-            metadata={"project": project_name, "messages": len(messages), "approx_tokens": approx_tokens},
-            dedup_key=dedup_hash,
+            metadata={
+                "project": project_name,
+                "session_id": session_file.stem,
+                "messages": len(user_msgs),
+                "approx_tokens": approx_tokens,
+                "slug": slug or "",
+            },
+            dedup_key=dedup_key,
+            occurred_at=occurred_at,
         )
         return 1 if inserted else 0

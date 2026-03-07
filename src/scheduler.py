@@ -8,6 +8,7 @@ from src.collectors.claude_collector import ClaudeCollector
 from src.collectors.browser_collector import BrowserCollector
 from src.collectors.git_collector import GitCollector
 from src.collectors.steam_collector import SteamCollector
+from src.collectors.youtube_music_collector import YouTubeMusicCollector
 from src.analyst import DailyAnalyst
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -25,6 +26,7 @@ def run_collectors():
         ("browser", BrowserCollector(db=db)),
         ("git", GitCollector(db=db)),
         ("steam", SteamCollector(db=db)),
+        ("youtube_music", YouTubeMusicCollector(db=db)),
     ]:
         try:
             count = collector.collect()

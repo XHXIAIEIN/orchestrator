@@ -31,11 +31,27 @@ class BrowserCollector:
 
     def _auto_detect(self) -> dict:
         home = Path.home()
-        candidates = {
-            "chrome": home / "AppData/Local/Google/Chrome/User Data/Default/History",
-            "edge": home / "AppData/Local/Microsoft/Edge/User Data/Default/History",
+        result = {}
+        browser_roots = {
+            "chrome": home / "AppData/Local/Google/Chrome/User Data",
+            "edge": home / "AppData/Local/Microsoft/Edge/User Data",
         }
-        return {k: str(v) for k, v in candidates.items() if v.exists()}
+        for browser, root in browser_roots.items():
+            if not root.exists():
+                continue
+            # Scan Default + Profile N directories
+            for profile_dir in sorted(root.iterdir()):
+                hist = profile_dir / "History"
+                if not hist.exists():
+                    continue
+                if profile_dir.name == "Default":
+                    key = browser
+                elif profile_dir.name.startswith("Profile"):
+                    key = f"{browser}_{profile_dir.name.lower().replace(' ', '')}"
+                else:
+                    continue
+                result[key] = str(hist)
+        return result
 
     def collect(self) -> int:
         total = 0
