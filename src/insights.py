@@ -73,7 +73,7 @@ INSIGHTS_TOOL = {
                         "summary":        {"type": "string", "description": "一句话计划概要"},
                         "importance":     {"type": "string", "description": "为什么这个重要"}
                     },
-                    "required": ["action", "reason", "priority", "problem", "observation", "expected", "summary", "importance"]
+                    "required": ["action", "reason", "priority", "problem", "behavior_chain", "observation", "expected", "summary", "importance"]
                 },
                 "description": "可执行的建议，3-5条，带原因和优先级"
             },
