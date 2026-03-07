@@ -4,13 +4,11 @@ Analyses 7 days of cross-source data and generates comprehensive recommendations
 """
 import json
 import os
-import sys
 from collections import defaultdict
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
-import anthropic
-from src.config import load_api_key
+from src.config import get_anthropic_client
 from src.storage.events_db import EventsDB
 
 INSIGHTS_TOOL = {
@@ -65,11 +63,17 @@ INSIGHTS_TOOL = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "action": {"type": "string"},
-                        "reason": {"type": "string"},
-                        "priority": {"type": "string", "enum": ["high", "medium", "low"]}
+                        "action":         {"type": "string", "description": "执行计划或变通方案"},
+                        "reason":         {"type": "string", "description": "执行原因"},
+                        "priority":       {"type": "string", "enum": ["high", "medium", "low"]},
+                        "problem":        {"type": "string", "description": "这个建议要解决什么问题"},
+                        "behavior_chain": {"type": "string", "description": "观察到的数字行为链，支撑问题存在的证据"},
+                        "observation":    {"type": "string", "description": "目前看到了什么现象"},
+                        "expected":       {"type": "string", "description": "执行后应该变成什么样"},
+                        "summary":        {"type": "string", "description": "一句话计划概要"},
+                        "importance":     {"type": "string", "description": "为什么这个重要"}
                     },
-                    "required": ["action", "reason", "priority"]
+                    "required": ["action", "reason", "priority", "problem", "observation", "expected", "summary", "importance"]
                 },
                 "description": "可执行的建议，3-5条，带原因和优先级"
             },
@@ -177,25 +181,7 @@ def _build_context(db: EventsDB) -> str:
         if len(by_source[src]["titles"]) < 10:
             by_source[src]["titles"].append(e.get("title", ""))
 
-    # Daily summaries
-    summaries_raw = []
-    try:
-        import sqlite3
-        conn = sqlite3.connect(db.db_path)
-        conn.row_factory = sqlite3.Row
-        seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat()
-        rows = conn.execute(
-            "SELECT date, summary FROM daily_summaries WHERE date >= ? ORDER BY date DESC",
-            (seven_days_ago,)
-        ).fetchall()
-        conn.close()
-        for r in rows:
-            try:
-                summaries_raw.append({"date": r["date"], **json.loads(r["summary"])})
-            except Exception:
-                pass
-    except Exception:
-        pass
+    summaries_raw = db.get_daily_summaries(days=7)
 
     profile = db.get_latest_profile()
 
@@ -261,9 +247,8 @@ def _build_context(db: EventsDB) -> str:
 
 
 class InsightEngine:
-    def __init__(self, api_key: str = None, db: EventsDB = None, db_path: str = "events.db"):
-        self.api_key = api_key or load_api_key()
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+    def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
+        self.client = get_anthropic_client()
         self.db = db or EventsDB(db_path)
 
     def run(self, days: int = 7) -> dict:
@@ -271,7 +256,7 @@ class InsightEngine:
 
         response = self.client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=4096,
+            max_tokens=6000,
             system=SYSTEM_PROMPT,
             tools=[INSIGHTS_TOOL],
             tool_choice={"type": "tool", "name": "save_insights"},
