@@ -1,4 +1,5 @@
 import hashlib
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -32,8 +33,10 @@ class BrowserCollector:
     def _auto_detect(self) -> dict:
         home = Path.home()
         result = {}
+        # Allow override via env var for Docker container mounts
+        chrome_root = os.environ.get("CHROME_HISTORY_ROOT")
         browser_roots = {
-            "chrome": home / "AppData/Local/Google/Chrome/User Data",
+            "chrome": Path(chrome_root) if chrome_root else home / "AppData/Local/Google/Chrome/User Data",
             "edge": home / "AppData/Local/Microsoft/Edge/User Data",
         }
         for browser, root in browser_roots.items():

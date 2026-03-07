@@ -97,7 +97,8 @@ SYSTEM_PROMPT = """你是一个洞察力极强的生活分析师。你能从数�
 def _read_recent_sessions(days: int = 7, limit: int = 30) -> list[dict]:
     """Directly read recent JSONL sessions and extract conversation snippets."""
     import time
-    claude_home = Path.home() / ".claude" / "projects"
+    env_root = os.environ.get("CLAUDE_PROJECTS_ROOT")
+    claude_home = Path(env_root) if env_root else Path.home() / ".claude" / "projects"
     if not claude_home.exists():
         return []
 

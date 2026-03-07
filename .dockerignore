@@ -1,0 +1,9 @@
+.git
+*.db
+*.db-journal
+node_modules
+dashboard/node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.env

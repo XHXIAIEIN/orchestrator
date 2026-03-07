@@ -5,7 +5,7 @@ const http = require('http');
 const fs = require('fs');
 const initSqlJs = require('sql.js');
 
-const PORT = 47731;
+const PORT = process.env.PORT || 23714;
 const DB_PATH = path.join(__dirname, '..', 'events.db');
 
 const app = express();

@@ -36,8 +36,16 @@ def _get_text(content) -> str:
 
 class ClaudeCollector:
     def __init__(self, db: EventsDB, claude_home: str = None):
+        import os
         self.db = db
-        self.claude_home = Path(claude_home) if claude_home else Path.home() / ".claude"
+        env_root = os.environ.get("CLAUDE_PROJECTS_ROOT")
+        if claude_home:
+            self.claude_home = Path(claude_home)
+        elif env_root:
+            # In Docker, CLAUDE_PROJECTS_ROOT points directly to the projects dir
+            self.claude_home = Path(env_root).parent
+        else:
+            self.claude_home = Path.home() / ".claude"
 
     def collect(self) -> int:
         projects_dir = self.claude_home / "projects"
