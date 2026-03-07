@@ -116,6 +116,14 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
 <div id="dot">◉ 连接中</div>
 
 <script>
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 const COLORS = ['#3a5a4a','#4a4a6a','#5a4a3a','#3a4a5a','#4a5a3a','#5a3a4a'];
 
 function renderInsights(d) {
@@ -255,13 +263,13 @@ async function loadTasks() {
     el.innerHTML = tasks.map(t => `
       <div class="task-card">
         <div class="task-summary">
-          ${statusBadge(t.status)}${t.spec.summary || t.action}
+          ${statusBadge(t.status)}${esc(t.spec.summary || t.action)}
           ${t.status === 'awaiting_approval'
             ? `<button class="btn-exec" onclick="openModal(${t.id})">查看 + 执行</button>`
             : ''}
         </div>
         <div class="task-meta">${t.priority} · ${t.source} · ${(t.created_at || '').slice(0, 16)}</div>
-        ${t.output ? `<div class="task-output">${t.output.slice(0, 400)}</div>` : ''}
+        ${t.output ? `<div class="task-output">${esc(t.output.slice(0, 400))}</div>` : ''}
       </div>
     `).join('');
   } catch (e) {
@@ -286,7 +294,7 @@ async function openModal(taskId) {
     ];
     document.getElementById('modal-spec').innerHTML = fields
       .filter(([, v]) => v)
-      .map(([l, v]) => `<div class="spec-field"><div class="spec-label">${l}</div><div class="spec-value">${v}</div></div>`)
+      .map(([l, v]) => `<div class="spec-field"><div class="spec-label">${esc(l)}</div><div class="spec-value">${esc(v)}</div></div>`)
       .join('');
     const btn = document.getElementById('modal-confirm-btn');
     btn.disabled = false;
