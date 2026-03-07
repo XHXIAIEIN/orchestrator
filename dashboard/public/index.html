@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Orchestrator — 生活观察者</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #0a0a0a; color: #d0d0d0; padding: 24px; }
+h1 { font-size: 1rem; color: #555; margin-bottom: 24px; letter-spacing: 2px; text-transform: uppercase; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.card { background: #141414; border: 1px solid #222; border-radius: 6px; padding: 20px; }
+.card h2 { font-size: 0.7rem; text-transform: uppercase; color: #444; margin-bottom: 16px; letter-spacing: 1.5px; }
+.stat-big { font-size: 2.5rem; font-weight: 200; color: #fff; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #1e1e1e; font-size: 0.82rem; }
+.row:last-child { border-bottom: none; }
+.dim { color: #444; font-size: 0.75rem; }
+.tag { display: inline-block; background: #1e1e1e; color: #666; font-size: 0.68rem; padding: 2px 7px; border-radius: 2px; margin: 2px; }
+.insight { font-size: 0.88rem; line-height: 1.7; color: #aaa; }
+.src-badge { font-size: 0.65rem; padding: 1px 5px; border-radius: 2px; background: #1e1e1e; color: #555; margin-right: 6px; }
+#dot { position: fixed; bottom: 12px; right: 16px; font-size: 0.65rem; color: #333; }
+</style>
+</head>
+<body>
+<h1>Orchestrator · Life Observer</h1>
+<div class="grid">
+  <div class="card">
+    <h2>采集统计</h2>
+    <div id="stats"></div>
+  </div>
+  <div class="card">
+    <h2>今日洞察</h2>
+    <div id="insight" class="insight">加载中...</div>
+  </div>
+  <div class="card">
+    <h2>最近活动（24h）</h2>
+    <div id="events"></div>
+  </div>
+</div>
+<div id="dot">◉ 连接中</div>
+
+<script>
+async function load() {
+  const [stats, events, summary] = await Promise.all([
+    fetch('/api/stats').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/events?days=1').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/summary').then(r=>r.json()).catch(()=>({})),
+  ]);
+
+  // 统计
+  const s = document.getElementById('stats');
+  s.innerHTML = `<div class="stat-big">${stats.total??0}</div><div class="dim" style="margin-top:4px">总事件</div>` +
+    (stats.bySource||[]).map(r=>`
+      <div class="row">
+        <span><span class="src-badge">${r.source}</span></span>
+        <span class="dim">${r.count}条 · ${Math.round(r.total_min||0)}min</span>
+      </div>`).join('');
+
+  // 洞察
+  const latest = summary.summaries?.[0];
+  const ins = document.getElementById('insight');
+  if (latest) {
+    const d = JSON.parse(latest.summary||'{}');
+    ins.innerHTML =
+      `<p>${d.summary||'—'}</p>` +
+      (d.top_topics?.length ? `<p style="margin-top:10px">${d.top_topics.map(t=>`<span class="tag">${t}</span>`).join('')}</p>` : '') +
+      (d.behavioral_insights ? `<p style="margin-top:10px;color:#555;font-size:0.78rem">${d.behavioral_insights}</p>` : '');
+  } else {
+    ins.innerHTML = '<p style="color:#333">等待今日 22:00 首次分析</p>';
+  }
+
+  // 活动
+  const ev = document.getElementById('events');
+  ev.innerHTML = events.slice(0,25).map(e=>
+    `<div class="row">
+      <span><span class="src-badge">${e.source}</span>${(e.title||'').slice(0,40)}</span>
+      <span class="dim">${Math.round(e.duration_minutes||0)}m</span>
+    </div>`
+  ).join('') || '<div class="dim" style="padding:8px 0">暂无数据</div>';
+}
+
+const ws = new WebSocket(`ws://${location.host}`);
+ws.onopen = () => { document.getElementById('dot').textContent = '◉ 已连接'; load(); };
+ws.onmessage = load;
+ws.onclose = () => document.getElementById('dot').textContent = '◌ 已断开';
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
