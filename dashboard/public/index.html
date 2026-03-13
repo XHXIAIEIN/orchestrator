@@ -51,11 +51,13 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
 .task-summary { font-size: 0.82rem; color: #ccc; }
 .task-meta { font-size: 0.68rem; color: #3a3a3a; margin-top: 3px; }
 .status-badge { font-size: 0.6rem; padding: 1px 6px; border-radius: 2px; margin-right: 6px; }
-.status-pending    { background: #1a1a1e; color: #4a4a7a; }
-.status-awaiting   { background: #1e1a0e; color: #7a5a1a; }
-.status-running    { background: #0e1a0e; color: #2a6a2a; }
-.status-done       { background: #0a1a0a; color: #2a5a2a; }
-.status-failed     { background: #1a0a0a; color: #7a2a2a; }
+.status-pending      { background: #1a1a1e; color: #4a4a7a; }
+.status-awaiting     { background: #1e1a0e; color: #7a5a1a; }
+.status-scrutinizing { background: #1a1518; color: #7a4a6a; }
+.status-scrutiny_failed { background: #1a0e0e; color: #6a3a5a; }
+.status-running      { background: #0e1a0e; color: #2a6a2a; }
+.status-done         { background: #0a1a0a; color: #2a5a2a; }
+.status-failed       { background: #1a0a0a; color: #7a2a2a; }
 .task-output { font-size: 0.72rem; color: #555; margin-top: 6px; background: #0d0d0d; padding: 6px 8px; border-radius: 3px; white-space: pre-wrap; word-break: break-word; }
 .btn-exec { font-size: 0.65rem; padding: 2px 8px; border-radius: 2px; border: 1px solid #2a2a3a; background: #111; color: #4a4a7a; cursor: pointer; margin-left: 8px; }
 .btn-exec:hover { background: #1a1a2a; color: #8a8ab0; }
@@ -72,10 +74,130 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
 .btn-confirm { font-size: 0.72rem; padding: 5px 14px; border-radius: 3px; border: 1px solid #2a3a2a; background: #0a1a0a; color: #3a7a3a; cursor: pointer; }
 .btn-confirm:hover { background: #0f2a0f; }
 .btn-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Top bar */
+#top-bar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0 16px; margin-bottom: 8px;
+  background: #0a0a0a;
+  border-bottom: 1px solid #141414;
+}
+#top-title { font-size: 0.75rem; color: #444; letter-spacing: 2px; text-transform: uppercase; }
+#top-status { display: flex; align-items: center; gap: 16px; }
+.top-item { font-size: 0.65rem; color: #333; letter-spacing: 0.5px; }
+.top-item.active { color: #4a7a4a; }
+.top-item.running { color: #7a3a3a; animation: blink 1.2s ease-in-out infinite; }
+.top-item.hidden { display: none; }
+@keyframes blink { 0%,100% { opacity:1 } 50% { opacity:0.3 } }
+#dot { position: static; font-size: 0.6rem; color: #2a2a2a; }
+/* Enhanced task cards */
+.task-card { cursor: pointer; transition: background 0.15s; }
+.task-card:hover { background: #131313; border-radius: 4px; }
+.task-expand { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid #161616; }
+.task-expand.open { display: block; }
+.task-timeline { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
+.task-time-item { font-size: 0.65rem; color: #333; }
+.task-time-label { color: #2a2a2a; }
+.task-spec-grid { display: grid; gap: 6px; margin-top: 8px; }
+.task-spec-row { font-size: 0.75rem; }
+.task-spec-key { color: #2e2e2e; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.task-spec-val { color: #666; margin-top: 1px; line-height: 1.5; }
+/* Running pulse */
+.pulse-running {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: #3a7a3a;
+  margin-right: 5px; vertical-align: middle;
+  animation: pulse-run 1s ease-in-out infinite;
+}
+@keyframes pulse-run { 0%,100% { opacity:1;transform:scale(1) } 50% { opacity:0.4;transform:scale(0.7) } }
+/* Log panel */
+.log-line { font-size: 0.7rem; padding: 2px 0; border-bottom: 1px solid #0e0e0e; display: flex; gap: 8px; line-height: 1.5; }
+.log-line:last-child { border-bottom: none; }
+.log-ts { color: #222; white-space: nowrap; flex-shrink: 0; }
+.log-src { color: #2a3a2a; min-width: 60px; }
+.log-msg { color: #555; }
+.log-msg.ERROR { color: #5a2a2a; }
+.log-msg.WARN { color: #5a4a2a; }
+.log-msg.INFO { color: #555; }
+.custom-log-scroll::-webkit-scrollbar { width: 3px; }
+.custom-log-scroll::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px; }
+
+/* ── Profile basic card ── */
+.profile-field { margin: 6px 0; }
+.profile-key { font-size: 0.6rem; text-transform: uppercase; color: #2e2e2e; letter-spacing: 1px; }
+.profile-val { font-size: 0.8rem; color: #777; margin-top: 2px; }
+
+/* ── Deep profile analysis card ── */
+.analysis-overview { font-size: 0.86rem; line-height: 1.8; color: #bbb; margin-bottom: 14px; border-left: 2px solid #2a2a3a; padding-left: 12px; }
+.analysis-section { font-size: 0.6rem; text-transform: uppercase; color: #333; letter-spacing: 1px; margin: 14px 0 6px; }
+.analysis-item { font-size: 0.8rem; color: #777; padding: 4px 0; border-bottom: 1px solid #161616; line-height: 1.6; }
+.analysis-item:last-child { border-bottom: none; }
+.analysis-item::before { content: '·'; color: #2a2a3a; margin-right: 6px; }
+.analysis-suggestion { padding: 7px 0; border-bottom: 1px solid #161616; }
+.analysis-suggestion:last-child { border-bottom: none; }
+.suggestion-action { font-size: 0.82rem; color: #ccc; }
+.suggestion-reason { font-size: 0.72rem; color: #444; margin-top: 2px; line-height: 1.5; }
+.analysis-commentary { font-size: 0.82rem; color: #666; line-height: 1.75; font-style: italic; background: #0d0d0d; padding: 10px 12px; border-radius: 3px; margin-top: 6px; }
+.analysis-daily-note { font-size: 0.82rem; color: #5a7a9a; line-height: 1.7; padding: 8px 12px; background: #0d1017; border-radius: 3px; border-left: 2px solid #2a3a4a; }
+.btn-refresh { font-size: 0.6rem; padding: 2px 8px; border-radius: 2px; border: 1px solid #2a2a3a; background: #0a0a12; color: #4a4a7a; cursor: pointer; }
+.btn-refresh:hover { background: #12121e; color: #8a8ab0; }
+.btn-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
+.analysis-meta { font-size: 0.62rem; color: #2a2a2a; margin-top: 10px; }
+.type-badge { font-size: 0.58rem; padding: 1px 5px; border-radius: 2px; background: #12121a; color: #3a3a5a; margin-right: 6px; }
+
+/* ── 7-day trend ── */
+.trend-row { display: flex; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid #161616; gap: 10px; }
+.trend-row:last-child { border-bottom: none; }
+.trend-date { font-size: 0.68rem; color: #333; min-width: 48px; flex-shrink: 0; padding-top: 2px; }
+.trend-topics { display: flex; flex-wrap: wrap; gap: 3px; flex: 1; }
+.trend-summary { font-size: 0.72rem; color: #444; margin-top: 3px; line-height: 1.5; }
+
+/* ── Heatmap ── */
+.heatmap-grid { display: flex; gap: 2px; margin-top: 8px; flex-wrap: nowrap; overflow-x: auto; }
+.heatmap-col { display: flex; flex-direction: column; gap: 2px; }
+.heatmap-cell { width: 11px; height: 11px; border-radius: 2px; background: #141414; cursor: pointer; transition: opacity 0.1s; flex-shrink: 0; }
+.heatmap-cell:hover { opacity: 0.7; }
+.heatmap-cell.lv1 { background: #1a2a1a; }
+.heatmap-cell.lv2 { background: #2a4a2a; }
+.heatmap-cell.lv3 { background: #3a6a3a; }
+.heatmap-cell.lv4 { background: #4a8a4a; }
+.heatmap-detail { font-size: 0.72rem; color: #444; margin-top: 10px; min-height: 20px; }
+.heatmap-labels { display: flex; justify-content: space-between; margin-top: 4px; }
+.heatmap-label { font-size: 0.58rem; color: #222; }
+
+/* ── Category stats ── */
+.cat-toggle { display: flex; gap: 4px; margin-bottom: 12px; }
+.cat-btn { font-size: 0.6rem; padding: 2px 8px; border-radius: 2px; border: 1px solid #1e1e1e; background: #0a0a0a; color: #333; cursor: pointer; }
+.cat-btn.active { border-color: #2a2a3a; color: #6a6a9a; background: #101018; }
+.cat-bar-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.cat-bar-label { font-size: 0.7rem; color: #555; min-width: 80px; flex-shrink: 0; }
+.cat-bar-track { flex: 1; height: 3px; background: #141414; border-radius: 2px; overflow: hidden; }
+.cat-bar-fill { height: 100%; border-radius: 2px; }
+.cat-bar-val { font-size: 0.65rem; color: #333; min-width: 40px; text-align: right; flex-shrink: 0; }
+
+/* ── Task stats mini bar ── */
+.task-stats-bar { display: flex; gap: 16px; padding: 8px 0 12px; border-bottom: 1px solid #161616; margin-bottom: 4px; }
+.task-stat-item { font-size: 0.68rem; color: #333; }
+.task-stat-num { font-size: 1.1rem; font-weight: 200; color: #888; display: block; }
+
+/* ── Event search ── */
+.event-search-bar { display: flex; gap: 6px; margin-bottom: 10px; }
+.event-search-input { flex: 1; background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 3px; padding: 4px 8px; color: #888; font-size: 0.72rem; outline: none; }
+.event-search-input::placeholder { color: #2a2a2a; }
+.event-search-input:focus { border-color: #2a2a3a; }
+.event-src-select { background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 3px; padding: 4px 6px; color: #555; font-size: 0.68rem; outline: none; }
 </style>
 </head>
 <body>
-<h1>Orchestrator · Life Observer</h1>
+<header id="top-bar">
+  <span id="top-title">Orchestrator · Life Observer</span>
+  <div id="top-status">
+    <span id="top-collect" class="top-item" title="下次采集">采集 —</span>
+    <span id="top-analyze" class="top-item" title="下次分析">分析 —</span>
+    <span id="top-governor" class="top-item hidden" title="Governor 执行中">● 执行中</span>
+    <span id="dot">◉ 连接中</span>
+  </div>
+</header>
 <div class="grid">
   <div class="card">
     <h2>采集统计</h2>
@@ -102,6 +224,18 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
   </div>
 </div>
 
+<!-- Log Panel -->
+<div class="card wide" id="log-card" style="margin-top:16px">
+  <h2 style="display:flex;justify-content:space-between;align-items:center">
+    实时日志
+    <span style="display:flex;gap:8px;align-items:center">
+      <span id="log-status" class="dim">连接中...</span>
+      <button onclick="clearLogs()" style="font-size:0.6rem;padding:1px 6px;border-radius:2px;border:1px solid #1e1e1e;background:#0a0a0a;color:#333;cursor:pointer">清空</button>
+    </span>
+  </h2>
+  <div id="log-list" class="custom-log-scroll" style="max-height:220px;overflow-y:auto;font-family:monospace"></div>
+</div>
+
 <!-- Manual execution modal -->
 <div id="task-modal">
   <div class="modal-box">
@@ -113,8 +247,6 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
     </div>
   </div>
 </div>
-<div id="dot">◉ 连接中</div>
-
 <script>
 function esc(s) {
   return String(s)
@@ -243,35 +375,143 @@ ws.onclose = () => document.getElementById('dot').textContent = '◌ 已断开';
 load();
 setInterval(load, 60000);
 
+async function loadScheduleStatus() {
+  try {
+    const s = await fetch('/api/schedule-status').then(r => r.json());
+
+    if (s.next_collectors) {
+      const secs = Math.max(0, Math.round((new Date(s.next_collectors) - Date.now()) / 1000));
+      const mins = Math.floor(secs / 60);
+      document.getElementById('top-collect').textContent = secs > 0
+        ? `采集 ${mins}分${secs % 60}秒后`
+        : '采集 即将开始';
+    }
+
+    if (s.next_analysis) {
+      const secs = Math.max(0, Math.round((new Date(s.next_analysis) - Date.now()) / 1000));
+      const hrs = Math.floor(secs / 3600);
+      const mins = Math.floor((secs % 3600) / 60);
+      document.getElementById('top-analyze').textContent = secs > 0
+        ? `分析 ${hrs > 0 ? hrs + '时' : ''}${mins}分后`
+        : '分析 即将开始';
+    }
+
+    const govEl = document.getElementById('top-governor');
+    if (s.running_task) {
+      govEl.classList.remove('hidden');
+      govEl.classList.add('running');
+    } else {
+      govEl.classList.add('hidden');
+      govEl.classList.remove('running');
+    }
+  } catch (e) {
+    console.error('loadScheduleStatus error:', e);
+  }
+}
+
+loadScheduleStatus();
+setInterval(loadScheduleStatus, 15000);
+
 // ── Tasks panel ──────────────────────────────────────────────
 let pendingTaskId = null;
 
 function statusBadge(s) {
   const cls = { pending: 'status-pending', awaiting_approval: 'status-awaiting',
+                scrutinizing: 'status-scrutinizing', scrutiny_failed: 'status-scrutiny_failed',
                 running: 'status-running', done: 'status-done', failed: 'status-failed' };
   const label = { pending: '待执行', awaiting_approval: '待确认',
+                  scrutinizing: '门下省审查', scrutiny_failed: '审查驳回',
                   running: '执行中', done: '完成', failed: '失败' };
   return `<span class="status-badge ${cls[s] || ''}">${label[s] || s}</span>`;
 }
 
+const PRIORITY_ZH = { high: '高', medium: '中', low: '低' };
+const SOURCE_ZH = { auto: '自动', manual: '手动' };
+const STATUS_ZH = { pending: '待执行', awaiting_approval: '待确认',
+                    scrutinizing: '门下省审查', scrutiny_failed: '审查驳回',
+                    running: '执行中', done: '完成', failed: '失败' };
+
+function fmtDuration(startedAt, finishedAt) {
+  if (!startedAt) return '';
+  const start = new Date(startedAt);
+  const end = finishedAt ? new Date(finishedAt) : new Date();
+  const secs = Math.round((end - start) / 1000);
+  if (secs < 60) return `${secs}秒`;
+  return `${Math.floor(secs / 60)}分${secs % 60}秒`;
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function taskCardHtml(t) {
+  const spec = t.spec || {};
+  const isRunning = t.status === 'running';
+  const specFields = [
+    ['问题描述', spec.problem],
+    ['行为链', spec.behavior_chain],
+    ['观察结果', spec.observation],
+    ['预期结果', spec.expected],
+    ['重要性', spec.importance],
+  ].filter(([, v]) => v);
+
+  const specHtml = specFields.map(([k, v]) => `
+    <div class="task-spec-row">
+      <div class="task-spec-key">${esc(k)}</div>
+      <div class="task-spec-val">${esc(v)}</div>
+    </div>
+  `).join('');
+
+  const timeline = `
+    <div class="task-timeline">
+      <span class="task-time-item"><span class="task-time-label">创建 </span>${fmtTime(t.created_at)}</span>
+      ${t.approved_at ? `<span class="task-time-item"><span class="task-time-label">确认 </span>${fmtTime(t.approved_at)}</span>` : ''}
+      ${t.started_at ? `<span class="task-time-item"><span class="task-time-label">开始 </span>${fmtTime(t.started_at)}</span>` : ''}
+      ${t.finished_at ? `<span class="task-time-item"><span class="task-time-label">完成 </span>${fmtTime(t.finished_at)}</span>` : ''}
+      ${t.started_at ? `<span class="task-time-item"><span class="task-time-label">用时 </span>${fmtDuration(t.started_at, t.finished_at)}</span>` : ''}
+    </div>
+  `;
+
+  return `
+    <div class="task-card" onclick="toggleTask(${t.id})" id="task-card-${t.id}">
+      <div class="task-summary">
+        ${isRunning ? '<span class="pulse-running"></span>' : ''}
+        ${statusBadge(t.status)}${esc(spec.summary || t.action)}
+        ${t.status === 'awaiting_approval'
+          ? `<button class="btn-exec" onclick="event.stopPropagation();openModal(${t.id})">查看 + 执行</button>`
+          : ''}
+      </div>
+      <div class="task-meta">
+        优先级：${PRIORITY_ZH[t.priority] || t.priority} · 来源：${SOURCE_ZH[t.source] || t.source} · ${(t.created_at || '').slice(0, 10)}
+      </div>
+      <div class="task-expand" id="task-expand-${t.id}">
+        ${timeline}
+        ${specHtml ? `<div class="task-spec-grid">${specHtml}</div>` : ''}
+        ${t.scrutiny_note ? `<div class="task-output" style="margin-top:8px;border-left:2px solid #3a2a3a">门下省：${esc(t.scrutiny_note)}</div>` : ''}
+        ${t.output ? `<div class="task-output" style="margin-top:8px">${esc(t.output.slice(0, 600))}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function toggleTask(id) {
+  const el = document.getElementById(`task-expand-${id}`);
+  if (el) el.classList.toggle('open');
+}
+
 async function loadTasks() {
   try {
-    const r = await fetch('/api/tasks');
-    const tasks = await r.json();
+    const tasks = await fetch('/api/tasks').then(r => r.json());
     const el = document.getElementById('tasks-list');
     if (!tasks.length) { el.innerHTML = '<span class="no-data">暂无任务</span>'; return; }
-    el.innerHTML = tasks.map(t => `
-      <div class="task-card">
-        <div class="task-summary">
-          ${statusBadge(t.status)}${esc(t.spec.summary || t.action)}
-          ${t.status === 'awaiting_approval'
-            ? `<button class="btn-exec" onclick="openModal(${t.id})">查看 + 执行</button>`
-            : ''}
-        </div>
-        <div class="task-meta">${t.priority} · ${t.source} · ${(t.created_at || '').slice(0, 16)}</div>
-        ${t.output ? `<div class="task-output">${esc(t.output.slice(0, 400))}</div>` : ''}
-      </div>
-    `).join('');
+    const openIds = new Set([...document.querySelectorAll('.task-expand.open')]
+      .map(e => e.id.replace('task-expand-', '')));
+    el.innerHTML = tasks.map(taskCardHtml).join('');
+    openIds.forEach(id => {
+      const el = document.getElementById(`task-expand-${id}`);
+      if (el) el.classList.add('open');
+    });
   } catch (e) {
     console.error('loadTasks error:', e);
   }
@@ -330,6 +570,49 @@ async function confirmExec() {
 // Initial load + polling
 loadTasks();
 setInterval(loadTasks, 30000);
+
+// ── Log stream (SSE) ─────────────────────────────────────────
+let logCount = 0;
+const MAX_LOG_LINES = 200;
+
+function appendLogs(logs) {
+  const container = document.getElementById('log-list');
+  logs.forEach(l => {
+    const div = document.createElement('div');
+    div.className = 'log-line';
+    const ts = (l.created_at || '').slice(11, 19);
+    div.innerHTML = `<span class="log-ts">${ts}</span><span class="log-src">${esc(l.source)}</span><span class="log-msg ${l.level}">${esc(l.message)}</span>`;
+    container.appendChild(div);
+    logCount++;
+  });
+  while (container.children.length > MAX_LOG_LINES) {
+    container.removeChild(container.firstChild);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+function clearLogs() {
+  document.getElementById('log-list').innerHTML = '';
+  logCount = 0;
+}
+
+function connectLogStream() {
+  const evtSource = new EventSource('/api/logs');
+  document.getElementById('log-status').textContent = '已连接';
+
+  evtSource.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'backlog' || data.type === 'append') {
+      appendLogs(data.logs);
+    }
+  };
+
+  evtSource.onerror = () => {
+    document.getElementById('log-status').textContent = '重连中...';
+  };
+}
+
+connectLogStream();
 </script>
 </body>
 </html>
