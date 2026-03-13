@@ -70,12 +70,16 @@ SYSTEM_PROMPT = """你是用户的私人生活顾问，正在分析他的数字�
 
 def _build_context(db: EventsDB, analysis_type: str = 'periodic') -> str:
     if analysis_type == 'daily':
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+        from zoneinfo import ZoneInfo
+        cst = ZoneInfo("Asia/Shanghai")
+        now_cst = datetime.now(cst)
+        yesterday_cst = (now_cst - timedelta(days=1)).date().isoformat()
+        raw_events = db.get_recent_events(days=3)
         events = [
-            e for e in db.get_recent_events(days=2)
-            if e['occurred_at'][:10] == yesterday
+            e for e in raw_events
+            if datetime.fromisoformat(e['occurred_at']).astimezone(cst).date().isoformat() == yesterday_cst
         ]
-        date_range = f"昨天（{yesterday}）"
+        date_range = f"昨天（{yesterday_cst}）"
     else:
         events = db.get_recent_events(days=30)
         date_range = "最近 30 天"
@@ -129,7 +133,9 @@ class ProfileAnalyst:
             messages=[{"role": "user", "content": context}],
         )
 
-        block = next(b for b in response.content if b.type == "tool_use")
+        block = next((b for b in response.content if b.type == "tool_use"), None)
+        if block is None:
+            raise RuntimeError("ProfileAnalyst: no tool_use block in API response")
         result = block.input
         self.db.save_profile_analysis(result, analysis_type)
         return result
