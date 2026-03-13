@@ -2,6 +2,7 @@
 """CLI bridge called by Node dashboard to trigger on-demand profile analysis."""
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -23,8 +24,9 @@ def main():
     try:
         db = EventsDB(DB_PATH)
         analyst = ProfileAnalyst(db=db)
-        result = analyst.run(analysis_type=analysis_type)
-        print(json.dumps({"status": "ok", "generated_at": result.get("generated_at", "")}, ensure_ascii=False))
+        analyst.run(analysis_type=analysis_type)
+        generated_at = datetime.now(timezone.utc).isoformat()
+        print(json.dumps({"status": "ok", "generated_at": generated_at}, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)
