@@ -6,7 +6,8 @@ from pathlib import Path
 
 _ALLOWED_TASK_COLUMNS = {
     'spec', 'action', 'reason', 'priority', 'source',
-    'status', 'output', 'approved_at', 'started_at', 'finished_at'
+    'status', 'output', 'approved_at', 'started_at', 'finished_at',
+    'scrutiny_note',
 }
 
 
@@ -66,12 +67,39 @@ class EventsDB:
                     source TEXT DEFAULT 'auto',
                     status TEXT DEFAULT 'pending',
                     output TEXT,
+                    scrutiny_note TEXT,
                     created_at TEXT NOT NULL,
                     approved_at TEXT,
                     started_at TEXT,
                     finished_at TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    level TEXT NOT NULL DEFAULT 'INFO',
+                    source TEXT NOT NULL DEFAULT 'system',
+                    message TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS scheduler_status (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS profile_analysis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data_json TEXT NOT NULL,
+                    type TEXT NOT NULL DEFAULT 'periodic',
+                    generated_at TEXT NOT NULL
+                );
             """)
+            # Migration: add scrutiny_note column to existing databases
+            try:
+                conn.execute("ALTER TABLE tasks ADD COLUMN scrutiny_note TEXT")
+            except Exception:
+                pass  # Column already exists
 
     def get_tables(self) -> list:
         with self._connect() as conn:
@@ -222,13 +250,90 @@ class EventsDB:
         d['spec'] = json.loads(d['spec'])
         return d
 
+    def write_log(self, message: str, level: str = 'INFO', source: str = 'system'):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO logs (level, source, message, created_at) VALUES (?, ?, ?, ?)",
+                (level, source, message, now)
+            )
+
+    def get_logs(self, since_id: int = 0, limit: int = 100) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, level, source, message, created_at FROM logs WHERE id > ? ORDER BY id ASC LIMIT ?",
+                (since_id, limit)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_scheduler_status(self, key: str, value: str):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO scheduler_status (key, value, updated_at) VALUES (?, ?, ?)",
+                (key, value, now)
+            )
+
+    def get_scheduler_status(self) -> dict:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT key, value FROM scheduler_status").fetchall()
+        return {r['key']: r['value'] for r in rows}
+
     def get_running_task(self):
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM tasks WHERE status = 'running' LIMIT 1"
+                "SELECT * FROM tasks WHERE status IN ('running', 'scrutinizing') LIMIT 1"
             ).fetchone()
         if not row:
             return None
         d = dict(row)
         d['spec'] = json.loads(d['spec'])
         return d
+
+    def save_profile_analysis(self, data: dict, analysis_type: str = 'periodic'):
+        now = datetime.now(timezone.utc).isoformat()
+        data_copy = dict(data)
+        data_copy['generated_at'] = now
+        data_copy['type'] = analysis_type
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO profile_analysis (data_json, type, generated_at) VALUES (?, ?, ?)",
+                (json.dumps(data_copy, ensure_ascii=False), analysis_type, now)
+            )
+            conn.execute(
+                "DELETE FROM profile_analysis WHERE id NOT IN "
+                "(SELECT id FROM profile_analysis ORDER BY id DESC LIMIT 50)"
+            )
+
+    def get_profile_analysis(self, analysis_type: str = None) -> dict:
+        with self._connect() as conn:
+            if analysis_type:
+                row = conn.execute(
+                    "SELECT data_json FROM profile_analysis WHERE type = ? ORDER BY id DESC LIMIT 1",
+                    (analysis_type,)
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT data_json FROM profile_analysis ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+        return json.loads(row["data_json"]) if row else {}
+
+    def get_events_by_day(self, days: int = 60) -> list:
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DATE(occurred_at) as day, COUNT(*) as count "
+                "FROM events WHERE occurred_at >= ? GROUP BY DATE(occurred_at) ORDER BY day ASC",
+                (since,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_events_by_category(self, days: int = 7) -> list:
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT category, SUM(duration_minutes) as total_min, COUNT(*) as count "
+                "FROM events WHERE occurred_at >= ? GROUP BY category ORDER BY total_min DESC",
+                (since,)
+            ).fetchall()
+        return [dict(r) for r in rows]

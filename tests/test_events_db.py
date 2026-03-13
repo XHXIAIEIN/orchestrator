@@ -37,3 +37,46 @@ def test_get_storage_size(tmp_path):
     size = db.get_size_bytes()
     assert isinstance(size, int)
     assert size >= 0
+
+
+def test_profile_analysis_table_exists(tmp_path):
+    db = EventsDB(str(tmp_path / "events.db"))
+    assert "profile_analysis" in db.get_tables()
+
+
+def test_save_and_get_profile_analysis(tmp_path):
+    db = EventsDB(str(tmp_path / "events.db"))
+    data = {"overview": "测试概述", "strengths": ["专注"], "type": "periodic"}
+    db.save_profile_analysis(data, "periodic")
+    result = db.get_profile_analysis()
+    assert result["overview"] == "测试概述"
+    assert result["type"] == "periodic"
+
+
+def test_profile_analysis_pruning(tmp_path):
+    db = EventsDB(str(tmp_path / "events.db"))
+    for i in range(55):
+        db.save_profile_analysis({"overview": f"entry {i}"}, "periodic")
+    with db._connect() as conn:
+        count = conn.execute("SELECT COUNT(*) as c FROM profile_analysis").fetchone()["c"]
+    assert count == 50
+
+
+def test_get_events_by_day(tmp_path):
+    db = EventsDB(str(tmp_path / "events.db"))
+    db.insert_event("claude", "coding", "test", 10, 0.5, [], {})
+    result = db.get_events_by_day(days=7)
+    assert len(result) == 1
+    assert "day" in result[0]
+    assert "count" in result[0]
+    assert result[0]["count"] == 1
+
+
+def test_get_events_by_category(tmp_path):
+    db = EventsDB(str(tmp_path / "events.db"))
+    db.insert_event("claude", "coding", "test1", 30, 0.5, [], {})
+    db.insert_event("browser", "reading", "test2", 20, 0.5, [], {})
+    result = db.get_events_by_category(days=7)
+    categories = {r["category"] for r in result}
+    assert "coding" in categories
+    assert "reading" in categories
