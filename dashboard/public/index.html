@@ -208,8 +208,32 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
     <div id="daily" class="insight-text"></div>
   </div>
   <div class="card">
-    <h2>最近活动（24h）</h2>
+    <h2>最近活动</h2>
+    <div class="event-search-bar">
+      <input class="event-search-input" id="event-search" placeholder="搜索标题..." oninput="filterEvents()">
+      <select class="event-src-select" id="event-src-filter" onchange="filterEvents()">
+        <option value="">全部来源</option>
+      </select>
+    </div>
     <div id="events"></div>
+  </div>
+
+  <!-- Profile Basic Card -->
+  <div class="card" id="profile-card">
+    <h2>用户画像</h2>
+    <div id="profile-basic"><div class="no-data">等待首次分析</div></div>
+  </div>
+
+  <!-- Deep Profile Analysis Card -->
+  <div class="card wide" id="profile-analysis-card">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">
+      深度画像分析
+      <span style="display:flex;gap:8px;align-items:center">
+        <span id="analysis-meta" class="dim"></span>
+        <button id="btn-refresh-analysis" class="btn-refresh" onclick="refreshAnalysis()">刷新</button>
+      </span>
+    </h2>
+    <div id="profile-analysis"><div class="no-data">等待首次生成（每6小时更新）</div></div>
   </div>
 
   <div class="card wide" id="insights-card">
@@ -217,9 +241,38 @@ h1 { font-size: 0.75rem; color: #444; margin-bottom: 24px; letter-spacing: 2px; 
     <div id="insights"><div class="no-data">等待首次洞察生成（每小时更新）</div></div>
   </div>
 
+  <!-- Category Time Distribution -->
+  <div class="card" id="category-card">
+    <h2>分类时间分布</h2>
+    <div class="cat-toggle">
+      <button class="cat-btn active" onclick="loadCategories(1, this)">今日</button>
+      <button class="cat-btn" onclick="loadCategories(7, this)">7 天</button>
+      <button class="cat-btn" onclick="loadCategories(30, this)">30 天</button>
+    </div>
+    <div id="category-list"><div class="no-data">加载中...</div></div>
+  </div>
+
+  <!-- 7-Day Trend Summary -->
+  <div class="card" id="trend-card">
+    <h2>7 日趋势</h2>
+    <div id="trend-list"><div class="no-data">等待数据</div></div>
+  </div>
+
+  <!-- Activity Heatmap -->
+  <div class="card" id="heatmap-card">
+    <h2>活动热力图 <span class="dim" style="font-size:0.58rem">近 60 天</span></h2>
+    <div id="heatmap-grid"></div>
+    <div class="heatmap-labels">
+      <span class="heatmap-label" id="heatmap-start"></span>
+      <span class="heatmap-label" id="heatmap-end"></span>
+    </div>
+    <div id="heatmap-detail" class="heatmap-detail"></div>
+  </div>
+
   <!-- Tasks Panel -->
   <div class="card wide" id="tasks-card">
     <h2>执行任务</h2>
+    <div id="task-stats-bar" class="task-stats-bar"></div>
     <div id="tasks-list"><span class="no-data">暂无任务</span></div>
   </div>
 </div>
@@ -254,6 +307,66 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Module 1-4: Profile, Analysis, Trend, Heatmap
+function renderProfileBasic(profile) {
+  if (!profile || !Object.keys(profile).length) return "<div class="no-data">等待首次分析</div>";
+  return Object.entries(profile).map(([k, v]) => {
+    const val = Array.isArray(v) ? v.map(t => "<span class="tag">" + esc(String(t)) + "</span>").join("") : "<span class="profile-val">" + esc(String(v)) + "</span>";
+    return "<div class="profile-field"><div class="profile-key">" + esc(k) + "</div>" + val + "</div>";
+  }).join("");
+}
+
+function renderProfileAnalysis(d) {
+  if (!d || !d.overview) return "<div class="no-data">等待首次生成（噱6小时更新）</div>";
+  let html = "<div class="analysis-overview">" + esc(d.overview) + "</div>";
+  if (d.strengths && d.strengths.length) { html += "<div class="analysis-section">优点 / 特质</div>" + d.strengths.map(s => "<div class="analysis-item">" + esc(s) + "</div>").join(""); }
+  if (d.blind_spots && d.blind_spots.length) { html += "<div class="analysis-section">盲区 / 値得注意</div>" + d.blind_spots.map(s => "<div class="analysis-item">" + esc(s) + "</div>").join(""); }
+  if (d.suggestions && d.suggestions.length) { html += "<div class="analysis-section">建议</div>" + d.suggestions.map(s => "<div class="analysis-suggestion"><div class="suggestion-action">" + esc(s.action) + "<span class="priority priority-" + esc(s.priority) + "">" + esc(s.priority) + "</span></div><div class="suggestion-reason">" + esc(s.reason) + "</div></div>").join(""); }
+  if (d.commentary) { html += "<div class="analysis-section">AI 点评</div><div class="analysis-commentary">" + esc(d.commentary) + "</div>"; }
+  if (d.daily_note) { html += "<div class="analysis-section">昨日专属</div><div class="analysis-daily-note">" + esc(d.daily_note) + "</div>"; }
+  return html;
+}
+
+function renderTrend(summaries) {
+  if (!summaries || !summaries.length) return "<div class="no-data">等待数据</div>";
+  return summaries.map(s => {
+    const topics = (s.top_topics || []).map(t => "<span class="tag">" + esc(t) + "</span>").join("");
+    const date = esc((s.date || "").slice(5));
+    return "<div class="trend-row"><span class="trend-date">" + date + "</span><div><div class="trend-topics">" + (topics || "<span class="dim">—</span>") + "</div>" + (s.behavioral_insights ? "<div class="trend-summary">" + esc(s.behavioral_insights.slice(0, 60)) + "</div>" : "") + "</div></div>";
+  }).join("");
+}
+
+let _heatmapData = {};
+let _eventsCache = [];
+
+function renderHeatmap(data) {
+  _heatmapData = Object.fromEntries(data.map(d => [d.day, Number(d.count)]));
+  const today = new Date(); const start = new Date(today);
+  start.setDate(start.getDate() - 59);
+  const dow = start.getDay() || 7; start.setDate(start.getDate() - (dow - 1));
+  const cols = []; const cur = new Date(start); let col = [];
+  while (cur <= today) {
+    const iso = cur.toISOString().slice(0, 10); const cnt = _heatmapData[iso] || 0;
+    const lv = cnt === 0 ? 0 : cnt <= 3 ? 1 : cnt <= 9 ? 2 : cnt <= 19 ? 3 : 4;
+    col.push({iso, cnt, lv});
+    if (col.length === 7) { cols.push(col); col = []; }
+    cur.setDate(cur.getDate() + 1);
+  }
+  if (col.length) cols.push(col);
+  const grid = document.getElementById("heatmap-grid"); grid.className = "heatmap-grid";
+  grid.innerHTML = cols.map(c => "<div class="heatmap-col">" + c.map(d => "<div class="heatmap-cell lv" + d.lv + "" data-day="" + d.iso + "" data-count="" + d.cnt + "" onclick="showHeatmapDay('" + d.iso + "'," + d.cnt + ")" title="" + d.iso + ": " + d.cnt + "条"></div>").join("") + "</div>").join("");
+  document.getElementById("heatmap-start").textContent = start.toLocaleDateString("zh-CN", {month:"numeric",day:"numeric"});
+  document.getElementById("heatmap-end").textContent = today.toLocaleDateString("zh-CN", {month:"numeric",day:"numeric"});
+}
+
+function showHeatmapDay(day, count) {
+  const detail = document.getElementById("heatmap-detail");
+  if (!count) { detail.textContent = day + "：无数据"; return; }
+  const evs = _eventsCache.filter(e => (e.occurred_at || "").slice(0, 10) === day);
+  const top5 = evs.slice(0, 5).map(e => esc(e.title || "").slice(0, 40)).join(" · ");
+  detail.innerHTML = "<span class="dim">" + esc(day) + "</span> " + count + "条" + (top5 ? " · " + top5 : "");
 }
 
 const COLORS = ['#3a5a4a','#4a4a6a','#5a4a3a','#3a4a5a','#4a5a3a','#5a3a4a'];
@@ -321,12 +434,15 @@ function renderInsights(d) {
 }
 
 async function load() {
-  const [stats, events, summary, insights] = await Promise.all([
+  const [stats, events, summary, insights, profileAnalysis, summaries] = await Promise.all([
     fetch('/api/stats').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/events?days=1').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/events?days=60').then(r=>r.json()).catch(()=>[]),
     fetch('/api/summary').then(r=>r.json()).catch(()=>({})),
     fetch('/api/insights').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/profile-analysis').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/summaries').then(r=>r.json()).catch(()=>[]),
   ]);
+  _eventsCache = events;
 
   // Stats
   const s = document.getElementById('stats');
@@ -350,30 +466,61 @@ async function load() {
     daily.innerHTML = '<p class="no-data">等待首次分析</p>';
   }
 
-  // Events
-  const ev = document.getElementById('events');
-  ev.innerHTML = events.slice(0,25).map(e=>
-    `<div class="row">
-      <span><span class="src-badge">${e.source}</span>${(e.title||'').slice(0,38)}</span>
-      <span class="dim">${Math.round(e.duration_minutes||0)}m</span>
-    </div>`
-  ).join('') || '<div class="no-data">暂无数据</div>';
+  // Events (with search filter)
+  buildSourceOptions();
+  filterEvents();
 
   // Deep insights
   document.getElementById('insights').innerHTML = renderInsights(insights);
-  if (insights?.generated_at) {
+  if (insights && insights.generated_at) {
     const ts = new Date(insights.generated_at).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
     document.getElementById('insights-ts').textContent = ts + ' 更新';
   }
+
+  document.getElementById('profile-basic').innerHTML = renderProfileBasic(summary.profile || {});
+  document.getElementById('profile-analysis').innerHTML = renderProfileAnalysis(profileAnalysis);
+  if (profileAnalysis && profileAnalysis.generated_at) {
+    const ts2 = new Date(profileAnalysis.generated_at).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const typeLabel = profileAnalysis.type === 'daily' ? '晨报' : '定期';
+    document.getElementById('analysis-meta').innerHTML = '<span class="type-badge">' + esc(typeLabel) + '</span>' + esc(ts2);
+  }
+  document.getElementById('trend-list').innerHTML = renderTrend(summaries);
+  fetch('/api/events/heatmap?days=60').then(r => r.json()).then(renderHeatmap).catch(() => {});
 }
 
 const ws = new WebSocket(`ws://${location.host}`);
 ws.onopen = () => { document.getElementById('dot').textContent = '◉ 已连接'; load(); };
-ws.onmessage = () => { load(); loadTasks(); };
+ws.onmessage = (evt) => {
+  try {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === "profile_analysis_done") {
+      const btn = document.getElementById("btn-refresh-analysis");
+      btn.disabled = false;
+      btn.textContent = "刷新";
+      fetch("/api/profile-analysis").then(r => r.json()).then(d => {
+        document.getElementById("profile-analysis").innerHTML = renderProfileAnalysis(d);
+        if (d && d.generated_at) {
+          const ts = new Date(d.generated_at).toLocaleString("zh-CN", {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+          document.getElementById("analysis-meta").innerHTML = "<span class=\"type-badge\">" + esc(d.type === "daily" ? "晨报" : "定期") + "</span>" + esc(ts);
+        }
+      });
+      return;
+    }
+    if (msg.type === "profile_analysis_error") {
+      const btn = document.getElementById("btn-refresh-analysis");
+      btn.disabled = false;
+      btn.textContent = "失败: " + esc(msg.error || "重试");
+      return;
+    }
+  } catch {}
+  load();
+  loadTasks();
+};
 ws.onclose = () => document.getElementById('dot').textContent = '◌ 已断开';
 
 load();
 setInterval(load, 60000);
+loadCategories(1, document.querySelector(".cat-btn"));
 
 async function loadScheduleStatus() {
   try {
@@ -411,6 +558,13 @@ async function loadScheduleStatus() {
 
 loadScheduleStatus();
 setInterval(loadScheduleStatus, 15000);
+
+async function refreshAnalysis() {
+  const btn = document.getElementById("btn-refresh-analysis");
+  btn.disabled = true; btn.textContent = "生成中...";
+  try { await fetch("/api/profile-analysis/refresh", { method: "POST" }); }
+  catch { btn.disabled = false; btn.textContent = "刷新"; }
+}
 
 // ── Tasks panel ──────────────────────────────────────────────
 let pendingTaskId = null;
@@ -508,6 +662,7 @@ async function loadTasks() {
     const openIds = new Set([...document.querySelectorAll('.task-expand.open')]
       .map(e => e.id.replace('task-expand-', '')));
     el.innerHTML = tasks.map(taskCardHtml).join('');
+    renderTaskStats(tasks);
     openIds.forEach(id => {
       const el = document.getElementById(`task-expand-${id}`);
       if (el) el.classList.add('open');
