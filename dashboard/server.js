@@ -166,6 +166,146 @@ app.get('/api/stats', (req, res) => {
   res.json({ bySource, total: totalRow[0]?.count || 0 });
 });
 
+app.get('/api/schedule-status', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({ next_collectors: null, next_analysis: null, running_task: false });
+  try {
+    const statusRows = dbAll(db, "SELECT key, value FROM scheduler_status");
+    const status = Object.fromEntries(statusRows.map(r => [r.key, r.value]));
+    const running = dbAll(db, "SELECT id FROM tasks WHERE status = 'running' LIMIT 1");
+    res.json({
+      next_collectors: status.next_collectors || null,
+      next_analysis: status.next_analysis || null,
+      running_task: running.length > 0
+    });
+  } catch {
+    res.json({ next_collectors: null, next_analysis: null, running_task: false });
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/api/profile-analysis', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({});
+  try {
+    const row = dbAll(db, "SELECT data_json FROM profile_analysis ORDER BY id DESC LIMIT 1");
+    res.json(row[0] ? JSON.parse(row[0].data_json) : {});
+  } catch { res.json({}); }
+  finally { db.close(); }
+});
+
+app.post('/api/profile-analysis/refresh', (req, res) => {
+  res.status(202).json({ status: 'accepted' });
+
+  const proc = spawn('python3', ['/orchestrator/src/profile_analyst_cli.py', 'periodic']);
+
+  const timer = setTimeout(() => {
+    proc.kill();
+    broadcast({ type: 'profile_analysis_error', error: 'timeout' });
+  }, 60000);
+
+  let out = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.stderr.on('data', () => {}); // drain stderr to prevent buffer stall
+  proc.on('close', () => {
+    clearTimeout(timer);
+    try {
+      const result = JSON.parse(out);
+      if (result.error) {
+        broadcast({ type: 'profile_analysis_error', error: result.error });
+      } else {
+        broadcast({ type: 'profile_analysis_done' });
+      }
+    } catch {
+      broadcast({ type: 'profile_analysis_error', error: 'parse error' });
+    }
+  });
+});
+
+app.get('/api/events/heatmap', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  const days = parseInt(req.query.days) || 60;
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  try {
+    const rows = dbAll(db,
+      "SELECT DATE(occurred_at) as day, COUNT(*) as count FROM events WHERE occurred_at >= ? GROUP BY DATE(occurred_at) ORDER BY day ASC",
+      [since]
+    );
+    res.json(rows);
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
+app.get('/api/summaries', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  try {
+    const rows = dbAll(db,
+      "SELECT date, summary FROM daily_summaries ORDER BY date DESC LIMIT 7"
+    );
+    res.json(rows.map(r => {
+      try { return { date: r.date, ...JSON.parse(r.summary) }; }
+      catch { return { date: r.date, summary: r.summary }; }
+    }));
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
+app.get('/api/stats/categories', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  const days = parseInt(req.query.days) || 7;
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  try {
+    const rows = dbAll(db,
+      "SELECT category, SUM(duration_minutes) as total_min, COUNT(*) as count FROM events WHERE occurred_at >= ? GROUP BY category ORDER BY total_min DESC",
+      [since]
+    );
+    res.json(rows);
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
+// SSE log stream: polls DB every 1s, pushes new log rows since last_id
+app.get('/api/logs', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  let lastId = 0;
+
+  // Send initial backlog (last 50 logs)
+  const initDb = getDb();
+  if (initDb) {
+    try {
+      const rows = dbAll(initDb, 'SELECT * FROM logs ORDER BY id DESC LIMIT 50').reverse();
+      if (rows.length) {
+        lastId = rows[rows.length - 1].id;
+        res.write(`data: ${JSON.stringify({ type: 'backlog', logs: rows })}\n\n`);
+      }
+    } catch { /* logs table may not exist yet */ }
+    finally { initDb.close(); }
+  }
+
+  const interval = setInterval(() => {
+    const db = getDb();
+    if (!db) return;
+    try {
+      const rows = dbAll(db, 'SELECT * FROM logs WHERE id > ? ORDER BY id ASC LIMIT 50', [lastId]);
+      if (rows.length) {
+        lastId = rows[rows.length - 1].id;
+        res.write(`data: ${JSON.stringify({ type: 'append', logs: rows })}\n\n`);
+      }
+    } catch { /* ignore */ }
+    finally { db.close(); }
+  }, 1000);
+
+  req.on('close', () => clearInterval(interval));
+});
+
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'connected', message: 'Orchestrator Dashboard' }));
 });
