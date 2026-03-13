@@ -72,6 +72,16 @@ def test_get_events_by_day(tmp_path):
     assert result[0]["count"] == 1
 
 
+def test_get_profile_analysis_by_type(tmp_path):
+    db = EventsDB(str(tmp_path / "events.db"))
+    db.save_profile_analysis({"overview": "periodic overview"}, "periodic")
+    db.save_profile_analysis({"overview": "daily overview"}, "daily")
+    daily = db.get_profile_analysis("daily")
+    periodic = db.get_profile_analysis("periodic")
+    assert daily["overview"] == "daily overview"
+    assert periodic["overview"] == "periodic overview"
+
+
 def test_get_events_by_category(tmp_path):
     db = EventsDB(str(tmp_path / "events.db"))
     db.insert_event("claude", "coding", "test1", 30, 0.5, [], {})
