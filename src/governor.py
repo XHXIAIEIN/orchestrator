@@ -34,6 +34,22 @@ TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 
 完成后以 DONE: <一句话描述做了什么> 结尾。"""
 
 CLAUDE_TIMEOUT = 300  # seconds
+
+# ── 六部路由表 ──
+DEPARTMENTS = {
+    "engineering": {
+        "name": "工部",
+        "prompt_prefix": "你是 Orchestrator 工部——负责代码工程。写代码、改 bug、加功能、重构。",
+    },
+    "operations": {
+        "name": "户部",
+        "prompt_prefix": "你是 Orchestrator 户部——负责系统自维护。修采集器、管 DB、优化性能。工作目录就是 Orchestrator 自身。",
+    },
+    "quality": {
+        "name": "刑部",
+        "prompt_prefix": "你是 Orchestrator 刑部——负责质量验收。跑测试、review 代码、检查安全。",
+    },
+}
 SCRUTINY_MODEL = "claude-haiku-4-5-20251001"
 
 SCRUTINY_PROMPT = """你是 Orchestrator 的门下省审查官——管家脑子里那个负责说"等等，这靠谱吗？"的声音。
@@ -137,14 +153,20 @@ class Governor:
         return self.execute_task(task_id)
 
     def execute_task(self, task_id: int) -> dict:
-        """Execute task by ID — used by both auto and manual paths."""
+        """Execute task by ID — routes to department based on spec.department."""
         task = self.db.get_task(task_id)
         if not task:
             log.error(f"Governor: task #{task_id} not found")
             return {}
 
         spec = task.get("spec", {})
-        prompt = TASK_PROMPT_TEMPLATE.format(
+
+        # 六部路由
+        dept_key = spec.get("department", "engineering")
+        dept = DEPARTMENTS.get(dept_key, DEPARTMENTS["engineering"])
+        task_cwd = spec.get("cwd") or os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent))
+
+        base_prompt = TASK_PROMPT_TEMPLATE.format(
             problem=spec.get("problem", ""),
             behavior_chain=spec.get("behavior_chain", ""),
             observation=spec.get("observation", ""),
@@ -152,6 +174,8 @@ class Governor:
             action=task.get("action", ""),
             reason=task.get("reason", ""),
         )
+        prompt = dept["prompt_prefix"] + "\n\n" + base_prompt
+        log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
         self.db.update_task(task_id, status="running", started_at=now)
@@ -166,7 +190,7 @@ class Governor:
                 capture_output=True,
                 text=True,
                 timeout=CLAUDE_TIMEOUT,
-                cwd=os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent)),
+                cwd=task_cwd,
             )
             output = result.stdout.strip() or result.stderr.strip() or "(no output)"
             status = "done" if result.returncode == 0 else "failed"

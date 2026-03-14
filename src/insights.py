@@ -71,9 +71,10 @@ INSIGHTS_TOOL = {
                         "observation":    {"type": "string", "description": "目前看到了什么现象"},
                         "expected":       {"type": "string", "description": "执行后应该变成什么样"},
                         "summary":        {"type": "string", "description": "一句话计划概要"},
-                        "importance":     {"type": "string", "description": "为什么这个重要"}
+                        "importance":     {"type": "string", "description": "为什么这个重要"},
+                        "department":     {"type": "string", "enum": ["engineering", "operations", "quality"], "description": "交给哪个部门：engineering=代码工程, operations=系统运维, quality=质量验收"}
                     },
-                    "required": ["action", "reason", "priority", "problem", "behavior_chain", "observation", "expected", "summary", "importance"]
+                    "required": ["action", "reason", "priority", "problem", "behavior_chain", "observation", "expected", "summary", "importance", "department"]
                 },
                 "description": "可执行的建议，3-5条，带原因和优先级"
             },
