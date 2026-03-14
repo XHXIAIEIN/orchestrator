@@ -1,5 +1,13 @@
 .env
-SOUL/
+# SOUL: 框架公开，内容私有
+SOUL/identity.md
+SOUL/voice.md
+SOUL/relationship.md
+SOUL/experiences.jsonl
+.claude/settings.local.json
+.claude/skills/persona/
+.claude/hooks/
+.superpowers/
 __pycache__/
 *.pyc
 *.db

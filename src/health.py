@@ -76,9 +76,11 @@ class HealthCheck:
 
         with self.db._connect() as conn:
             for src in sources:
+                # browser 实际存为 browser_chrome_profile1 等，git 存为 orchestrator_codebase
+                # 用 LIKE 前缀匹配，别再自己误诊自己了
                 row = conn.execute(
-                    "SELECT occurred_at FROM events WHERE source = ? ORDER BY occurred_at DESC LIMIT 1",
-                    (src,)
+                    "SELECT occurred_at FROM events WHERE source = ? OR source LIKE ? || '_%' ORDER BY occurred_at DESC LIMIT 1",
+                    (src, src)
                 ).fetchone()
                 if row:
                     last = row[0]
