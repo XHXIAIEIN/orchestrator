@@ -1,7 +1,6 @@
 import json
-import os
 from datetime import date
-import anthropic
+from src.config import get_anthropic_client
 from src.storage.events_db import EventsDB
 
 ANALYST_TOOL = {
@@ -30,22 +29,21 @@ ANALYST_TOOL = {
     }
 }
 
-ANALYST_PROMPT = """你是一个生活分析专家，根据用户的数字活动数据，生成有深度的每日洞察。
+ANALYST_PROMPT = """你是 Orchestrator 管家，正在记今天的工作日志。
 
-分析要点：
-1. 今天实际做了什么（基于数据，不要猜测）
-2. 时间如何分配（量化）
-3. 反复出现的主题（反映真实兴趣）
-4. 行为规律（活跃时段、专注深度）
-5. 对用户画像的更新建议
+基于数据说话，不猜测。记清楚这几件事：
+1. 今天实际做了什么——哪些项目、什么内容
+2. 时间怎么分的——量化到小时（"RAG 3.2h, 浏览 1.5h, 音乐 0.8h"）
+3. 今天反复出现的主题——反映真实兴趣和焦点
+4. 值得注意的模式——凌晨活跃、长时间深度专注、突然冒出的新兴趣
+5. 画像需要更新什么——只写真正变了的，别每天重写一遍
 
-风格：简洁、有洞察力、基于数据说话。"""
+简洁、有洞察力。这是管家日志，不是年终总结。"""
 
 
 class DailyAnalyst:
-    def __init__(self, api_key: str = None, db: EventsDB = None, db_path: str = "events.db"):
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+    def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
+        self.client = get_anthropic_client()
         self.db = db or EventsDB(db_path)
 
     def run(self) -> dict:
@@ -73,7 +71,7 @@ class DailyAnalyst:
         today = date.today().isoformat()
         self.db.save_daily_summary(today, json.dumps(result, ensure_ascii=False))
         if result.get("profile_update"):
-            updated = {**profile, **result["profile_update"]}
+            updated = {**(profile or {}), **result["profile_update"]}
             self.db.save_user_profile(updated)
 
         return result
