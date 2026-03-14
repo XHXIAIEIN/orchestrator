@@ -7,10 +7,12 @@ from src.collectors.browser_collector import BrowserCollector
 from src.collectors.git_collector import GitCollector
 from src.collectors.steam_collector import SteamCollector
 from src.collectors.youtube_music_collector import YouTubeMusicCollector
+from src.collectors.codebase_collector import CodebaseCollector
 from src.analyst import DailyAnalyst
 from src.insights import InsightEngine
 from src.governor import Governor
 from src.profile_analyst import ProfileAnalyst
+from src.health import HealthCheck
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -29,6 +31,7 @@ def run_collectors():
         ("git", GitCollector(db=db)),
         ("steam", SteamCollector(db=db)),
         ("youtube_music", YouTubeMusicCollector(db=db)),
+        ("orchestrator_codebase", CodebaseCollector(db=db)),
     ]:
         try:
             count = collector.collect()
@@ -41,6 +44,16 @@ def run_collectors():
     fail = [k for k, v in results.items() if v < 0]
     msg = f"采集完成：{', '.join(ok)} 各 {[results[k] for k in ok]} 条" + (f"；失败：{', '.join(fail)}" if fail else "")
     db.write_log(msg, "INFO", "collector")
+
+    # 每次采集后跑自检
+    try:
+        health = HealthCheck(db=db)
+        report = health.run()
+        if not report["healthy"]:
+            log.warning(f"Health issues: {[i['summary'] for i in report['issues']]}")
+    except Exception as e:
+        log.error(f"Health check failed: {e}")
+
     return results
 
 
@@ -69,6 +82,33 @@ def run_analysis():
         db.write_log("Governor 执行完毕", "INFO", "governor")
     except Exception as e:
         log.error(f"Governor failed: {e}")
+
+    # 自检 issues → 自我改进任务
+    try:
+        health = HealthCheck(db=db)
+        report = health.run()
+        for issue in report.get("issues", []):
+            if issue["level"] == "high":
+                governor = Governor(db=db)
+                if not governor.db.get_running_task():
+                    task_id = governor.db.create_task(
+                        action=f"修复自检问题：{issue['summary']}",
+                        reason=f"自检发现 {issue['component']} 存在问题",
+                        priority="high",
+                        spec={
+                            "problem": issue["summary"],
+                            "behavior_chain": "health_check → issue detected",
+                            "observation": f"组件 {issue['component']} 报告：{issue['summary']}",
+                            "expected": "问题解决，下次自检通过",
+                            "summary": f"自我修复：{issue['summary'][:50]}",
+                            "importance": "管家自己的问题必须自己解决",
+                        },
+                        source="auto",
+                    )
+                    db.write_log(f"自检生成修复任务 #{task_id}：{issue['summary'][:50]}", "INFO", "health")
+                    break  # 一次只生成一个，防止洪泛
+    except Exception as e:
+        log.error(f"Health → Governor failed: {e}")
 
 
 def start():
