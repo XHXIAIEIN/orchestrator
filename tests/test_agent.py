@@ -4,7 +4,7 @@ from src.agent import ClarificationAgent
 
 
 def make_clarify_response(is_clear: bool, question: str = None, definition: str = None,
-                           clarity_level: str = "低", tags: list = None):
+                          clarity_level: str = "低", tags: list = None):
     block = MagicMock()
     block.type = "tool_use"
     block.name = "clarify"
@@ -33,7 +33,8 @@ def test_agent_runs_clarification_loop(tmp_path):
         mock_client = MagicMock()
         MockAnthropic.return_value = mock_client
         mock_client.messages.create.side_effect = [
-            make_clarify_response(False, question="你的目标用户是谁？", clarity_level="低"),
+            make_clarify_response(
+                False, question="你的目标用户是谁？", clarity_level="低"),
             make_clarify_response(True, definition="帮助独立开发者追踪项目进度",
                                   clarity_level="高", tags=["开发者", "项目管理"]),
         ]

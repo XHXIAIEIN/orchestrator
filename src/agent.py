@@ -1,6 +1,6 @@
 import json
-import os
 import anthropic
+from src.config import get_anthropic_client
 from src.db import Database
 from src.tools import SYSTEM_TOOLS, TOOL_HANDLERS, CLARIFY_TOOL  # noqa: F401
 
@@ -20,9 +20,8 @@ ALL_TOOLS = SYSTEM_TOOLS + [CLARIFY_TOOL]
 
 
 class ClarificationAgent:
-    def __init__(self, api_key: str = None, db_path: str = "orchestrator.db"):
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+    def __init__(self, db_path: str = "orchestrator.db"):
+        self.client = get_anthropic_client()
         self.db = Database(db_path)
         self.max_rounds = 5
 
