@@ -1,5 +1,6 @@
 import hashlib
 import re
+import time
 from pathlib import Path
 from src.storage.events_db import EventsDB
 
@@ -15,11 +16,17 @@ class SteamCollector:
     def __init__(self, db: EventsDB, steam_path: str = None):
         self.db = db
         if steam_path is None:
-            candidates = [
-                Path("C:/Program Files (x86)/Steam"),
-                Path("C:/Program Files/Steam"),
-            ]
-            self.steam_path = next((p for p in candidates if p.exists()), None)
+            import os
+            env_path = os.environ.get("STEAM_PATH")
+            if env_path:
+                self.steam_path = Path(env_path)
+            else:
+                candidates = [
+                    Path("D:/Steam"),
+                    Path("C:/Program Files (x86)/Steam"),
+                    Path("C:/Program Files/Steam"),
+                ]
+                self.steam_path = next((p for p in candidates if p.exists()), None)
         else:
             self.steam_path = Path(steam_path)
 
@@ -37,20 +44,21 @@ class SteamCollector:
                 data = parse_vdf_simple(content)
                 appid = data.get("appid", "")
                 name = data.get("name", f"App {appid}")
-                playtime_forever = int(data.get("playtime_forever", 0))
-                playtime_2weeks = int(data.get("playtime_2weeks", 0))
-                if playtime_forever == 0:
+                last_played = int(data.get("LastPlayed", 0))
+                size_on_disk = int(data.get("SizeOnDisk", 0))
+                if last_played == 0 and size_on_disk == 0:
                     continue
-                dedup_key = hashlib.md5(f"steam:{appid}:{playtime_forever}".encode()).hexdigest()
-                score = min(1.0, playtime_2weeks / 600) if playtime_2weeks > 0 else 0.1
+                days_since_played = (time.time() - last_played) / 86400 if last_played > 0 else 999
+                dedup_key = hashlib.md5(f"steam:{appid}:{last_played}".encode()).hexdigest()
+                score = max(0.1, min(1.0, 1.0 - days_since_played / 90))
                 inserted = self.db.insert_event(
                     source="steam",
                     category="gaming",
                     title=name,
-                    duration_minutes=playtime_forever,
+                    duration_minutes=0,
                     score=score,
                     tags=["gaming", "steam"],
-                    metadata={"appid": appid, "playtime_2weeks_min": playtime_2weeks},
+                    metadata={"appid": appid, "last_played": last_played, "size_mb": size_on_disk // (1024 * 1024)},
                     dedup_key=dedup_key,
                 )
                 if inserted:

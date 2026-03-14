@@ -5,6 +5,9 @@ set -e
 export CLAUDE_SKIP_PERMISSIONS=1
 alias claude="claude --dangerously-skip-permissions"
 
+# Trust all mounted git repos (host UID differs from container UID)
+git config --global --add safe.directory '*'
+
 # Apply path mappings so collectors can find mounted volumes
 export CHROME_HISTORY_ROOT="${CHROME_HISTORY_ROOT:-/chrome-data}"
 export CLAUDE_HOME="${ORCHESTRATOR_CLAUDE_HOME:-/claude-home}"

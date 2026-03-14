@@ -3,7 +3,7 @@ services:
     build: .
     image: orchestrator:latest
     container_name: orchestrator
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "23714:23714"
     environment:
@@ -14,9 +14,17 @@ services:
       - ORCHESTRATOR_CLAUDE_HOME=/claude-home
       - CLAUDE_HOME=/claude-home
       - GIT_REPOS_ROOT=/git-repos
+      - ORCHESTRATOR_ROOT=/orchestrator
+      - STEAM_PATH=/steam-data
+      # Terminal appearance
+      - TERM=xterm-256color
+      - COLORTERM=truecolor
+      - LANG=en_US.UTF-8
     volumes:
-      # Persist events database on host
-      - ./events.db:/orchestrator/events.db
+      # Source code — writable so claude edits persist to host
+      - .:/orchestrator
+      # node_modules stays in container (don't shadow with host)
+      - /orchestrator/dashboard/node_modules
       # Chrome browser history (read-only)
       - type: bind
         source: ${CHROME_USER_DATA:-C:/Users/test/AppData/Local/Google/Chrome/User Data}
@@ -31,4 +39,9 @@ services:
       - type: bind
         source: ${GIT_ROOT:-C:/Users/test/Documents/GitHub}
         target: /git-repos
+        read_only: true
+      # Steam data (read-only, optional)
+      - type: bind
+        source: ${STEAM_PATH_HOST:-D:/Steam}
+        target: /steam-data
         read_only: true

@@ -1,7 +1,9 @@
 .env
+SOUL/
 __pycache__/
 *.pyc
 *.db
+*.exe
 .pytest_cache/
 dashboard/node_modules/
 node_modules/

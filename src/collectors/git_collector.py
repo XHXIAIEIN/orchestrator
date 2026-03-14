@@ -28,14 +28,18 @@ class GitCollector:
         self.db = db
         self.days_back = days_back
         if search_paths is None:
-            home = Path.home()
             import os
-            search_paths = [
-                str(home / "Desktop"),
-                str(home / "Documents"),
-                str(home / "Projects"),
-                "D:/",
-            ]
+            env_root = os.environ.get("GIT_REPOS_ROOT")
+            if env_root:
+                search_paths = [env_root]
+            else:
+                home = Path.home()
+                search_paths = [
+                    str(home / "Desktop"),
+                    str(home / "Documents"),
+                    str(home / "Projects"),
+                    "D:/Users/Administrator/Documents/GitHub",
+                ]
         self.search_paths = search_paths
 
     def collect(self) -> int:

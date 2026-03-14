@@ -29,4 +29,9 @@ EXPOSE 23714
 COPY bin/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
+# Use existing non-root 'node' user (uid 1000) so claude --dangerously-skip-permissions works
+RUN chown -R node:node /orchestrator
+
+USER node
+
 ENTRYPOINT ["/docker-entrypoint.sh"]
