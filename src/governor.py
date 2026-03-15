@@ -33,7 +33,9 @@ TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 
 执行：{action}
 原因：{reason}
 
-完成后以 DONE: <一句话描述做了什么> 结尾。"""
+完成后：
+1. 如果修改了代码文件，用 git add 和 git commit 提交（commit message 用英文，简洁描述改了什么）
+2. 以 DONE: <一句话描述做了什么> 结尾。"""
 
 CLAUDE_TIMEOUT = 300  # seconds
 STALE_THRESHOLD = CLAUDE_TIMEOUT + 120  # seconds — if a task is "running" longer than this, it's a zombie
