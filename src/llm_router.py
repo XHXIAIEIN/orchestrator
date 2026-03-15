@@ -3,6 +3,7 @@ LLM Router — 统一路由层。
 按 task_type 决定走 Ollama（本地）还是 Claude CLI（云端）。
 Ollama 失败自动 fallback 到 Claude。
 """
+import base64
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ import subprocess
 import time
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +23,9 @@ ROUTES = {
     "summary":       {"backend": "claude", "model": "claude-haiku-4-5-20251001",  "timeout": 120},
     "deep_analysis": {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
     "profile":       {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
+    # 多模态路由 — 仅 Ollama，无 Claude fallback
+    "vision":        {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 60},
+    "ocr":           {"backend": "ollama", "model": "glm-ocr:latest",             "timeout": 30},
 }
 
 MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
@@ -31,8 +36,11 @@ class LLMRouter:
         self._ollama_available = None  # lazy probe
 
     def generate(self, prompt: str, task_type: str,
-                 max_tokens: int = 1024, temperature: float = 0.3) -> str:
-        """统一入口。根据 task_type 查路由表决定后端。"""
+                 max_tokens: int = 1024, temperature: float = 0.3,
+                 images: list[str] | None = None) -> str:
+        """统一入口。根据 task_type 查路由表决定后端。
+        images: 可选的图片列表（文件路径或 base64 字符串）。仅 Ollama 多模态路由支持。
+        """
         route = ROUTES.get(task_type)
         if not route:
             raise ValueError(f"Unknown task_type: {task_type}")
@@ -45,30 +53,51 @@ class LLMRouter:
             backend = "claude"
             log.info(f"router: [force_claude] {task_type} overridden to claude")
 
+        # 编码图片为 base64
+        b64_images = self._encode_images(images) if images else None
+
         if backend == "ollama":
             # Qwen3 系列默认开 thinking，对简单任务追加 /no_think 关闭
             if route.get("no_think") and not prompt.rstrip().endswith("/no_think"):
                 prompt = prompt.rstrip() + "\n\n/no_think"
             return self._ollama_with_fallback(
-                prompt, task_type, route, max_tokens, temperature
+                prompt, task_type, route, max_tokens, temperature, b64_images
             )
         else:
             return self._claude_generate(
                 prompt, route["model"], route["timeout"], max_tokens
             )
 
+    @staticmethod
+    def _encode_images(images: list[str]) -> list[str]:
+        """将图片路径或 base64 字符串统一转为 base64 列表。"""
+        result = []
+        for img in images:
+            p = Path(img)
+            if p.exists() and p.is_file():
+                result.append(base64.b64encode(p.read_bytes()).decode())
+            elif len(img) > 260:  # 已经是 base64
+                result.append(img)
+            else:
+                log.warning(f"router: image not found: {img}")
+        return result
+
     def _ollama_with_fallback(self, prompt: str, task_type: str, route: dict,
-                               max_tokens: int, temperature: float) -> str:
+                               max_tokens: int, temperature: float,
+                               images: list[str] | None = None) -> str:
         """尝试 Ollama，失败则 fallback 到 Claude。"""
-        # 启动探测发现 Ollama 不可达 → 直接走 Claude
+        # 启动探测发现 Ollama 不可达 → 直接走 Claude（多模态路由无 fallback）
         if self._ollama_available is False:
-            log.info(f"router: [skip_ollama] {task_type} -> claude (ollama unavailable)")
-            return self._claude_fallback(prompt, task_type, route, max_tokens)
+            if route.get("fallback"):
+                log.info(f"router: [skip_ollama] {task_type} -> claude (ollama unavailable)")
+                return self._claude_fallback(prompt, task_type, route, max_tokens)
+            log.warning(f"router: [skip_ollama] {task_type} failed (ollama unavailable, no fallback)")
+            return ""
 
         t0 = time.time()
         try:
             result = self._ollama_generate(
-                prompt, route["model"], route["timeout"], max_tokens, temperature
+                prompt, route["model"], route["timeout"], max_tokens, temperature, images
             )
             elapsed = time.time() - t0
 
@@ -82,8 +111,11 @@ class LLMRouter:
         except Exception as e:
             elapsed = time.time() - t0
             reason = type(e).__name__
-            log.warning(f"router: [fallback] {task_type} ollama_{reason} ({elapsed:.1f}s) -> claude")
-            return self._claude_fallback(prompt, task_type, route, max_tokens)
+            if route.get("fallback"):
+                log.warning(f"router: [fallback] {task_type} ollama_{reason} ({elapsed:.1f}s) -> claude")
+                return self._claude_fallback(prompt, task_type, route, max_tokens)
+            log.warning(f"router: [error] {task_type} ollama_{reason} ({elapsed:.1f}s), no fallback")
+            return ""
 
     def _claude_fallback(self, prompt: str, task_type: str, route: dict,
                           max_tokens: int) -> str:
@@ -96,10 +128,11 @@ class LLMRouter:
         return result
 
     def _ollama_generate(self, prompt: str, model: str, timeout: int,
-                          max_tokens: int, temperature: float) -> str:
-        """调 Ollama REST API。"""
+                          max_tokens: int, temperature: float,
+                          images: list[str] | None = None) -> str:
+        """调 Ollama REST API。支持多模态（images 为 base64 列表）。"""
         url = f"{OLLAMA_HOST}/api/generate"
-        payload = json.dumps({
+        body = {
             "model": model,
             "prompt": prompt,
             "stream": False,
@@ -107,7 +140,10 @@ class LLMRouter:
                 "num_predict": max_tokens,
                 "temperature": temperature,
             },
-        }).encode()
+        }
+        if images:
+            body["images"] = images
+        payload = json.dumps(body).encode()
 
         req = urllib.request.Request(
             url, data=payload,

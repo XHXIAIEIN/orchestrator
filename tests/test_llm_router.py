@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
 from src.llm_router import LLMRouter, ROUTES
@@ -93,3 +94,47 @@ def test_ollama_unavailable_skips_to_claude():
     mock_urlopen.assert_not_called()  # 不应尝试 Ollama
     mock_claude.assert_called_once()
     assert "APPROVE" in result
+
+
+def test_vision_route_sends_images():
+    """vision 路由应将 base64 图片传给 Ollama。"""
+    router = LLMRouter()
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.read.return_value = json.dumps({"response": "A dashboard with charts"}).encode()
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    # 创建临时图片文件
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        f.write(b"\x89PNG fake image data")
+        tmp_path = f.name
+
+    try:
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            result = router.generate("describe this image", task_type="vision", images=[tmp_path])
+
+        assert "dashboard" in result
+        # 验证请求体包含 images 字段
+        call_args = mock_urlopen.call_args
+        req_obj = call_args[0][0]
+        body = json.loads(req_obj.data.decode())
+        assert "images" in body
+        assert len(body["images"]) == 1
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_ocr_route_exists():
+    """ocr 路由应存在且使用 glm-ocr 模型。"""
+    assert "ocr" in ROUTES
+    assert "glm-ocr" in ROUTES["ocr"]["model"]
+
+
+def test_vision_no_fallback_when_ollama_down():
+    """vision/ocr 路由没有 Claude fallback，Ollama 不可达应返回空字符串。"""
+    router = LLMRouter()
+    router._ollama_available = False
+
+    result = router.generate("describe", task_type="vision", images=["fake.png"])
+    assert result == ""

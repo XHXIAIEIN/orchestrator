@@ -300,6 +300,12 @@ class Governor:
         except Exception as e:
             output = str(e)
         finally:
+            # 视觉验证：如果 sub-agent 留下了截图，用 vision 模型检查
+            if status == "done":
+                verification = self._visual_verify(task_id, task_cwd, spec)
+                if verification:
+                    output = f"{output}\n\n[visual_verify] {verification}"
+
             finished = datetime.now(timezone.utc).isoformat()
             try:
                 self.db.update_task(task_id, status=status, output=output, finished_at=finished)
@@ -309,3 +315,34 @@ class Governor:
             log.info(f"Governor: task #{task_id} {status}")
 
         return self.db.get_task(task_id)
+
+    def _visual_verify(self, task_id: int, task_cwd: str, spec: dict) -> str:
+        """可选视觉验证：检查约定路径是否有截图，有则用 vision 模型验证。"""
+        verify_dir = Path(task_cwd) / ".governor-verify"
+        if not verify_dir.exists():
+            return ""
+
+        images = list(verify_dir.glob("*.png")) + list(verify_dir.glob("*.jpg"))
+        if not images:
+            return ""
+
+        image_paths = [str(p) for p in images[:3]]  # 最多验证 3 张
+        expected = spec.get("expected", "任务完成")
+
+        try:
+            result = get_router().generate(
+                f"这是任务执行后的截图。预期结果是：{expected}\n\n"
+                f"请判断截图是否符合预期，用一句话回答。",
+                task_type="vision",
+                images=image_paths,
+            )
+            if result:
+                log.info(f"Governor: visual verify task #{task_id}: {result[:80]}")
+                # 清理验证截图
+                for p in images:
+                    p.unlink(missing_ok=True)
+                verify_dir.rmdir()
+            return result
+        except Exception as e:
+            log.warning(f"Governor: visual verify failed: {e}")
+            return ""
