@@ -94,6 +94,21 @@ class EventsDB:
                     type TEXT NOT NULL DEFAULT 'periodic',
                     generated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS attention_debts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    project TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    severity TEXT DEFAULT 'medium',
+                    status TEXT DEFAULT 'open',
+                    context TEXT,
+                    resolved_by TEXT,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    UNIQUE(session_id, summary)
+                );
+                CREATE INDEX IF NOT EXISTS idx_debts_status ON attention_debts(status);
             """)
             # Migration: add scrutiny_note column to existing databases
             try:

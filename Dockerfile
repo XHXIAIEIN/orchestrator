@@ -32,6 +32,12 @@ RUN chmod +x /docker-entrypoint.sh
 # Use existing non-root 'node' user (uid 1000) so claude --dangerously-skip-permissions works
 RUN chown -R node:node /orchestrator
 
+# Claude CLI reads credentials from ~/.claude/ but we mount them at /claude-home/
+# Create symlink so CLI finds the OAuth credentials
+RUN mkdir -p /home/node/.claude && \
+    ln -sf /claude-home/.credentials.json /home/node/.claude/.credentials.json && \
+    chown -R node:node /home/node/.claude
+
 USER node
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

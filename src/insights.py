@@ -3,89 +3,19 @@ On-demand deep insight engine.
 Analyses 7 days of cross-source data and generates comprehensive recommendations.
 """
 import json
+import logging
 import os
+import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config import get_anthropic_client
 from src.storage.events_db import EventsDB
 
-INSIGHTS_TOOL = {
-    "name": "save_insights",
-    "description": "保存深度洞察分析结果",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "overview": {
-                "type": "string",
-                "description": "这7天你在做什么 — 2-3句话的整体概述"
-            },
-            "time_distribution": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "source": {"type": "string"},
-                        "hours": {"type": "number"},
-                        "pct": {"type": "number"},
-                        "label": {"type": "string"}
-                    },
-                    "required": ["source", "hours", "pct", "label"]
-                },
-                "description": "各来源时间分布"
-            },
-            "top_interests": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "topic": {"type": "string"},
-                        "evidence": {"type": "string"},
-                        "strength": {"type": "string", "enum": ["strong", "moderate", "emerging"]}
-                    },
-                    "required": ["topic", "evidence", "strength"]
-                },
-                "description": "前5个兴趣领域，附数据证据"
-            },
-            "patterns": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "观察到的行为规律，每条一句话，3-5条"
-            },
-            "anomalies": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "值得注意的异常或特别事项"
-            },
-            "recommendations": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "action":         {"type": "string", "description": "执行计划或变通方案"},
-                        "reason":         {"type": "string", "description": "执行原因"},
-                        "priority":       {"type": "string", "enum": ["high", "medium", "low"]},
-                        "problem":        {"type": "string", "description": "这个建议要解决什么问题"},
-                        "behavior_chain": {"type": "string", "description": "观察到的数字行为链，支撑问题存在的证据"},
-                        "observation":    {"type": "string", "description": "目前看到了什么现象"},
-                        "expected":       {"type": "string", "description": "执行后应该变成什么样"},
-                        "summary":        {"type": "string", "description": "一句话计划概要"},
-                        "importance":     {"type": "string", "description": "为什么这个重要"},
-                        "department":     {"type": "string", "enum": ["engineering", "operations", "quality"], "description": "交给哪个部门：engineering=代码工程, operations=系统运维, quality=质量验收"}
-                    },
-                    "required": ["action", "reason", "priority", "problem", "behavior_chain", "observation", "expected", "summary", "importance", "department"]
-                },
-                "description": "可执行的建议，3-5条，带原因和优先级"
-            },
-            "goal_hypothesis": {
-                "type": "string",
-                "description": "根据你的数字行为，推断你正在追求或应该追求的长期目标"
-            }
-        },
-        "required": ["overview", "top_interests", "patterns", "recommendations", "goal_hypothesis"]
-    }
-}
+logger = logging.getLogger(__name__)
+
+MODEL_NAME = "claude-sonnet-4-6"
+CLAUDE_TIMEOUT = 300
 
 SYSTEM_PROMPT = """你是 Orchestrator——一个 24 小时运行的 AI 管家，正在分析主人过去 7 天的数字足迹。
 
@@ -246,25 +176,76 @@ def _build_context(db: EventsDB) -> str:
     return "\n".join(parts)
 
 
+JSON_SCHEMA_PROMPT = """
+
+请严格按照以下 JSON schema 输出结果，不要输出任何其他内容（不要 markdown code fence，不要解释，只输出纯 JSON）：
+
+{
+  "overview": "这7天你在做什么 — 2-3句话的整体概述",
+  "time_distribution": [{"source": "来源", "hours": 0, "pct": 0, "label": "标签"}],
+  "top_interests": [{"topic": "主题", "evidence": "数据证据", "strength": "strong|moderate|emerging"}],
+  "patterns": ["观察到的行为规律，每条一句话，3-5条"],
+  "anomalies": ["值得注意的异常或特别事项"],
+  "recommendations": [{
+    "action": "执行计划或变通方案",
+    "reason": "执行原因",
+    "priority": "high|medium|low",
+    "problem": "这个建议要解决什么问题",
+    "behavior_chain": "观察到的数字行为链，支撑问题存在的证据",
+    "observation": "目前看到了什么现象",
+    "expected": "执行后应该变成什么样",
+    "summary": "一句话计划概要",
+    "importance": "为什么这个重要",
+    "department": "engineering|operations|quality"
+  }],
+  "goal_hypothesis": "根据你的数字行为，推断你正在追求或应该追求的长期目标"
+}
+
+必填字段: overview, top_interests, patterns, recommendations, goal_hypothesis"""
+
+
 class InsightEngine:
     def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
-        self.client = get_anthropic_client()
         self.db = db or EventsDB(db_path)
 
     def run(self, days: int = 7) -> dict:
         context = _build_context(self.db)
+        prompt = SYSTEM_PROMPT + "\n\n" + context + JSON_SCHEMA_PROMPT
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=6000,
-            system=SYSTEM_PROMPT,
-            tools=[INSIGHTS_TOOL],
-            tool_choice={"type": "tool", "name": "save_insights"},
-            messages=[{"role": "user", "content": context}],
-        )
+        try:
+            proc = subprocess.run(
+                ["claude", "--dangerously-skip-permissions", "--print",
+                 "--model", MODEL_NAME, prompt],
+                capture_output=True,
+                text=True,
+                timeout=CLAUDE_TIMEOUT,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("InsightEngine: Claude CLI timed out after %ds", CLAUDE_TIMEOUT)
+            raise
+        except FileNotFoundError:
+            logger.error("InsightEngine: 'claude' CLI not found in PATH")
+            raise
 
-        block = next(b for b in response.content if b.type == "tool_use")
-        result = block.input
+        raw = proc.stdout.strip()
+        if proc.returncode != 0:
+            logger.error("InsightEngine: Claude CLI exited %d: %s", proc.returncode, proc.stderr[:500])
+            raise RuntimeError(f"Claude CLI failed (exit {proc.returncode}): {proc.stderr[:500]}")
+
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            first_nl = raw.index("\n")
+            raw = raw[first_nl + 1:]
+        if raw.endswith("```"):
+            raw = raw[:-3].rstrip()
+
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.error("InsightEngine: Failed to parse JSON: %s\nRaw output:\n%s", exc, raw[:1000])
+            raise RuntimeError(f"Failed to parse insight JSON: {exc}") from exc
+
         result["generated_at"] = datetime.now(timezone.utc).isoformat()
         self.db.save_insights(result)
         return result

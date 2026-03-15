@@ -13,6 +13,9 @@ export CHROME_HISTORY_ROOT="${CHROME_HISTORY_ROOT:-/chrome-data}"
 export CLAUDE_HOME="${ORCHESTRATOR_CLAUDE_HOME:-/claude-home}"
 export GIT_REPOS_ROOT="${GIT_REPOS_ROOT:-/git-repos}"
 
+# Ensure Claude CLI can find OAuth credentials from mounted CLAUDE_HOME
+ln -sf /claude-home/.credentials.json "$HOME/.claude/.credentials.json" 2>/dev/null || true
+
 echo "[entrypoint] Starting orchestrator dashboard on port ${PORT:-23714}..."
 node /orchestrator/dashboard/server.js &
 DASHBOARD_PID=$!

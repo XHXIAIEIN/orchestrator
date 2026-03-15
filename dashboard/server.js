@@ -253,6 +253,20 @@ app.get('/api/summaries', (req, res) => {
   finally { db.close(); }
 });
 
+app.get('/api/debts', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  try {
+    const rows = dbAll(db,
+      `SELECT * FROM attention_debts
+       ORDER BY CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+       created_at DESC LIMIT 50`
+    );
+    res.json(rows);
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
 app.get('/api/stats/categories', (req, res) => {
   const db = getDb();
   if (!db) return res.json([]);

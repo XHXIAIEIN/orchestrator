@@ -4,10 +4,10 @@ periodic: 分析最近 30 天数据，每 6 小时运行一次。
 daily:    分析昨天数据，每日 06:00 CST 运行。
 """
 import json
+import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
-from src.config import get_anthropic_client
 from src.storage.events_db import EventsDB
 
 PROFILE_TOOL = {
@@ -118,29 +118,62 @@ def _build_context(db: EventsDB, analysis_type: str = 'periodic') -> str:
     return "\n".join(parts)
 
 
+JSON_INSTRUCTION = """
+
+请以 JSON 格式输出分析结果，只输出 JSON 对象，不要包含任何其他文字或 markdown 代码块标记。
+JSON 结构如下：
+{
+  "overview": "对用户这段时间整体状态的印象（200字以内，直接、有洞察力）",
+  "strengths": ["从数据中观察到的用户优点、特质或能力（3-5条）"],
+  "blind_spots": ["可能的盲区、值得警惕的模式或被忽视的事项（2-4条）"],
+  "suggestions": [
+    {"action": "具体可执行的建议", "reason": "建议的理由和数据依据", "priority": "high|medium|low"}
+  ],
+  "commentary": "AI 的自由评论：想法、感受、有趣的观察，语气自然随意（100-200字）",
+  "daily_note": "仅限 daily 类型：对昨天这一天的专属点评（100字以内），periodic 类型留空字符串"
+}"""
+
+MODEL_NAME = "claude-sonnet-4-6"
+
+
 class ProfileAnalyst:
     def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
-        self.client = get_anthropic_client()
         self.db = db or EventsDB(db_path)
 
     def run(self, analysis_type: str = 'periodic') -> dict:
         context = _build_context(self.db, analysis_type)
+        prompt = SYSTEM_PROMPT + JSON_INSTRUCTION + "\n\n" + context
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4000,
-            system=SYSTEM_PROMPT,
-            tools=[PROFILE_TOOL],
-            tool_choice={"type": "tool", "name": "save_profile_analysis"},
-            messages=[{"role": "user", "content": context}],
+        result = subprocess.run(
+            ["claude", "--dangerously-skip-permissions", "--print",
+             "--model", MODEL_NAME, prompt],
+            capture_output=True, text=True, timeout=120,
+            stdin=subprocess.DEVNULL,
         )
 
-        block = next((b for b in response.content if b.type == "tool_use"), None)
-        if block is None:
-            raise RuntimeError("ProfileAnalyst: no tool_use block in API response")
-        result = block.input
-        self.db.save_profile_analysis(result, analysis_type)
-        return result
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ProfileAnalyst: claude CLI failed (rc={result.returncode}): "
+                f"{result.stderr.strip()[:500]}"
+            )
+
+        text = result.stdout.strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"ProfileAnalyst: failed to parse JSON from CLI output: {exc}\n"
+                f"Raw output (first 500 chars): {text[:500]}"
+            ) from exc
+
+        self.db.save_profile_analysis(parsed, analysis_type)
+        return parsed
 
 
 if __name__ == "__main__":

@@ -7,7 +7,6 @@ services:
     ports:
       - "23714:23714"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - PORT=23714
       # Tell collectors where to find mounted data
       - CHROME_HISTORY_ROOT=/chrome-data
@@ -30,11 +29,10 @@ services:
         source: ${CHROME_USER_DATA:-C:/Users/test/AppData/Local/Google/Chrome/User Data}
         target: /chrome-data
         read_only: true
-      # Claude Code conversation history (read-only) — mount entire .claude dir
+      # Claude Code home — writable so Claude CLI can refresh OAuth tokens
       - type: bind
         source: ${CLAUDE_HOME_HOST:-C:/Users/test/.claude}
         target: /claude-home
-        read_only: true
       # Git repos (read-only, optional)
       - type: bind
         source: ${GIT_ROOT:-C:/Users/test/Documents/GitHub}

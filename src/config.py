@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 ENV_FILE = Path(__file__).parent.parent / ".env"
-CLAUDE_CREDS = Path.home() / ".claude" / ".credentials.json"
+CLAUDE_CREDS = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude"))) / ".credentials.json"
 
 
 def load_credentials() -> tuple[str, bool]:

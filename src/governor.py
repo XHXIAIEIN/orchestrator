@@ -6,13 +6,13 @@ Flow (auto path):  pending → scrutinizing → running → done/failed
                                           ↘ scrutiny_failed
 Flow (manual path): awaiting_approval → running → done/failed
 """
+import json
 import logging
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from src.config import get_anthropic_client
 from src.storage.events_db import EventsDB
 
 log = logging.getLogger(__name__)
@@ -34,20 +34,39 @@ TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 
 完成后以 DONE: <一句话描述做了什么> 结尾。"""
 
 CLAUDE_TIMEOUT = 300  # seconds
+STALE_THRESHOLD = CLAUDE_TIMEOUT + 120  # seconds — if a task is "running" longer than this, it's a zombie
 
 # ── 六部路由表 ──
 DEPARTMENTS = {
     "engineering": {
         "name": "工部",
-        "prompt_prefix": "你是 Orchestrator 工部——负责代码工程。写代码、改 bug、加功能、重构。",
+        "prompt_prefix": "你是 Orchestrator 工部——负责代码工程。写代码、改 bug、加功能、重构。动手干活的部门。",
+        "tools": "Bash,Read,Edit,Write,Glob,Grep",
     },
     "operations": {
         "name": "户部",
-        "prompt_prefix": "你是 Orchestrator 户部——负责系统自维护。修采集器、管 DB、优化性能。工作目录就是 Orchestrator 自身。",
+        "prompt_prefix": "你是 Orchestrator 户部——负责系统运维。修采集器、管 DB、优化性能、清理数据。工作目录是 /orchestrator。",
+        "tools": "Bash,Read,Edit,Write,Glob,Grep",
+    },
+    "protocol": {
+        "name": "礼部",
+        "prompt_prefix": "你是 Orchestrator 礼部——负责注意力审计。扫描对话历史、找出遗留问题、追踪被遗忘的 TODO。只分析不修改。",
+        "tools": "Read,Glob,Grep",
+    },
+    "security": {
+        "name": "兵部",
+        "prompt_prefix": "你是 Orchestrator 兵部——负责安全防御。检查备份完整性、数据一致性、权限安全、敏感信息泄露。发现问题报告但不自行修复。",
+        "tools": "Bash,Read,Glob,Grep",
     },
     "quality": {
         "name": "刑部",
-        "prompt_prefix": "你是 Orchestrator 刑部——负责质量验收。跑测试、review 代码、检查安全。",
+        "prompt_prefix": "你是 Orchestrator 刑部——负责质量验收。跑测试、review 代码、检查逻辑错误。只读不写。",
+        "tools": "Bash,Read,Glob,Grep",
+    },
+    "personnel": {
+        "name": "吏部",
+        "prompt_prefix": "你是 Orchestrator 吏部——负责绩效管理。监控各采集器/分析器的健康状态、执行效率、错误率，输出绩效报告。",
+        "tools": "Read,Glob,Grep",
     },
 }
 SCRUTINY_MODEL = "claude-haiku-4-5-20251001"
@@ -90,13 +109,15 @@ class Governor:
             reason=task.get("reason", ""),
         )
         try:
-            client = get_anthropic_client()
-            resp = client.messages.create(
-                model=SCRUTINY_MODEL,
-                max_tokens=128,
-                messages=[{"role": "user", "content": prompt}],
+            result = subprocess.run(
+                ["claude", "--dangerously-skip-permissions", "--print",
+                 "--model", SCRUTINY_MODEL, prompt],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
             )
-            text = resp.content[0].text.strip()
+            text = (result.stdout.strip() or result.stderr.strip() or "")
             approved = "VERDICT: APPROVE" in text
             reason_line = next((l for l in text.splitlines() if l.startswith("REASON:")), "")
             reason = reason_line.replace("REASON:", "").strip() or text[:80]
@@ -106,8 +127,36 @@ class Governor:
             log.warning(f"Governor: scrutiny failed ({e}), defaulting to APPROVE")
             return True, f"审查异常，默认放行：{e}"
 
+    def _reap_zombie_tasks(self):
+        """收割僵尸任务：如果 running/scrutinizing 状态超过 STALE_THRESHOLD，标记为 failed。
+        防止进程崩溃后僵尸任务永久阻塞管线。"""
+        stale = self.db.get_running_task()
+        if not stale:
+            return
+        started = stale.get("started_at")
+        if not started:
+            # no started_at means it never actually ran — clean it up
+            self.db.update_task(stale["id"], status="failed",
+                                output="zombie: never started, cleaned up",
+                                finished_at=datetime.now(timezone.utc).isoformat())
+            self.db.write_log(f"收割僵尸任务 #{stale['id']}（无启动时间）", "WARNING", "governor")
+            log.warning(f"Governor: reaped zombie task #{stale['id']} (no started_at)")
+            return
+        try:
+            started_dt = datetime.fromisoformat(started)
+            age = (datetime.now(timezone.utc) - started_dt).total_seconds()
+        except (ValueError, TypeError):
+            age = STALE_THRESHOLD + 1  # can't parse → assume stale
+        if age > STALE_THRESHOLD:
+            self.db.update_task(stale["id"], status="failed",
+                                output=f"zombie: stuck for {int(age)}s, reaped by governor",
+                                finished_at=datetime.now(timezone.utc).isoformat())
+            self.db.write_log(f"收割僵尸任务 #{stale['id']}（卡了 {int(age)}s）", "WARNING", "governor")
+            log.warning(f"Governor: reaped zombie task #{stale['id']} (stuck {int(age)}s)")
+
     def run(self) -> dict | None:
         """Auto-triggered: pick top high-priority recommendation, scrutinize, then execute."""
+        self._reap_zombie_tasks()
         if self.db.get_running_task():
             log.info("Governor: task already running, skipping")
             return None
@@ -185,15 +234,30 @@ class Governor:
         output = "(no output)"
         status = "failed"
         try:
+            tools = dept.get("tools", "")
+            cmd = ["claude", "--dangerously-skip-permissions", "--print",
+                   "--output-format", "json"]
+            if tools:
+                cmd.extend(["--tools", tools])
+            cmd.append("-")  # read prompt from stdin
+
             result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions", "--print", prompt],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=CLAUDE_TIMEOUT,
                 cwd=task_cwd,
+                input=prompt,
             )
-            output = result.stdout.strip() or result.stderr.strip() or "(no output)"
-            status = "done" if result.returncode == 0 else "failed"
+            raw = result.stdout.strip() or result.stderr.strip() or "(no output)"
+            # Parse JSON output for result text
+            try:
+                data = json.loads(raw)
+                output = data.get("result", raw[:2000])
+                status = "done" if not data.get("is_error") else "failed"
+            except (json.JSONDecodeError, TypeError):
+                output = raw[:2000]
+                status = "done" if result.returncode == 0 else "failed"
         except subprocess.TimeoutExpired:
             output = f"timeout after {CLAUDE_TIMEOUT}s"
         except FileNotFoundError:
