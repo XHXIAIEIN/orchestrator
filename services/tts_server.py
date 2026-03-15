@@ -6,7 +6,6 @@ Kokoro TTS 语音合成服务 — SOUL 的声线。
 端口：23715
 
 Kokoro: 82M 参数，支持中英日，CPU 就够用。
-中文语音使用 'zf_xiaobei' 或 'zf_xiaoni' 等 voice preset。
 """
 import logging
 import os
@@ -14,6 +13,7 @@ import time
 
 import numpy as np
 import soundfile as sf
+import torch
 from flask import Flask, request, jsonify
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -24,19 +24,38 @@ app = Flask(__name__)
 # Kokoro pipeline（延迟加载）
 _pipeline = None
 
-# 中文 voice presets（Kokoro 内置）
-# zf = 中文女声, zm = 中文男声
-DEFAULT_VOICE = "zf_xiaobei"
+LOCAL_MODEL_DIR = os.environ.get("KOKORO_MODEL_DIR", "D:/Agent/models/kokoro-82m")
+DEFAULT_VOICE = os.environ.get("SOUL_VOICE", "zm_yunxi")
 SAMPLE_RATE = 24000
 
 
 def get_pipeline():
     global _pipeline
     if _pipeline is None:
-        log.info("Loading Kokoro TTS model (first request)...")
-        from kokoro import KPipeline
-        _pipeline = KPipeline(lang_code="z")  # z = 中文
-        log.info("Kokoro TTS model loaded.")
+        # 禁掉代理，避免 huggingface_hub 尝试网络请求
+        for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']:
+            os.environ.pop(k, None)
+
+        log.info(f"Loading Kokoro TTS from {LOCAL_MODEL_DIR}...")
+        from kokoro import KModel, KPipeline
+
+        model = KModel(
+            config=os.path.join(LOCAL_MODEL_DIR, "config.json"),
+            model=os.path.join(LOCAL_MODEL_DIR, "kokoro-v1_0.pth"),
+        )
+        pipe = KPipeline(lang_code="z", model=model, repo_id="hexgrad/Kokoro-82M")
+
+        # Monkey-patch: voice 文件从本地加载而不是走 HF hub
+        _orig_load = pipe.load_single_voice
+        def _local_load(voice):
+            local_path = os.path.join(LOCAL_MODEL_DIR, "voices", f"{voice}.pt")
+            if os.path.exists(local_path):
+                return torch.load(local_path, map_location="cpu", weights_only=True)
+            return _orig_load(voice)
+        pipe.load_single_voice = _local_load
+
+        _pipeline = pipe
+        log.info(f"Kokoro TTS loaded. Default voice: {DEFAULT_VOICE}")
     return _pipeline
 
 
@@ -47,17 +66,17 @@ def health():
 
 @app.route("/voices")
 def voices():
-    """列出可用的 voice presets。"""
-    # Kokoro 中文 voices
-    zh_voices = [
-        {"id": "zf_xiaobei", "lang": "zh", "gender": "female", "desc": "小北 — 活泼"},
-        {"id": "zf_xiaoni", "lang": "zh", "gender": "female", "desc": "小妮 — 温柔"},
-        {"id": "zf_xiaoxuan", "lang": "zh", "gender": "female", "desc": "小萱 — 甜美"},
-        {"id": "zm_yunjian", "lang": "zh", "gender": "male", "desc": "云健 — 沉稳"},
-        {"id": "zm_yunxi", "lang": "zh", "gender": "male", "desc": "云希 — 青年"},
-        {"id": "zm_yunyang", "lang": "zh", "gender": "male", "desc": "云扬 — 新闻"},
-    ]
-    return jsonify({"voices": zh_voices})
+    """列出本地已有的 voice presets。"""
+    voices_dir = os.path.join(LOCAL_MODEL_DIR, "voices")
+    available = []
+    if os.path.isdir(voices_dir):
+        for f in sorted(os.listdir(voices_dir)):
+            if f.endswith(".pt"):
+                name = f[:-3]
+                lang = {"z": "zh", "a": "en-US", "b": "en-GB", "j": "ja"}.get(name[0], "?")
+                gender = "female" if name[1] == "f" else "male"
+                available.append({"id": name, "lang": lang, "gender": gender})
+    return jsonify({"voices": available})
 
 
 @app.route("/tts", methods=["POST"])
@@ -75,7 +94,6 @@ def tts():
         pipeline = get_pipeline()
         t0 = time.time()
 
-        # Kokoro 生成语音
         audio_segments = []
         for _, _, audio in pipeline(text, voice=voice, speed=speed):
             if audio is not None:
@@ -84,10 +102,7 @@ def tts():
         if not audio_segments:
             return jsonify({"ok": False, "error": "no audio generated"})
 
-        # 拼接所有段落
         wav = np.concatenate(audio_segments)
-
-        # 确保输出目录存在
         os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
         sf.write(output, wav, SAMPLE_RATE)
 
@@ -110,7 +125,5 @@ def tts():
 
 if __name__ == "__main__":
     port = int(os.environ.get("TTS_PORT", 23715))
-    log.info(f"Starting Kokoro TTS server on port {port}")
-    log.info(f"Default voice: {DEFAULT_VOICE}")
-    log.info("First request will trigger model loading")
+    log.info(f"Starting Kokoro TTS on port {port} (voice: {DEFAULT_VOICE})")
     app.run(host="0.0.0.0", port=port, debug=False)
