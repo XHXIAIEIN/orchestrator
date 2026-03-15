@@ -1,14 +1,18 @@
 """
-ChatTTS 语音合成服务 — SOUL 的声线。
-独立进程运行（Python 3.12 venv），通过 HTTP 提供 TTS 能力。
+Fish Audio S2 Pro TTS 服务 — SOUL 的声线。
+独立进程运行（fish-speech venv），通过 HTTP 提供 TTS 能力。
 
-启动方式：D:\Agent\tts-venv\Scripts\python.exe services\tts_server.py
+启动方式：
+  cd D:/Agent/fish-speech
+  .venv/Scripts/python.exe <orchestrator>/services/tts_server.py
+
 端口：23715
 
-ChatTTS: 专为对话设计，自然的停顿、语气、呼吸声。
+Fish S2 Pro: SOTA 开源 TTS，支持内联情感标签 [laugh] [whisper] 等。
 """
 import logging
 import os
+import sys
 import time
 
 import numpy as np
@@ -16,39 +20,50 @@ import soundfile as sf
 import torch
 from flask import Flask, request, jsonify
 
+# Fish Speech 源码路径
+FISH_SPEECH_DIR = os.environ.get("FISH_SPEECH_DIR", "D:/Agent/fish-speech")
+sys.path.insert(0, FISH_SPEECH_DIR)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-_chat = None
-
-LOCAL_MODEL_DIR = os.environ.get("CHATTTS_MODEL_DIR", "D:/Agent/models/ChatTTS")
-SAMPLE_RATE = 24000
-# 固定 speaker seed 保证每次生成同一个声音
-DEFAULT_SPEAKER_SEED = 42
-# 口语化参数 seed
-DEFAULT_ORAL_SEED = 7
+_model_manager = None
+CHECKPOINT_DIR = os.path.join(FISH_SPEECH_DIR, "checkpoints", "s2-pro")
+SAMPLE_RATE = 44100
 
 
-def get_chat():
-    global _chat
-    if _chat is None:
+def get_model_manager():
+    global _model_manager
+    if _model_manager is None:
         # 禁掉代理
         for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']:
             os.environ.pop(k, None)
 
-        log.info(f"Loading ChatTTS from {LOCAL_MODEL_DIR}...")
-        import ChatTTS
-        _chat = ChatTTS.Chat()
-        _chat.load(source="custom", custom_path=LOCAL_MODEL_DIR, compile=False)
-        log.info("ChatTTS loaded.")
-    return _chat
+        log.info(f"Loading Fish S2 Pro from {CHECKPOINT_DIR}...")
+        from tools.server.model_manager import ModelManager
+        _model_manager = ModelManager(
+            mode="tts",
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            half=False,
+            compile=False,
+            llama_checkpoint_path=CHECKPOINT_DIR,
+            decoder_checkpoint_path=os.path.join(CHECKPOINT_DIR, "codec.pth"),
+            decoder_config_name="modded_dac_vq",
+        )
+        log.info(f"Fish S2 Pro loaded on {_model_manager.device}")
+    return _model_manager
 
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "model": "ChatTTS", "speaker_seed": DEFAULT_SPEAKER_SEED})
+    return jsonify({
+        "status": "ok",
+        "model": "fish-s2-pro",
+        "sample_rate": SAMPLE_RATE,
+        "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+    })
 
 
 @app.route("/tts", methods=["POST"])
@@ -56,60 +71,52 @@ def tts():
     data = request.get_json()
     text = data.get("text", "")
     output = data.get("output", "output.wav")
-    speaker_seed = data.get("speaker_seed", DEFAULT_SPEAKER_SEED)
-    oral_seed = data.get("oral_seed", DEFAULT_ORAL_SEED)
-    temperature = data.get("temperature", 0.3)
-    top_p = data.get("top_p", 0.7)
-    top_k = data.get("top_k", 20)
+    temperature = data.get("temperature", 0.8)
+    top_p = data.get("top_p", 0.8)
+    seed = data.get("seed", None)
 
     if not text:
         return jsonify({"ok": False, "error": "empty text"})
 
     try:
-        chat = get_chat()
+        mgr = get_model_manager()
         t0 = time.time()
 
-        # 固定 speaker 声线
-        torch.manual_seed(speaker_seed)
-        params_refine = ChatTTS.Chat.RefineTextParams(
-            prompt='[oral_2][laugh_0][break_6]',
-        )
-
-        params_infer = ChatTTS.Chat.InferCodeParams(
+        from fish_speech.utils.schema import ServeTTSRequest
+        req = ServeTTSRequest(
+            text=text,
             temperature=temperature,
-            top_P=top_p,
-            top_K=top_k,
-            spk_emb=chat.sample_random_speaker(),
+            top_p=top_p,
+            seed=seed,
         )
 
-        # 文本优化（加入自然停顿、口语化）
-        wavs = chat.infer(
-            [text],
-            params_refine_text=params_refine,
-            params_infer_code=params_infer,
-        )
+        segments = []
+        sr = SAMPLE_RATE
+        for result in mgr.tts_inference_engine.inference(req):
+            if result.code == "error":
+                return jsonify({"ok": False, "error": str(result.error)})
+            if result.code in ("segment", "final") and result.audio is not None:
+                sr, wav = result.audio
+                segments.append(wav)
+                if result.code == "final":
+                    break
 
-        if wavs is None or len(wavs) == 0:
+        if not segments:
             return jsonify({"ok": False, "error": "no audio generated"})
 
-        wav = wavs[0]
-        if isinstance(wav, torch.Tensor):
-            wav = wav.numpy()
-        if wav.ndim > 1:
-            wav = wav.squeeze()
-
+        full_wav = np.concatenate(segments)
         os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
-        sf.write(output, wav, SAMPLE_RATE)
+        sf.write(output, full_wav, sr)
 
         elapsed = time.time() - t0
-        duration_s = len(wav) / SAMPLE_RATE
+        duration_s = len(full_wav) / sr
 
-        log.info(f"Generated {duration_s:.1f}s audio in {elapsed:.1f}s (seed={speaker_seed}) -> {output}")
+        log.info(f"Generated {duration_s:.1f}s audio in {elapsed:.1f}s -> {output}")
         return jsonify({
             "ok": True,
             "duration_s": round(duration_s, 1),
             "elapsed_s": round(elapsed, 1),
-            "speaker_seed": speaker_seed,
+            "sample_rate": sr,
             "output": output,
         })
 
@@ -118,44 +125,7 @@ def tts():
         return jsonify({"ok": False, "error": str(e)})
 
 
-@app.route("/sample_speakers", methods=["POST"])
-def sample_speakers():
-    """生成多个 speaker seed 的样本，方便选择最合适的声线。"""
-    data = request.get_json() or {}
-    text = data.get("text", "你好，我是你的 AI 管家。")
-    seeds = data.get("seeds", [42, 100, 256, 512, 1024, 2048])
-    output_dir = data.get("output_dir", "D:/Agent/tmp/soul-tts/samples")
-
-    os.makedirs(output_dir, exist_ok=True)
-    results = []
-
-    chat = get_chat()
-    import ChatTTS as CT
-
-    for seed in seeds:
-        try:
-            torch.manual_seed(seed)
-            params = CT.Chat.InferCodeParams(
-                temperature=0.3, top_P=0.7, top_K=20,
-                spk_emb=chat.sample_random_speaker(),
-            )
-            wavs = chat.infer([text], params_infer_code=params)
-            if wavs and len(wavs) > 0:
-                wav = wavs[0]
-                if isinstance(wav, torch.Tensor):
-                    wav = wav.numpy()
-                if wav.ndim > 1:
-                    wav = wav.squeeze()
-                out = os.path.join(output_dir, f"seed_{seed}.wav")
-                sf.write(out, wav, SAMPLE_RATE)
-                results.append({"seed": seed, "file": out, "duration_s": round(len(wav)/SAMPLE_RATE, 1)})
-        except Exception as e:
-            results.append({"seed": seed, "error": str(e)})
-
-    return jsonify({"ok": True, "samples": results})
-
-
 if __name__ == "__main__":
     port = int(os.environ.get("TTS_PORT", 23715))
-    log.info(f"Starting ChatTTS server on port {port}")
+    log.info(f"Starting Fish S2 Pro TTS on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
