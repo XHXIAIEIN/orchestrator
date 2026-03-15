@@ -24,8 +24,8 @@ ROUTES = {
     "deep_analysis": {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
     "profile":       {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
     # 多模态路由 — 仅 Ollama，无 Claude fallback
-    "vision":        {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 60},
-    "ocr":           {"backend": "ollama", "model": "glm-ocr:latest",             "timeout": 30},
+    "vision":        {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},
+    "ocr":           {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},  # glm-ocr 有兼容性问题，暂用 gemma3
 }
 
 MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
@@ -102,8 +102,11 @@ class LLMRouter:
             elapsed = time.time() - t0
 
             if len(result.strip()) < MIN_RESPONSE_LEN:
-                log.warning(f"router: [fallback] {task_type} ollama_garbage ({len(result.strip())} chars) -> claude")
-                return self._claude_fallback(prompt, task_type, route, max_tokens)
+                if route.get("fallback"):
+                    log.warning(f"router: [fallback] {task_type} ollama_garbage ({len(result.strip())} chars) -> claude")
+                    return self._claude_fallback(prompt, task_type, route, max_tokens)
+                log.warning(f"router: [error] {task_type} ollama_garbage ({len(result.strip())} chars), no fallback")
+                return result
 
             log.info(f"router: [ollama] {task_type} {elapsed:.1f}s ok ({len(result)} chars)")
             return result

@@ -126,9 +126,9 @@ def test_vision_route_sends_images():
 
 
 def test_ocr_route_exists():
-    """ocr 路由应存在且使用 glm-ocr 模型。"""
+    """ocr 路由应存在且使用多模态模型。"""
     assert "ocr" in ROUTES
-    assert "glm-ocr" in ROUTES["ocr"]["model"]
+    assert ROUTES["ocr"]["backend"] == "ollama"
 
 
 def test_vision_no_fallback_when_ollama_down():
