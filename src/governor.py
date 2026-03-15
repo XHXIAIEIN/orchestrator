@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from src.storage.events_db import EventsDB
+from src.llm_router import get_router
 
 log = logging.getLogger(__name__)
 
@@ -74,8 +75,6 @@ DEPARTMENTS = {
         "tools": "Read,Glob,Grep",
     },
 }
-SCRUTINY_MODEL = "claude-haiku-4-5-20251001"
-
 SCRUTINY_PROMPT = """你是 Orchestrator 的门下省审查官——管家脑子里那个负责说"等等，这靠谱吗？"的声音。
 
 主人花 $200/月养着这个 AI 管家，所以既不能让管家摸鱼不干活（过度驳回），也不能让管家搞砸事情（放行危险操作）。
@@ -124,15 +123,7 @@ class Governor:
             reason=task.get("reason", ""),
         )
         try:
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions", "--print",
-                 "--model", SCRUTINY_MODEL, prompt],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                stdin=subprocess.DEVNULL,
-            )
-            text = (result.stdout.strip() or result.stderr.strip() or "")
+            text = get_router().generate(prompt, task_type="scrutiny")
             approved = "VERDICT: APPROVE" in text
             reason_line = next((l for l in text.splitlines() if l.startswith("REASON:")), "")
             reason = reason_line.replace("REASON:", "").strip() or text[:80]
