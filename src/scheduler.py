@@ -91,7 +91,7 @@ def run_analysis():
         for issue in report.get("issues", []):
             if issue["level"] == "high":
                 governor = Governor(db=db)
-                if not governor.db.get_running_task():
+                if governor.db.count_running_tasks() < 3:
                     task_id = governor.db.create_task(
                         action=f"修复自检问题：{issue['summary']}",
                         reason=f"自检发现 {issue['component']} 存在问题",

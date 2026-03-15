@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import subprocess
+import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -36,6 +37,7 @@ TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 
 
 CLAUDE_TIMEOUT = 300  # seconds
 STALE_THRESHOLD = CLAUDE_TIMEOUT + 120  # seconds — if a task is "running" longer than this, it's a zombie
+MAX_CONCURRENT = 3  # 最多同时跑几个 sub-agent
 
 # ── 六部路由表 ──
 DEPARTMENTS = {
@@ -140,36 +142,39 @@ class Governor:
 
     def _reap_zombie_tasks(self):
         """收割僵尸任务：如果 running/scrutinizing 状态超过 STALE_THRESHOLD，标记为 failed。
-        防止进程崩溃后僵尸任务永久阻塞管线。"""
-        stale = self.db.get_running_task()
-        if not stale:
+        防止进程崩溃后僵尸任务永久阻塞管线。支持并行模式下的多任务收割。"""
+        running = self.db.get_running_tasks()
+        if not running:
             return
-        started = stale.get("started_at")
-        if not started:
-            # no started_at means it never actually ran — clean it up
-            self.db.update_task(stale["id"], status="failed",
-                                output="zombie: never started, cleaned up",
-                                finished_at=datetime.now(timezone.utc).isoformat())
-            self.db.write_log(f"收割僵尸任务 #{stale['id']}（无启动时间）", "WARNING", "governor")
-            log.warning(f"Governor: reaped zombie task #{stale['id']} (no started_at)")
-            return
-        try:
-            started_dt = datetime.fromisoformat(started)
-            age = (datetime.now(timezone.utc) - started_dt).total_seconds()
-        except (ValueError, TypeError):
-            age = STALE_THRESHOLD + 1  # can't parse → assume stale
-        if age > STALE_THRESHOLD:
-            self.db.update_task(stale["id"], status="failed",
-                                output=f"zombie: stuck for {int(age)}s, reaped by governor",
-                                finished_at=datetime.now(timezone.utc).isoformat())
-            self.db.write_log(f"收割僵尸任务 #{stale['id']}（卡了 {int(age)}s）", "WARNING", "governor")
-            log.warning(f"Governor: reaped zombie task #{stale['id']} (stuck {int(age)}s)")
+        for stale in running:
+            started = stale.get("started_at")
+            if not started:
+                self.db.update_task(stale["id"], status="failed",
+                                    output="zombie: never started, cleaned up",
+                                    finished_at=datetime.now(timezone.utc).isoformat())
+                self.db.write_log(f"收割僵尸任务 #{stale['id']}（无启动时间）", "WARNING", "governor")
+                log.warning(f"Governor: reaped zombie task #{stale['id']} (no started_at)")
+                continue
+            try:
+                started_dt = datetime.fromisoformat(started)
+                age = (datetime.now(timezone.utc) - started_dt).total_seconds()
+            except (ValueError, TypeError):
+                age = STALE_THRESHOLD + 1
+            if age > STALE_THRESHOLD:
+                self.db.update_task(stale["id"], status="failed",
+                                    output=f"zombie: stuck for {int(age)}s, reaped by governor",
+                                    finished_at=datetime.now(timezone.utc).isoformat())
+                self.db.write_log(f"收割僵尸任务 #{stale['id']}（卡了 {int(age)}s）", "WARNING", "governor")
+                log.warning(f"Governor: reaped zombie task #{stale['id']} (stuck {int(age)}s)")
 
     def run(self) -> dict | None:
-        """Auto-triggered: pick top high-priority recommendation, scrutinize, then execute."""
+        """Auto-triggered: pick top high-priority recommendation, scrutinize, then execute.
+        支持并行：如果正在运行的任务数 < MAX_CONCURRENT，可以继续派发新任务。"""
         self._reap_zombie_tasks()
-        if self.db.get_running_task():
-            log.info("Governor: task already running, skipping")
+
+        running_count = self.db.count_running_tasks()
+        if running_count >= MAX_CONCURRENT:
+            log.info(f"Governor: {running_count} tasks running (max {MAX_CONCURRENT}), skipping")
             return None
 
         insights = self.db.get_latest_insights()
@@ -214,6 +219,18 @@ class Governor:
 
         self.db.update_task(task_id, scrutiny_note=f"准奏：{reason}")
         return self.execute_task(task_id)
+
+    def execute_task_async(self, task_id: int):
+        """在后台线程中执行任务，不阻塞调用方。"""
+        t = threading.Thread(
+            target=self.execute_task,
+            args=(task_id,),
+            name=f"governor-task-{task_id}",
+            daemon=True,
+        )
+        t.start()
+        log.info(f"Governor: task #{task_id} dispatched to background thread")
+        return t
 
     def execute_task(self, task_id: int) -> dict:
         """Execute task by ID — routes to department based on spec.department."""

@@ -305,6 +305,27 @@ class EventsDB:
         d['spec'] = json.loads(d['spec'])
         return d
 
+    def get_running_tasks(self) -> list:
+        """返回所有正在运行或审查中的任务。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status IN ('running', 'scrutinizing')"
+            ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            d['spec'] = json.loads(d['spec'])
+            result.append(d)
+        return result
+
+    def count_running_tasks(self) -> int:
+        """返回正在运行的任务数。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'scrutinizing')"
+            ).fetchone()
+        return row[0]
+
     def save_profile_analysis(self, data: dict, analysis_type: str = 'periodic'):
         now = datetime.now(timezone.utc).isoformat()
         data_copy = dict(data)
