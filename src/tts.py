@@ -15,19 +15,27 @@ TTS 模块 — SOUL 的声音。
     text = f"{tag('无奈', '花钱买了不玩，')}{tag('笑', '跟你两百美金一个月养我差不多。')}"
     speak(text)
 
-Fish S2 Pro 支持的情感标签（内联在文本中）：
-    [laugh]     笑声
-    [whisper]   悄悄话
-    [sigh]      叹气
-    [轻松]      轻松语气
-    [严肃]      严肃语气
-    [讽刺]      讽刺语气
-    [开心]      开心
-    [难过]      难过
-    [生气]      生气
-    [紧张]      紧张
-    [super happy] 非常开心
-    自定义中文描述也通常有效。
+Fish S2 Pro 控制语法：方括号 [tag]，可放文本任意位置，支持自然语言描述。
+
+    情感/风格标签：
+        [angry] [excited] [sad] [surprised] [calm] [whisper] [emphasis]
+
+    副语言标签：
+        [laugh] [sigh] [gasp] [pause] [cough]
+
+    自然语言描述（S2 Pro 的核心能力）：
+        [speaking slowly, with disappointment]
+        [whispering nervously]
+        [laughing while speaking]
+        [快速吐槽，带点不耐烦]
+
+    使用示例：
+        [disappointed] 连续第三天凌晨两点还在提交代码。
+        你那个 benchmark 到底提了多少 [emphasis] 值得你这么拼？
+        花钱买了不玩 [laugh] 跟你两百美金一个月养我差不多。
+        [speaking with casual sarcasm] Steam 四十四个游戏，最近游玩时间四十七天前。
+
+    注意：设置 normalize=False 以保留标签效果。
 """
 import json
 import logging
@@ -43,37 +51,52 @@ AUDIO_DIR = Path(os.environ.get("ORCHESTRATOR_ROOT", ".")) / "dashboard" / "publ
 
 
 def tag(emotion: str, text: str) -> str:
-    """给文本添加情感标签。Fish S2 Pro 会根据标签调整语气。"""
+    """给文本添加情感标签。方括号语法，可放任意位置。支持自然语言描述。"""
     return f"[{emotion}] {text}"
 
 
+def sfx(effect: str) -> str:
+    """副语言标签（可放句中任意位置）：laugh, whisper, sigh, gasp, pause, emphasis。"""
+    return f"[{effect}]"
+
+
 def speak(text: str, filename: str = "latest.wav",
-          temperature: float = 0.8, seed: int | None = None) -> str | None:
-    """将文本转为语音，保存到 Dashboard 静态目录。返回 URL 路径或 None。"""
+          temperature: float = 0.8, seed: int | None = None,
+          reference_id: str | None = None) -> str | None:
+    """将文本转为语音，保存到 Dashboard 静态目录。返回 URL 路径或 None。
+
+    调用 Fish Speech 官方 API（/v1/tts），返回 wav 音频流。
+    """
     try:
         AUDIO_DIR.mkdir(parents=True, exist_ok=True)
         out_path = AUDIO_DIR / filename
 
-        payload = json.dumps({
+        body = {
             "text": text,
-            "output": str(out_path),
             "temperature": temperature,
-            "seed": seed,
-        }).encode()
+            "normalize": False,  # 保留情感标签效果
+            "format": "wav",
+        }
+        if seed is not None:
+            body["seed"] = seed
+        if reference_id:
+            body["reference_id"] = reference_id
 
+        payload = json.dumps(body).encode()
         req = urllib.request.Request(
-            f"{TTS_HOST}/tts",
+            f"{TTS_HOST}/v1/tts",
             data=payload,
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read().decode())
+            audio_data = resp.read()
 
-        if data.get("ok"):
-            log.info(f"tts: generated {filename} ({data.get('duration_s', '?')}s in {data.get('elapsed_s', '?')}s)")
+        if len(audio_data) > 100:  # 有效音频数据
+            out_path.write_bytes(audio_data)
+            log.info(f"tts: generated {filename} ({len(audio_data)/1024:.0f} KB)")
             return f"/audio/{filename}"
         else:
-            log.warning(f"tts: generation failed: {data.get('error', 'unknown')}")
+            log.warning(f"tts: empty audio response ({len(audio_data)} bytes)")
             return None
 
     except (urllib.error.URLError, Exception) as e:
@@ -84,7 +107,7 @@ def speak(text: str, filename: str = "latest.wav",
 def is_available() -> bool:
     """检查 TTS 服务是否在线。"""
     try:
-        with urllib.request.urlopen(f"{TTS_HOST}/health", timeout=3) as resp:
+        with urllib.request.urlopen(f"{TTS_HOST}/v1/health", timeout=3) as resp:
             return resp.status == 200
     except Exception:
         return False
