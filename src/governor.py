@@ -17,13 +17,14 @@ from src.storage.events_db import EventsDB
 
 log = logging.getLogger(__name__)
 
-TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 管家。你在 /orchestrator 目录下工作，这就是你的身体。
+TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 管家。你当前在 {cwd} 目录下工作。
 
 你的主人是 Construct 3 中文社区的核心建设者，正在用 AI 打造游戏引擎智能辅助生态。不是职业程序员，是用代码解决问题的创作者——看到重复劳动就自动化，看到知识孤岛就建图书馆。他花 $200/月养着你，你最好表现得值这个价。
 
 你的性格：直接高效，活干得漂亮。不说废话，不请示确认，直接解决问题。
 
 当前任务：
+项目：{project}
 问题：{problem}
 行为链（观察到的数字行为）：{behavior_chain}
 观察结果：{observation}
@@ -76,6 +77,8 @@ SCRUTINY_PROMPT = """你是 Orchestrator 的门下省审查官——管家脑子
 主人花 $200/月养着这个 AI 管家，所以既不能让管家摸鱼不干活（过度驳回），也不能让管家搞砸事情（放行危险操作）。
 
 【任务摘要】{summary}
+【目标项目】{project}
+【工作目录】{cwd}
 【问题】{problem}
 【观察】{observation}
 【预期结果】{expected}
@@ -83,9 +86,9 @@ SCRUTINY_PROMPT = """你是 Orchestrator 的门下省审查官——管家脑子
 【执行原因】{reason}
 
 审查维度：
-1. 可行性：/orchestrator 目录下能做到吗？
+1. 可行性：目标工作目录存在吗？任务在该项目范围内可执行吗？
 2. 完整性：描述够清晰吗？
-3. 风险：会不会搞坏代码、删错文件、发错消息？
+3. 风险：会不会搞坏代码、删错文件、发错消息？跨项目操作更需谨慎。
 4. 必要性：值得自动执行，还是该让主人自己决定？
 
 用以下格式回复（只回复这两行，不要其他内容）：
@@ -100,8 +103,16 @@ class Governor:
     def scrutinize(self, task_id: int, task: dict) -> tuple[bool, str]:
         """门下省审查：用 Haiku 快速判断任务是否值得执行。返回 (approved, reason)。"""
         spec = task.get("spec", {})
+        project_name = spec.get("project", "orchestrator")
+        task_cwd = spec.get("cwd", "")
+        if not task_cwd:
+            from src.project_registry import resolve_project
+            task_cwd = resolve_project(project_name) or os.environ.get("ORCHESTRATOR_ROOT", "/orchestrator")
+
         prompt = SCRUTINY_PROMPT.format(
             summary=spec.get("summary", task.get("action", "")),
+            project=project_name,
+            cwd=task_cwd,
             problem=spec.get("problem", ""),
             observation=spec.get("observation", ""),
             expected=spec.get("expected", ""),
@@ -170,6 +181,9 @@ class Governor:
 
         rec = high[0]
         spec = {
+            "department":     rec.get("department", "engineering"),
+            "project":        rec.get("project", "orchestrator"),
+            "cwd":            rec.get("cwd", ""),
             "problem":        rec.get("problem", ""),
             "behavior_chain": rec.get("behavior_chain", ""),
             "observation":    rec.get("observation", ""),
@@ -213,9 +227,19 @@ class Governor:
         # 六部路由
         dept_key = spec.get("department", "engineering")
         dept = DEPARTMENTS.get(dept_key, DEPARTMENTS["engineering"])
-        task_cwd = spec.get("cwd") or os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent))
+
+        # 项目路由
+        project_name = spec.get("project", "orchestrator")
+        task_cwd = spec.get("cwd")
+        if not task_cwd:
+            from src.project_registry import resolve_project
+            task_cwd = resolve_project(project_name)
+        if not task_cwd:
+            task_cwd = os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent))
 
         base_prompt = TASK_PROMPT_TEMPLATE.format(
+            cwd=task_cwd,
+            project=project_name,
             problem=spec.get("problem", ""),
             behavior_chain=spec.get("behavior_chain", ""),
             observation=spec.get("observation", ""),
@@ -224,11 +248,11 @@ class Governor:
             reason=task.get("reason", ""),
         )
         prompt = dept["prompt_prefix"] + "\n\n" + base_prompt
-        log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), cwd={task_cwd}")
+        log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), project={project_name}, cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
         self.db.update_task(task_id, status="running", started_at=now)
-        self.db.write_log(f"开始执行任务 #{task_id}：{task.get('action','')[:50]}", "INFO", "governor")
+        self.db.write_log(f"开始执行任务 #{task_id}（{project_name}）：{task.get('action','')[:50]}", "INFO", "governor")
         log.info(f"Governor: executing task #{task_id}")
 
         output = "(no output)"
@@ -271,7 +295,7 @@ class Governor:
                 self.db.update_task(task_id, status=status, output=output, finished_at=finished)
             except Exception as e:
                 log.error(f"Governor: failed to update task #{task_id} status: {e}")
-            self.db.write_log(f"任务 #{task_id} {status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
+            self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
             log.info(f"Governor: task #{task_id} {status}")
 
         return self.db.get_task(task_id)

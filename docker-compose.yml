@@ -33,11 +33,10 @@ services:
       - type: bind
         source: ${CLAUDE_HOME_HOST:-C:/Users/test/.claude}
         target: /claude-home
-      # Git repos (read-only, optional)
+      # Git repos (read-write for cross-project task execution)
       - type: bind
         source: ${GIT_ROOT:-C:/Users/test/Documents/GitHub}
         target: /git-repos
-        read_only: true
       # Steam data (read-only, optional)
       - type: bind
         source: ${STEAM_PATH_HOST:-D:/Steam}

@@ -50,6 +50,8 @@ class DebtScanner:
 
     def extract_sessions(self, full_scan: bool = False) -> list[dict]:
         """Phase 1: 提取每个 session 的关键消息（纯 Python，不用 LLM）。"""
+        from src.project_registry import _claude_dir_to_project
+
         projects_dir = self.claude_home / "projects"
         if not projects_dir.exists():
             return []
@@ -61,12 +63,13 @@ class DebtScanner:
         for proj in projects_dir.iterdir():
             if not proj.is_dir():
                 continue
+            project_name = _claude_dir_to_project(proj.name)
             for sf in proj.glob("*.jsonl"):
                 sid = sf.stem
                 if not full_scan and sid in scanned:
                     continue
 
-                summary = self._extract_one(sf, proj.name)
+                summary = self._extract_one(sf, project_name)
                 if summary and summary["signals"]:
                     results.append(summary)
 
@@ -168,6 +171,7 @@ class DebtScanner:
 
 对于每个发现的遗留问题，输出 JSON 数组，每项包含：
 - session_id: 来源会话的 slug 或 ID
+- project: 项目名称（从会话数据的括号中提取）
 - summary: 一句话描述遗留问题（中文）
 - severity: high/medium/low
 - context: 相关消息的简短引用
