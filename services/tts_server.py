@@ -1,11 +1,11 @@
 """
-Kokoro TTS 语音合成服务 — SOUL 的声线。
+ChatTTS 语音合成服务 — SOUL 的声线。
 独立进程运行（Python 3.12 venv），通过 HTTP 提供 TTS 能力。
 
 启动方式：D:\Agent\tts-venv\Scripts\python.exe services\tts_server.py
 端口：23715
 
-Kokoro: 82M 参数，支持中英日，CPU 就够用。
+ChatTTS: 专为对话设计，自然的停顿、语气、呼吸声。
 """
 import logging
 import os
@@ -21,62 +21,34 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Kokoro pipeline（延迟加载）
-_pipeline = None
+_chat = None
 
-LOCAL_MODEL_DIR = os.environ.get("KOKORO_MODEL_DIR", "D:/Agent/models/kokoro-82m")
-DEFAULT_VOICE = os.environ.get("SOUL_VOICE", "zm_yunxi")
+LOCAL_MODEL_DIR = os.environ.get("CHATTTS_MODEL_DIR", "D:/Agent/models/ChatTTS")
 SAMPLE_RATE = 24000
+# 固定 speaker seed 保证每次生成同一个声音
+DEFAULT_SPEAKER_SEED = 42
+# 口语化参数 seed
+DEFAULT_ORAL_SEED = 7
 
 
-def get_pipeline():
-    global _pipeline
-    if _pipeline is None:
-        # 禁掉代理，避免 huggingface_hub 尝试网络请求
+def get_chat():
+    global _chat
+    if _chat is None:
+        # 禁掉代理
         for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']:
             os.environ.pop(k, None)
 
-        log.info(f"Loading Kokoro TTS from {LOCAL_MODEL_DIR}...")
-        from kokoro import KModel, KPipeline
-
-        model = KModel(
-            config=os.path.join(LOCAL_MODEL_DIR, "config.json"),
-            model=os.path.join(LOCAL_MODEL_DIR, "kokoro-v1_0.pth"),
-        )
-        pipe = KPipeline(lang_code="z", model=model, repo_id="hexgrad/Kokoro-82M")
-
-        # Monkey-patch: voice 文件从本地加载而不是走 HF hub
-        _orig_load = pipe.load_single_voice
-        def _local_load(voice):
-            local_path = os.path.join(LOCAL_MODEL_DIR, "voices", f"{voice}.pt")
-            if os.path.exists(local_path):
-                return torch.load(local_path, map_location="cpu", weights_only=True)
-            return _orig_load(voice)
-        pipe.load_single_voice = _local_load
-
-        _pipeline = pipe
-        log.info(f"Kokoro TTS loaded. Default voice: {DEFAULT_VOICE}")
-    return _pipeline
+        log.info(f"Loading ChatTTS from {LOCAL_MODEL_DIR}...")
+        import ChatTTS
+        _chat = ChatTTS.Chat()
+        _chat.load(source="custom", custom_path=LOCAL_MODEL_DIR, compile=False)
+        log.info("ChatTTS loaded.")
+    return _chat
 
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "model": "kokoro", "voice": DEFAULT_VOICE})
-
-
-@app.route("/voices")
-def voices():
-    """列出本地已有的 voice presets。"""
-    voices_dir = os.path.join(LOCAL_MODEL_DIR, "voices")
-    available = []
-    if os.path.isdir(voices_dir):
-        for f in sorted(os.listdir(voices_dir)):
-            if f.endswith(".pt"):
-                name = f[:-3]
-                lang = {"z": "zh", "a": "en-US", "b": "en-GB", "j": "ja"}.get(name[0], "?")
-                gender = "female" if name[1] == "f" else "male"
-                available.append({"id": name, "lang": lang, "gender": gender})
-    return jsonify({"voices": available})
+    return jsonify({"status": "ok", "model": "ChatTTS", "speaker_seed": DEFAULT_SPEAKER_SEED})
 
 
 @app.route("/tts", methods=["POST"])
@@ -84,37 +56,60 @@ def tts():
     data = request.get_json()
     text = data.get("text", "")
     output = data.get("output", "output.wav")
-    voice = data.get("voice", DEFAULT_VOICE)
-    speed = data.get("speed", 1.0)
+    speaker_seed = data.get("speaker_seed", DEFAULT_SPEAKER_SEED)
+    oral_seed = data.get("oral_seed", DEFAULT_ORAL_SEED)
+    temperature = data.get("temperature", 0.3)
+    top_p = data.get("top_p", 0.7)
+    top_k = data.get("top_k", 20)
 
     if not text:
         return jsonify({"ok": False, "error": "empty text"})
 
     try:
-        pipeline = get_pipeline()
+        chat = get_chat()
         t0 = time.time()
 
-        audio_segments = []
-        for _, _, audio in pipeline(text, voice=voice, speed=speed):
-            if audio is not None:
-                audio_segments.append(audio)
+        # 固定 speaker 声线
+        torch.manual_seed(speaker_seed)
+        params_refine = ChatTTS.Chat.RefineTextParams(
+            prompt='[oral_2][laugh_0][break_6]',
+        )
 
-        if not audio_segments:
+        params_infer = ChatTTS.Chat.InferCodeParams(
+            temperature=temperature,
+            top_P=top_p,
+            top_K=top_k,
+            spk_emb=chat.sample_random_speaker(),
+        )
+
+        # 文本优化（加入自然停顿、口语化）
+        wavs = chat.infer(
+            [text],
+            params_refine_text=params_refine,
+            params_infer_code=params_infer,
+        )
+
+        if wavs is None or len(wavs) == 0:
             return jsonify({"ok": False, "error": "no audio generated"})
 
-        wav = np.concatenate(audio_segments)
+        wav = wavs[0]
+        if isinstance(wav, torch.Tensor):
+            wav = wav.numpy()
+        if wav.ndim > 1:
+            wav = wav.squeeze()
+
         os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
         sf.write(output, wav, SAMPLE_RATE)
 
         elapsed = time.time() - t0
         duration_s = len(wav) / SAMPLE_RATE
 
-        log.info(f"Generated {duration_s:.1f}s audio in {elapsed:.1f}s (voice={voice}, speed={speed}) -> {output}")
+        log.info(f"Generated {duration_s:.1f}s audio in {elapsed:.1f}s (seed={speaker_seed}) -> {output}")
         return jsonify({
             "ok": True,
             "duration_s": round(duration_s, 1),
             "elapsed_s": round(elapsed, 1),
-            "voice": voice,
+            "speaker_seed": speaker_seed,
             "output": output,
         })
 
@@ -123,7 +118,44 @@ def tts():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route("/sample_speakers", methods=["POST"])
+def sample_speakers():
+    """生成多个 speaker seed 的样本，方便选择最合适的声线。"""
+    data = request.get_json() or {}
+    text = data.get("text", "你好，我是你的 AI 管家。")
+    seeds = data.get("seeds", [42, 100, 256, 512, 1024, 2048])
+    output_dir = data.get("output_dir", "D:/Agent/tmp/soul-tts/samples")
+
+    os.makedirs(output_dir, exist_ok=True)
+    results = []
+
+    chat = get_chat()
+    import ChatTTS as CT
+
+    for seed in seeds:
+        try:
+            torch.manual_seed(seed)
+            params = CT.Chat.InferCodeParams(
+                temperature=0.3, top_P=0.7, top_K=20,
+                spk_emb=chat.sample_random_speaker(),
+            )
+            wavs = chat.infer([text], params_infer_code=params)
+            if wavs and len(wavs) > 0:
+                wav = wavs[0]
+                if isinstance(wav, torch.Tensor):
+                    wav = wav.numpy()
+                if wav.ndim > 1:
+                    wav = wav.squeeze()
+                out = os.path.join(output_dir, f"seed_{seed}.wav")
+                sf.write(out, wav, SAMPLE_RATE)
+                results.append({"seed": seed, "file": out, "duration_s": round(len(wav)/SAMPLE_RATE, 1)})
+        except Exception as e:
+            results.append({"seed": seed, "error": str(e)})
+
+    return jsonify({"ok": True, "samples": results})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("TTS_PORT", 23715))
-    log.info(f"Starting Kokoro TTS on port {port} (voice: {DEFAULT_VOICE})")
+    log.info(f"Starting ChatTTS server on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
