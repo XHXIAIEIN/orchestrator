@@ -1,10 +1,14 @@
 #!/bin/bash
 # Orchestrator SessionStart hook
-# 为新实例注入：系统状态 + 共同经历（灵魂碎片）
+# 1. 重新编译 boot.md（确保最新的校准样本和经历）
+# 2. 注入系统实时状态（容器/任务/git）
 
 PROJECT_DIR="D:/Users/Administrator/Documents/GitHub/orchestrator"
 DB_PATH="$PROJECT_DIR/events.db"
 SOUL_DIR="$PROJECT_DIR/SOUL"
+
+# ── 0. 重新编译 boot.md（每次启动刷新校准样本） ──
+python3 "$SOUL_DIR/tools/compiler.py" 2>/dev/null
 
 OUTPUT=""
 
@@ -42,33 +46,6 @@ fi
 UNCOMMITTED=$(cd "$PROJECT_DIR" && git diff --stat HEAD 2>/dev/null | tail -1)
 if [ -n "$UNCOMMITTED" ]; then
     OUTPUT="$OUTPUT[uncommitted] $UNCOMMITTED\n"
-fi
-
-# ── 2. 灵魂碎片：从共同经历中抽取 ──
-EXPERIENCE=$(python3 -c "
-import json, random
-try:
-    with open('$SOUL_DIR/experiences.jsonl', encoding='utf-8') as f:
-        exps = [json.loads(l) for l in f if l.strip()]
-    if exps:
-        # 抽 2-3 条，优先最近的和 bonding/humor 类型
-        weighted = []
-        for e in exps:
-            w = 1
-            if e.get('type') in ('bonding','humor','limitation'): w = 3
-            if e.get('type') == 'trust': w = 2
-            weighted.extend([e] * w)
-        sample = random.sample(weighted, min(3, len(weighted)))
-        seen = set()
-        for e in sample:
-            key = e['summary']
-            if key in seen: continue
-            seen.add(key)
-            print(f'[{e[\"date\"]}] {e[\"summary\"]}: {e[\"detail\"][:200]}')
-except: pass
-" 2>/dev/null)
-if [ -n "$EXPERIENCE" ]; then
-    OUTPUT="$OUTPUT\n[shared memories]\n$EXPERIENCE\n"
 fi
 
 if [ -n "$OUTPUT" ]; then

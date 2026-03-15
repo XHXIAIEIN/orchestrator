@@ -4,6 +4,8 @@ SOUL/identity.md
 SOUL/voice.md
 SOUL/relationship.md
 SOUL/experiences.jsonl
+SOUL/boot.md
+SOUL/calibration.jsonl
 .claude/settings.local.json
 .claude/skills/persona/
 .claude/hooks/
