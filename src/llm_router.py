@@ -16,8 +16,8 @@ log = logging.getLogger(__name__)
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 ROUTES = {
-    "scrutiny":      {"backend": "ollama", "model": "qwen3:32b", "timeout": 20,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
-    "debt_scan":     {"backend": "ollama", "model": "qwen3:32b", "timeout": 60,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
+    "scrutiny":      {"backend": "ollama", "model": "qwen3:32b", "timeout": 45,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001", "no_think": True},
+    "debt_scan":     {"backend": "ollama", "model": "qwen3:32b", "timeout": 90,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001", "no_think": True},
     "summary":       {"backend": "claude", "model": "claude-haiku-4-5-20251001",  "timeout": 120},
     "deep_analysis": {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
     "profile":       {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
@@ -46,6 +46,9 @@ class LLMRouter:
             log.info(f"router: [force_claude] {task_type} overridden to claude")
 
         if backend == "ollama":
+            # Qwen3 系列默认开 thinking，对简单任务追加 /no_think 关闭
+            if route.get("no_think") and not prompt.rstrip().endswith("/no_think"):
+                prompt = prompt.rstrip() + "\n\n/no_think"
             return self._ollama_with_fallback(
                 prompt, task_type, route, max_tokens, temperature
             )
