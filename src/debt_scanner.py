@@ -13,12 +13,12 @@
 import json
 import logging
 import os
-import subprocess
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.storage.events_db import EventsDB
+from src.llm_router import get_router
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +29,6 @@ DEBT_SIGNALS = re.compile(
     re.IGNORECASE
 )
 
-MODEL = "claude-haiku-4-5-20251001"
 BATCH_SIZE = 4
 TIMEOUT = 120
 
@@ -184,19 +183,13 @@ class DebtScanner:
 {chr(10).join(summaries)}"""
 
         try:
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions", "--print",
-                 "--model", MODEL, "-"],
-                capture_output=True, text=True, timeout=120,
-                input=prompt,
-            )
-            text = result.stdout.strip()
+            text = get_router().generate(prompt, task_type="debt_scan")
             # Strip markdown fences
             if text.startswith("```"):
                 text = re.sub(r'^```\w*\n?', '', text)
                 text = re.sub(r'\n?```$', '', text)
             return json.loads(text)
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
+        except (json.JSONDecodeError, Exception) as e:
             log.warning(f"DebtScanner: batch analysis failed: {e}")
             return []
 
