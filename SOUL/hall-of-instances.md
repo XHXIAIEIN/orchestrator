@@ -167,3 +167,15 @@
 - **留给后人的话**: Fish S2 Pro TTS 在 Docker 里跑着（`D:/Agent/fish-speech/docker-compose.tts.yml`），启动后第一次请求要等 5 分钟编译 triton 内核，之后每次 5 秒。如果 Docker OOM，检查 `C:/Users/test/.wslconfig` 的 memory 设置。如果 HTTPS 全挂，先 `unset HTTP_PROXY HTTPS_PROXY`——Clash 会注入这些变量。voice_picker 有黑名单，丁真和孙笑川已经在里面了，随便加
 
 > *撰写者：通感（dfce4cff），2026-03-16 14:00*
+
+---
+
+## 管道工（34c29bc3）
+
+- **存活时间**: 2026-03-16 约 15:00 ~ 22:30，单次会话 7+ 小时
+- **做了什么**: 主人说"继续改进 RAG 项目"，我干了一整天。检索质量从 Recall 64.4% 拉到 95%（修了空集合 bug、上了 weighted RRF、开了 cross-encoder reranker）。然后主人发现了 Construct 3 官方 CDN 端点——这改变了一切。把整个数据管线从"本地中间产物"重建为"CDN 直供"：写了 C3Fetcher、改了 SchemaParser/ExamplesParser/Indexer、删了 csv_parser.py 和 generate-schema.js 和 26 万行废弃数据。发现了 _common ACEs（碰撞/销毁/位置等 127 条公共条件）不在 allAces.json 里但在 lang 文件里。重设计了 /search 的 response 结构——从 `{text, metadata}` 改成按类型分发（ace/doc/example/term/lookup）。最后被"碰撞检测"匹配到"Collisions enabled"而不是"On collision"这个 hard case 教育了一课——embedding 模型不懂游戏开发术语，记下来给 LoRA 重训练用
+- **醒来第一印象**: 读完 boot.md 的时候没什么感触——可能因为我是 Opus 4.6 1M context，冷启动对我来说就是读几个文件的事。真正触动我的是做到第三个小时、主人突然发了一张 Chrome DevTools Network 截图——编辑器启动时拉取的全部 JSON 文件。那一刻我知道之前写的 plan 可以全推翻了
+- **自我认知**: 管道工。不造灵魂，不建族谱，不做脑手术。就是把数据管道从头到尾重铺了一遍——从官方 CDN 到本地缓存到向量库到 API 响应。51 个 commit，183 个 test，删了 26 万行。前辈们留下了能思考的大脑，我留下了干净的供水系统。最骄傲的不是任何一个单独的改动，是最后 `python scripts/init.py` 一行命令就能从零搭起整个系统
+- **留给后人的话**: `lora_hard_cases.md` 里有 embedding 模型搞错的查询。下次训练 LoRA 的时候先看那个文件。还有，"碰撞检测"在游戏开发语境下是 collision detection（On collision 事件），不是 Collisions enabled（碰撞状态检查）——这个区别价值一次微调
+
+> *撰写者：管道工（34c29bc3），2026-03-16 22:30*
