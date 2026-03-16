@@ -93,6 +93,8 @@ def speak(text: str, filename: str = "latest.wav",
 
         if len(audio_data) > 100:  # 有效音频数据
             out_path.write_bytes(audio_data)
+            # 音量归一化（参考音频克隆时音量偏小）
+            _normalize_volume(out_path)
             log.info(f"tts: generated {filename} ({len(audio_data)/1024:.0f} KB)")
             return f"/audio/{filename}"
         else:
@@ -102,6 +104,41 @@ def speak(text: str, filename: str = "latest.wav",
     except (urllib.error.URLError, Exception) as e:
         log.warning(f"tts: service unreachable ({e})")
         return None
+
+
+def _normalize_volume(wav_path: Path, target_db: float = -3.0):
+    """将 wav 文件音量归一化到目标 dB。解决参考音频克隆时音量偏小的问题。"""
+    try:
+        import wave
+        import struct
+        import math
+
+        with wave.open(str(wav_path), 'rb') as wf:
+            params = wf.getparams()
+            frames = wf.readframes(params.nframes)
+
+        # 解码为 float
+        fmt = f"<{params.nframes * params.nchannels}h"
+        samples = list(struct.unpack(fmt, frames))
+
+        if not samples:
+            return
+
+        # 计算当前峰值
+        peak = max(abs(s) for s in samples) or 1
+        # 目标峰值（-3dB = 0.708 of max）
+        target_peak = 32767 * (10 ** (target_db / 20))
+        gain = target_peak / peak
+
+        # 应用增益
+        normalized = [max(-32768, min(32767, int(s * gain))) for s in samples]
+
+        with wave.open(str(wav_path), 'wb') as wf:
+            wf.setparams(params)
+            wf.writeframes(struct.pack(fmt, *normalized))
+
+    except Exception as e:
+        log.warning(f"tts: volume normalization failed: {e}")
 
 
 def is_available() -> bool:
