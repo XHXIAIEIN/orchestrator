@@ -1,0 +1,185 @@
+"""
+Voice Picker — 从 Fish Audio 平台随机选择声音。
+
+根据语言、性别、风格等标签筛选，随机挑一个声音，
+下载参考音频并注册到本地 Fish S2 Pro。
+
+用法：
+    from src.voice_picker import pick_voice
+
+    # 随机挑一个中文年轻男声
+    ref_id = pick_voice(tags=["male", "young"], language="zh")
+
+    # 用选中的声音说话
+    from src.tts import speak
+    speak("你好", reference_id=ref_id)
+
+标签参考（Fish Audio 常用标签）：
+    性别: male, female
+    年龄: young, middle-aged
+    风格: conversational, narration, educational, social-media, entertainment
+    语气: calm, energetic, confident, friendly, relaxed, warm, gentle
+    速度: fast, slow, smooth
+"""
+import json
+import logging
+import os
+import random
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+FISH_API = "https://api.fish.audio"
+TTS_HOST = os.environ.get("TTS_HOST", "http://localhost:23715")
+CACHE_DIR = Path(os.environ.get("VOICE_CACHE_DIR", "D:/Agent/tmp/soul-tts/voice-cache"))
+
+# 黑名单：不想用的声音（按模型 title 关键词过滤）
+BLACKLIST = [
+    "丁真", "孙笑川", "蔡徐坤", "卢本伟",  # 太有辨识度的名人
+]
+
+
+def search_voices(tags: list[str] | None = None, language: str = "zh",
+                   limit: int = 30, min_uses: int = 5000) -> list[dict]:
+    """从 Fish Audio 平台搜索符合条件的声音模型。"""
+    # 清代理
+    opener = _get_opener()
+
+    params = f"title_language={language}&sort_by=task_count&page_size={limit}"
+    if tags:
+        params += "".join(f"&tag={t}" for t in tags)
+
+    url = f"{FISH_API}/model?{params}"
+    try:
+        resp = opener.open(urllib.request.Request(url), timeout=15)
+        data = json.loads(resp.read())
+        models = [m for m in data.get("items", [])
+                  if m.get("task_count", 0) >= min_uses
+                  and m.get("samples")
+                  and not any(b in m.get("title", "") for b in BLACKLIST)]
+        log.info(f"voice_picker: found {len(models)} voices for tags={tags}")
+        return models
+    except Exception as e:
+        log.warning(f"voice_picker: search failed: {e}")
+        return []
+
+
+def pick_voice(tags: list[str] | None = None, language: str = "zh",
+               exclude: list[str] | None = None) -> str | None:
+    """随机选一个声音，下载参考音频，注册到 Fish S2 Pro。返回 reference_id。"""
+    if tags is None:
+        tags = ["male", "young"]
+
+    models = search_voices(tags=tags, language=language)
+    if not models:
+        log.warning("voice_picker: no voices found")
+        return None
+
+    # 排除已用过的
+    if exclude:
+        models = [m for m in models if m["_id"] not in exclude]
+
+    if not models:
+        log.warning("voice_picker: all voices excluded")
+        return None
+
+    # 随机选一个
+    chosen = random.choice(models)
+    model_id = chosen["_id"]
+    title = chosen.get("title", "unknown")
+    tags_str = ", ".join(chosen.get("tags", [])[:5])
+
+    log.info(f"voice_picker: chose '{title}' ({model_id[:12]}...) [{tags_str}]")
+
+    # 下载参考音频
+    ref_id = _download_and_register(chosen)
+    if ref_id:
+        log.info(f"voice_picker: registered as '{ref_id}'")
+    return ref_id
+
+
+def _download_and_register(model: dict) -> str | None:
+    """下载模型的参考音频并注册到本地 Fish S2 Pro。"""
+    model_id = model["_id"]
+    title = model.get("title", "voice")
+    samples = model.get("samples", [])
+    if not samples or not samples[0].get("audio"):
+        return None
+
+    # 获取带签名的新鲜 URL（列表里的 URL 可能已过期）
+    try:
+        opener = _get_opener()
+        req = urllib.request.Request(f"{FISH_API}/model/{model_id}")
+        resp = opener.open(req, timeout=15)
+        fresh = json.loads(resp.read())
+        audio_url = fresh["samples"][0]["audio"]
+        sample_text = fresh["samples"][0].get("text", "参考音频")
+    except Exception:
+        audio_url = samples[0]["audio"]
+        sample_text = samples[0].get("text", "参考音频")
+
+    # 下载到缓存
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = CACHE_DIR / f"{model_id}.mp3"
+
+    if not cache_path.exists():
+        try:
+            opener = _get_opener()
+            resp = opener.open(urllib.request.Request(audio_url), timeout=30)
+            cache_path.write_bytes(resp.read())
+            log.info(f"voice_picker: downloaded {title} ({cache_path.stat().st_size/1024:.0f} KB)")
+        except Exception as e:
+            log.warning(f"voice_picker: download failed for {title}: {e}")
+            return None
+
+    # 注册到 Fish S2 Pro（multipart form upload）
+    ref_id = f"voice_{model_id[:8]}"
+    try:
+        import mimetypes
+        boundary = "----VoicePickerBoundary"
+        audio_data = cache_path.read_bytes()
+        content_type = mimetypes.guess_type(str(cache_path))[0] or "audio/mpeg"
+
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="id"\r\n\r\n{ref_id}\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="text"\r\n\r\n{sample_text[:200]}\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="audio"; filename="{cache_path.name}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode() + audio_data + f"\r\n--{boundary}--\r\n".encode()
+
+        req = urllib.request.Request(
+            f"{TTS_HOST}/v1/references/add",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()  # consume response
+        return ref_id
+    except urllib.error.HTTPError as e:
+        if e.code == 409:  # already exists
+            return ref_id
+        log.warning(f"voice_picker: register failed: {e}")
+        return None
+    except Exception as e:
+        log.warning(f"voice_picker: register failed: {e}")
+        return None
+
+
+def list_cached_voices() -> list[str]:
+    """列出已缓存的声音。"""
+    if not CACHE_DIR.exists():
+        return []
+    return [f.stem for f in CACHE_DIR.glob("*.mp3")]
+
+
+def _get_opener():
+    """创建绕过代理的 URL opener。"""
+    for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']:
+        os.environ.pop(k, None)
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
