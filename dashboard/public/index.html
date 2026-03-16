@@ -55,7 +55,17 @@ nav {
   color: var(--text-mid); font-style: italic; max-width: 680px; margin-top: 24px;
   opacity: 0; animation: fadeIn .6s ease .15s forwards;
 }
-.roast-sig { margin-top: 16px; font-size: .65rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+.roast-footer { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
+.roast-sig { font-size: .65rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+.voice-btn {
+  background: none; border: 1px solid var(--border); border-radius: 50%; width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-dim);
+  transition: all .2s;
+}
+.voice-btn:hover { color: var(--accent); border-color: var(--accent); }
+.voice-btn.loading { opacity: .5; pointer-events: none; animation: pulse 1s infinite; }
+.voice-btn.playing { color: var(--green); border-color: var(--green); }
+@keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
 /* ── Section ── */
@@ -258,7 +268,13 @@ section:last-of-type { border-bottom: none; }
   <div class="hero">
     <h1 class="hero-title">管家日报 <sup id="roast-date"></sup></h1>
     <div class="roast" id="roast">观察中...</div>
-    <div class="roast-sig">— Orchestrator</div>
+    <div class="roast-footer">
+      <span class="roast-sig">— Orchestrator</span>
+      <button class="voice-btn" id="voice-btn" onclick="speakRoast()" title="让 SOUL 说出来">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+    </div>
+    <audio id="voice-audio" style="display:none"></audio>
   </div>
 
   <!-- 三省六部 -->
@@ -623,6 +639,55 @@ async function loadAll(){
   loadCats(1,document.querySelector('.cat-btn.active'));renderTasks(tasks);
 }
 loadAll();setInterval(loadAll,60000);
+
+// ── SOUL Voice ──
+const voiceBtn = document.getElementById('voice-btn');
+const voiceAudio = document.getElementById('voice-audio');
+
+async function speakRoast() {
+  const roastEl = document.getElementById('roast');
+  const text = roastEl?.textContent?.trim();
+  if (!text || text === '观察中...') return;
+
+  voiceBtn.classList.add('loading');
+  voiceBtn.classList.remove('playing');
+
+  try {
+    const resp = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await resp.json();
+    if (data.ok && data.url) {
+      voiceAudio.src = data.url;
+      voiceAudio.play();
+      voiceBtn.classList.remove('loading');
+      voiceBtn.classList.add('playing');
+      voiceAudio.onended = () => voiceBtn.classList.remove('playing');
+    } else {
+      voiceBtn.classList.remove('loading');
+      console.error('TTS failed:', data.error);
+    }
+  } catch (e) {
+    voiceBtn.classList.remove('loading');
+    console.error('TTS error:', e);
+  }
+}
+
+// WebSocket: 自动播放 SOUL 语音
+const ws = new WebSocket(`ws://${location.host}`);
+ws.onmessage = (e) => {
+  try {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'soul_voice' && msg.url) {
+      voiceAudio.src = msg.url;
+      voiceAudio.play();
+      voiceBtn.classList.add('playing');
+      voiceAudio.onended = () => voiceBtn.classList.remove('playing');
+    }
+  } catch {}
+};
 </script>
 </body>
 </html>

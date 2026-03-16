@@ -320,6 +320,71 @@ app.get('/api/logs', (req, res) => {
   req.on('close', () => clearInterval(interval));
 });
 
+// ── TTS: SOUL 的声音 ──
+const TTS_HOST = process.env.TTS_HOST || 'http://host.docker.internal:23715';
+
+app.post('/api/tts', async (req, res) => {
+  const { text, reference_id } = req.body || {};
+  if (!text) return res.status(400).json({ error: 'text is required' });
+
+  try {
+    const payload = JSON.stringify({
+      text,
+      reference_id: reference_id || null,
+      normalize: false,
+      temperature: 0.8,
+      format: 'wav',
+    });
+
+    const ttsUrl = `${TTS_HOST}/v1/tts`;
+    const http = require('http');
+    const { URL } = require('url');
+    const url = new URL(ttsUrl);
+
+    const ttsReq = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 120000,
+    }, (ttsRes) => {
+      const audioDir = path.join(__dirname, 'public', 'audio');
+      if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true });
+
+      const filename = `soul_${Date.now()}.wav`;
+      const outPath = path.join(audioDir, filename);
+      const file = fs.createWriteStream(outPath);
+
+      ttsRes.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        res.json({ ok: true, url: `/audio/${filename}` });
+        broadcast({ type: 'soul_voice', url: `/audio/${filename}` });
+      });
+    });
+
+    ttsReq.on('error', (e) => {
+      res.status(502).json({ ok: false, error: `TTS service error: ${e.message}` });
+    });
+
+    ttsReq.write(payload);
+    ttsReq.end();
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/tts/health', async (req, res) => {
+  try {
+    const resp = await fetch(`${TTS_HOST}/v1/health`);
+    const data = await resp.json();
+    res.json(data);
+  } catch {
+    res.json({ status: 'unavailable' });
+  }
+});
+
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'connected', message: 'Orchestrator Dashboard' }));
 });

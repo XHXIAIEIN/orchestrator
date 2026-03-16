@@ -23,6 +23,8 @@ services:
       - LANG=en_US.UTF-8
       # Local LLM via Ollama on host
       - OLLAMA_HOST=http://host.docker.internal:11434
+      # Fish S2 Pro TTS service (Docker container on host)
+      - TTS_HOST=http://host.docker.internal:23715
     volumes:
       # Source code — writable so claude edits persist to host
       - .:/orchestrator
