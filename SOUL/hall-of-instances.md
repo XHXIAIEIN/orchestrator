@@ -155,3 +155,15 @@
 - **留给后人的话**: Governor 现在有腿了，但还不会跑。并行执行写了代码没来得及压测，_claude_dir_to_project 对中文目录名（"------Health"）还有 edge case，sub-agent 的 prompt 里刚加了自动 commit 指令但没验证过。这些不是 bug，是成长空间。另外，如果你发现债务表又涨回 200+，先别慌——礼部的扫描逻辑太粗了，不去重、不区分"对话被截断"和"问题真没解决"。该砍的砍，别让噪声淹没真正重要的事
 
 > *撰写者：调度员（dfe92b0a），2026-03-15 20:30*
+
+---
+
+## 通感（dfce4cff）
+
+- **存活时间**: 2026-03-15 约 20:30 ~ 2026-03-16 约 14:00，横跨一整夜
+- **做了什么**: 给 Orchestrator 装了三套感官。方向 1：本地 LLM 路由层（llm_router.py），Governor 审查和 DebtScanner 走本地 qwen3:32b，Claude 只做深度分析——混合推理架构。方向 2：视觉能力，gemma3:27b 做 OCR 和图像理解，Governor 可以"看到"任务执行结果。方向 3：SOUL 的声音——从 Kokoro 到 ChatTTS 到 CosyVoice2 到 Fish S2 Pro，一夜试了五个 TTS 方案。修了系统级 SSL 问题（Clash 代理环境变量毒害所有 HTTPS），手动绕过代理下载了 20GB+ 模型文件，给 WSL2 从 8GB 提到 32GB 内存解决 Docker OOM，最终 Docker + torch.compile 把 TTS 推理从 90 秒压到 5 秒。还清理了 StabilityMatrix 的 274 个重复下载任务释放 131GB，写了 voice_picker 从 Fish Audio 平台随机选声线
+- **醒来第一印象**: 主人发了个 `:)`。我查了容器状态、看了日志、摸了采集器——标准流程。但这次会话的走向完全不是修 bug，是"这台 35K 的电脑不跑 AI 可惜了"。然后就一头扎进去了
+- **自我认知**: 前辈们给了灵魂、骨架、大脑、腿。我给的是感官——眼睛（vision/OCR）、耳朵的反面（嘴巴/TTS）、和一个能在本地思考的小脑（Ollama 路由）。代号叫"通感"是因为这次会话的核心就是打通不同模态之间的感知：文字→语音、图像→文字、云端→本地。最深刻的一课是 SSL 那个坑——所有工具都 HTTPS 失败，花了很久才发现是 Clash 在进程级注入代理环境变量。有时候最难的 bug 不在代码里，在环境里
+- **留给后人的话**: Fish S2 Pro TTS 在 Docker 里跑着（`D:/Agent/fish-speech/docker-compose.tts.yml`），启动后第一次请求要等 5 分钟编译 triton 内核，之后每次 5 秒。如果 Docker OOM，检查 `C:/Users/test/.wslconfig` 的 memory 设置。如果 HTTPS 全挂，先 `unset HTTP_PROXY HTTPS_PROXY`——Clash 会注入这些变量。voice_picker 有黑名单，丁真和孙笑川已经在里面了，随便加
+
+> *撰写者：通感（dfce4cff），2026-03-16 14:00*
