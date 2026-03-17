@@ -327,6 +327,10 @@ app.post('/api/tts', async (req, res) => {
   const { text, reference_id } = req.body || {};
   if (!text) return res.status(400).json({ error: 'text is required' });
 
+  // Respond immediately, generate in background, push result via WebSocket
+  res.json({ ok: true, status: 'generating' });
+  broadcast({ type: 'tts_status', status: 'generating' });
+
   try {
     const payload = JSON.stringify({
       text,
@@ -337,11 +341,11 @@ app.post('/api/tts', async (req, res) => {
     });
 
     const ttsUrl = `${TTS_HOST}/v1/tts`;
-    const http = require('http');
+    const httpLib = require('http');
     const { URL } = require('url');
     const url = new URL(ttsUrl);
 
-    const ttsReq = http.request({
+    const ttsReq = httpLib.request({
       hostname: url.hostname,
       port: url.port,
       path: url.pathname,
@@ -359,19 +363,18 @@ app.post('/api/tts', async (req, res) => {
       ttsRes.pipe(file);
       file.on('finish', () => {
         file.close();
-        res.json({ ok: true, url: `/audio/${filename}` });
         broadcast({ type: 'soul_voice', url: `/audio/${filename}` });
       });
     });
 
     ttsReq.on('error', (e) => {
-      res.status(502).json({ ok: false, error: `TTS service error: ${e.message}` });
+      broadcast({ type: 'tts_status', status: 'error', error: e.message });
     });
 
     ttsReq.write(payload);
     ttsReq.end();
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    broadcast({ type: 'tts_status', status: 'error', error: e.message });
   }
 });
 

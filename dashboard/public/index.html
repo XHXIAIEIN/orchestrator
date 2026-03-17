@@ -63,8 +63,11 @@ nav {
   transition: all .2s;
 }
 .voice-btn:hover { color: var(--accent); border-color: var(--accent); }
-.voice-btn.loading { opacity: .5; pointer-events: none; animation: pulse 1s infinite; }
+.voice-btn.loading { color: var(--accent); border-color: var(--accent); pointer-events: none; animation: pulse 1s infinite; }
 .voice-btn.playing { color: var(--green); border-color: var(--green); }
+.voice-status { font-size: .65rem; color: var(--text-dim); transition: opacity .3s; }
+.voice-status.active { color: var(--accent); }
+.voice-status.error { color: var(--red); }
 @keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
@@ -278,6 +281,7 @@ section:last-of-type { border-bottom: none; }
       <button class="voice-btn" id="voice-btn" onclick="speakRoast()" title="让 SOUL 说出来">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       </button>
+      <span class="voice-status" id="voice-status"></span>
     </div>
     <audio id="voice-audio" style="display:none"></audio>
   </div>
@@ -557,7 +561,11 @@ setInterval(updateSchedule,5000);updateSchedule();
 const ws=new WebSocket(`ws://${location.host}`);
 ws.onopen=()=>{$('h-ws').textContent='在线';$('h-dot').classList.remove('off')};
 ws.onclose=()=>{$('h-ws').textContent='离线';$('h-dot').classList.add('off')};
-ws.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='task_update')loadAll();if(d.type==='soul_voice'&&d.url){voiceAudio.src=d.url;voiceAudio.play();voiceBtn.classList.add('playing');voiceAudio.onended=()=>voiceBtn.classList.remove('playing')}}catch{}};
+ws.onmessage=e=>{try{const d=JSON.parse(e.data);
+  if(d.type==='task_update')loadAll();
+  if(d.type==='soul_voice'&&d.url){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('');voiceAudio.src=d.url;voiceAudio.currentTime=0;voiceAudio.oncanplay=()=>{voiceAudio.oncanplay=null;voiceAudio.play();voiceBtn.classList.add('playing')};voiceAudio.onended=()=>voiceBtn.classList.remove('playing')}
+  if(d.type==='tts_status'&&d.status==='error'){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('生成失败: '+(d.error||'未知错误'),'error');setTimeout(()=>setVoiceStatus(''),5000)}
+}catch{}};
 
 /* ── Insights render ── */
 function renderInsightsSection(insights) {
@@ -655,6 +663,26 @@ loadAll();setInterval(loadAll,60000);
 // ── SOUL Voice ──
 const voiceBtn = document.getElementById('voice-btn');
 const voiceAudio = document.getElementById('voice-audio');
+const voiceStatus = document.getElementById('voice-status');
+let _ttsTimer = null;
+
+function setVoiceStatus(text, cls) {
+  voiceStatus.textContent = text;
+  voiceStatus.className = 'voice-status' + (cls ? ' ' + cls : '');
+}
+
+function startTtsTimer() {
+  let sec = 0;
+  setVoiceStatus('语音生成中... 0s', 'active');
+  _ttsTimer = setInterval(() => {
+    sec++;
+    setVoiceStatus(`语音生成中... ${sec}s`, 'active');
+  }, 1000);
+}
+
+function stopTtsTimer() {
+  if (_ttsTimer) { clearInterval(_ttsTimer); _ttsTimer = null; }
+}
 
 async function speakRoast() {
   const roastEl = document.getElementById('roast');
@@ -663,31 +691,22 @@ async function speakRoast() {
 
   voiceBtn.classList.add('loading');
   voiceBtn.classList.remove('playing');
+  startTtsTimer();
 
+  // Fire-and-forget: server responds immediately, result comes via WebSocket
   try {
-    const resp = await fetch('/api/tts', {
+    await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
     });
-    const data = await resp.json();
-    if (data.ok && data.url) {
-      voiceAudio.src = data.url;
-      voiceAudio.play();
-      voiceBtn.classList.remove('loading');
-      voiceBtn.classList.add('playing');
-      voiceAudio.onended = () => voiceBtn.classList.remove('playing');
-    } else {
-      voiceBtn.classList.remove('loading');
-      console.error('TTS failed:', data.error);
-    }
   } catch (e) {
+    stopTtsTimer();
     voiceBtn.classList.remove('loading');
-    console.error('TTS error:', e);
+    setVoiceStatus('语音服务不可用', 'error');
+    setTimeout(() => setVoiceStatus(''), 4000);
   }
 }
-
-// WebSocket: 自动播放 SOUL 语音 (merged into existing ws above)
 </script>
 </body>
 </html>
