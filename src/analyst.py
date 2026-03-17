@@ -46,11 +46,11 @@ class DailyAnalyst:
         try:
             cli_result = subprocess.run(
                 ["claude", "--dangerously-skip-permissions", "--print",
-                 "--model", MODEL_NAME, prompt],
+                 "--model", MODEL_NAME, "-"],
                 capture_output=True,
                 text=True,
                 timeout=ANALYST_TIMEOUT,
-                stdin=subprocess.DEVNULL,
+                input=prompt,
             )
             text = cli_result.stdout.strip()
             if not text:

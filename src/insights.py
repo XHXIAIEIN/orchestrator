@@ -229,11 +229,11 @@ class InsightEngine:
         try:
             proc = subprocess.run(
                 ["claude", "--dangerously-skip-permissions", "--print",
-                 "--model", MODEL_NAME, prompt],
+                 "--model", MODEL_NAME, "-"],
                 capture_output=True,
                 text=True,
                 timeout=CLAUDE_TIMEOUT,
-                stdin=subprocess.DEVNULL,
+                input=prompt,
             )
         except subprocess.TimeoutExpired:
             logger.error("InsightEngine: Claude CLI timed out after %ds", CLAUDE_TIMEOUT)

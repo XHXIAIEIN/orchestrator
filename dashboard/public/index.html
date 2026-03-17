@@ -189,6 +189,11 @@ section:last-of-type { border-bottom: none; }
 .debt-status-resolved { background: #e6f4ea; color: var(--green); }
 .debt-summary { font-family: var(--serif); font-size: .88rem; color: var(--text); line-height: 1.75; margin-top: 4px; }
 .debt-meta { font-family: var(--mono); font-size: .65rem; color: var(--text-dim); margin-top: 4px; }
+.debt-group { margin-bottom: 24px; }
+.debt-group:last-child { margin-bottom: 0; }
+.debt-proj-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.debt-proj-name { font-family: var(--mono); font-size: .78rem; font-weight: 500; color: var(--text); }
+.debt-proj-count { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); }
 
 /* ── Tasks ── */
 .task-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -552,7 +557,7 @@ setInterval(updateSchedule,5000);updateSchedule();
 const ws=new WebSocket(`ws://${location.host}`);
 ws.onopen=()=>{$('h-ws').textContent='在线';$('h-dot').classList.remove('off')};
 ws.onclose=()=>{$('h-ws').textContent='离线';$('h-dot').classList.add('off')};
-ws.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='task_update')loadAll()}catch{}};
+ws.onmessage=e=>{try{const d=JSON.parse(e.data);if(d.type==='task_update')loadAll();if(d.type==='soul_voice'&&d.url){voiceAudio.src=d.url;voiceAudio.play();voiceBtn.classList.add('playing');voiceAudio.onended=()=>voiceBtn.classList.remove('playing')}}catch{}};
 
 /* ── Insights render ── */
 function renderInsightsSection(insights) {
@@ -602,19 +607,26 @@ function renderDebts(debts){
   const open=debts.filter(d=>(d.status||'open')==='open').length;
   $('debt-count').textContent=debts.length?`${open} 未解决 / ${debts.length} 总计`:'';
   if(!debts.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.8rem;padding:8px 0'>暂无债务</div>";return}
-  el.innerHTML=debts.map(d=>{
-    const sevCls={'high':'debt-sev-high','medium':'debt-sev-medium','low':'debt-sev-low'}[d.severity]||'debt-sev-low';
-    const sevLabel={'high':'高','medium':'中','low':'低'}[d.severity]||d.severity;
-    const st=(d.status||'open');
-    const stCls=st==='resolved'?'debt-status-resolved':'debt-status-open';
-    const stLabel=st==='resolved'?'已解决':'待处理';
-    const ts=(d.created_at||'').replace('T',' ').slice(0,16);
-    const src=d.source_session?` · ${esc(d.source_session)}`:'';
-    return`<div class='debt-item'>
-      <div class='debt-head'><span class='debt-severity ${sevCls}'>${sevLabel}</span><span class='debt-status ${stCls}'>${stLabel}</span></div>
-      <div class='debt-summary'>${esc(d.summary||'')}</div>
-      <div class='debt-meta'>${esc(ts)}${src}</div>
-    </div>`}).join('');
+  const groups={};debts.forEach(d=>{const p=d.project||'未分类';if(!groups[p])groups[p]=[];groups[p].push(d)});
+  let html='';
+  for(const[proj,items]of Object.entries(groups)){
+    const pOpen=items.filter(d=>(d.status||'open')==='open').length;
+    html+=`<div class='debt-group'><div class='debt-proj-head'><span class='debt-proj-name'>${esc(proj)}</span><span class='debt-proj-count'>${pOpen} 未解决</span></div>`;
+    html+=items.map(d=>{
+      const sevCls={'high':'debt-sev-high','medium':'debt-sev-medium','low':'debt-sev-low'}[d.severity]||'debt-sev-low';
+      const sevLabel={'high':'高','medium':'中','low':'低'}[d.severity]||d.severity;
+      const st=(d.status||'open');
+      const stCls=st==='resolved'?'debt-status-resolved':'debt-status-open';
+      const stLabel=st==='resolved'?'已解决':'待处理';
+      const ts=(d.created_at||'').replace('T',' ').slice(0,16);
+      return`<div class='debt-item'>
+        <div class='debt-head'><span class='debt-severity ${sevCls}'>${sevLabel}</span><span class='debt-status ${stCls}'>${stLabel}</span></div>
+        <div class='debt-summary'>${esc(d.summary||'')}</div>
+        <div class='debt-meta'>${esc(ts)}</div>
+      </div>`}).join('');
+    html+='</div>';
+  }
+  el.innerHTML=html;
 }
 
 /* ── Main ── */
@@ -675,19 +687,7 @@ async function speakRoast() {
   }
 }
 
-// WebSocket: 自动播放 SOUL 语音
-const ws = new WebSocket(`ws://${location.host}`);
-ws.onmessage = (e) => {
-  try {
-    const msg = JSON.parse(e.data);
-    if (msg.type === 'soul_voice' && msg.url) {
-      voiceAudio.src = msg.url;
-      voiceAudio.play();
-      voiceBtn.classList.add('playing');
-      voiceAudio.onended = () => voiceBtn.classList.remove('playing');
-    }
-  } catch {}
-};
+// WebSocket: 自动播放 SOUL 语音 (merged into existing ws above)
 </script>
 </body>
 </html>

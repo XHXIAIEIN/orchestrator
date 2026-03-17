@@ -146,9 +146,9 @@ class ProfileAnalyst:
 
         result = subprocess.run(
             ["claude", "--dangerously-skip-permissions", "--print",
-             "--model", MODEL_NAME, prompt],
+             "--model", MODEL_NAME, "-"],
             capture_output=True, text=True, timeout=120,
-            stdin=subprocess.DEVNULL,
+            input=prompt,
         )
 
         if result.returncode != 0:

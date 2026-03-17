@@ -4,6 +4,7 @@ Groups by video_id + calendar day to avoid duplicate entries for repeat listens.
 Resolves unknown titles via YouTube oEmbed (no API key required).
 """
 import json
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -64,9 +65,10 @@ def _oembed_title(video_id: str) -> str:
 
 
 def _find_chrome_profiles() -> list[str]:
+    chrome_root = os.environ.get("CHROME_HISTORY_ROOT")
     home = Path.home()
     roots = [
-        home / "AppData/Local/Google/Chrome/User Data",
+        Path(chrome_root) if chrome_root else home / "AppData/Local/Google/Chrome/User Data",
         home / "AppData/Local/Microsoft/Edge/User Data",
     ]
     paths = []
