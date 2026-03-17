@@ -685,15 +685,14 @@ async function loadAll(){
 }
 loadAll();setInterval(loadAll,60000);
 
-let _historyTexts=[];
+let _historyItems=[];
 async function loadRoastHistory(){
   try{
     const items=await fetch('/api/profile-analysis/history').then(r=>r.json());
-    // Skip first (it's the current one shown in hero)
     const past=items.slice(1);
     if(!past.length){$('roast-history-btn').style.display='none';return}
     $('roast-history-btn').style.display='';
-    _historyTexts=past.map(r=>r.commentary||r.daily_note);
+    _historyItems=past;
     $('roast-history').innerHTML=past.map((r,i)=>{
       const ts=(r.date||'').replace('T',' ').slice(0,16);
       const text=r.commentary||r.daily_note;
@@ -702,13 +701,18 @@ async function loadRoastHistory(){
   }catch{}
 }
 function playHistory(idx){
-  const text=_historyTexts[idx];
-  if(!text)return;
-  // Reuse the main voice infrastructure
+  const item=_historyItems[idx];
+  if(!item)return;
+  const text=item.commentary||item.daily_note;
+  const voice=item.voice||null;
+  _requestTTS(text, voice);
+}
+function _requestTTS(text, reference_id){
   voiceBtn.classList.add('loading');
   voiceBtn.classList.remove('playing');
   startTtsTimer();
-  fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}).catch(()=>{
+  const body=reference_id?{text,reference_id}:{text};
+  fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).catch(()=>{
     stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('语音服务不可用','error');setTimeout(()=>setVoiceStatus(''),4000);
   });
 }
@@ -750,28 +754,24 @@ function stopTtsTimer() {
   if (_ttsTimer) { clearInterval(_ttsTimer); _ttsTimer = null; }
 }
 
-async function speakRoast() {
+function speakRoast() {
+  // If audio is playing, pause it
+  if (!voiceAudio.paused && voiceAudio.src) {
+    voiceAudio.pause();
+    voiceBtn.classList.remove('playing');
+    return;
+  }
+  // If audio is paused (has src and currentTime > 0), resume
+  if (voiceAudio.paused && voiceAudio.src && voiceAudio.currentTime > 0) {
+    voiceAudio.play();
+    voiceBtn.classList.add('playing');
+    return;
+  }
+  // Otherwise generate new
   const roastEl = document.getElementById('roast');
   const text = roastEl?.textContent?.trim();
   if (!text || text === '观察中...') return;
-
-  voiceBtn.classList.add('loading');
-  voiceBtn.classList.remove('playing');
-  startTtsTimer();
-
-  // Fire-and-forget: server responds immediately, result comes via WebSocket
-  try {
-    await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-  } catch (e) {
-    stopTtsTimer();
-    voiceBtn.classList.remove('loading');
-    setVoiceStatus('语音服务不可用', 'error');
-    setTimeout(() => setVoiceStatus(''), 4000);
-  }
+  _requestTTS(text, null);
 }
 </script>
 </body>

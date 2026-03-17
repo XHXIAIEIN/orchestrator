@@ -200,10 +200,12 @@ app.get('/api/profile-analysis/history', (req, res) => {
   if (!db) return res.json([]);
   try {
     const rows = dbAll(db, "SELECT generated_at, data_json FROM profile_analysis ORDER BY id DESC LIMIT 30");
+    const voiceLog = _loadVoiceLog();
     const items = rows.map(r => {
       try {
         const d = JSON.parse(r.data_json);
-        return { date: r.generated_at, commentary: d.commentary || '', daily_note: d.daily_note || '' };
+        const dateKey = (r.generated_at || '').slice(0, 10);
+        return { date: r.generated_at, commentary: d.commentary || '', daily_note: d.daily_note || '', voice: voiceLog[dateKey] || null };
       } catch { return null; }
     }).filter(r => r && (r.commentary || r.daily_note));
     res.json(items);
@@ -341,6 +343,15 @@ const TTS_HOST = process.env.TTS_HOST || 'http://host.docker.internal:23715';
 let _ttsWarmed = false;
 let _todayVoice = null;
 let _todayVoiceDate = null;
+const VOICE_LOG_PATH = path.join(__dirname, '..', 'voice_log.json');
+
+function _loadVoiceLog() {
+  try { return JSON.parse(fs.readFileSync(VOICE_LOG_PATH, 'utf8')); } catch { return {}; }
+}
+function _saveVoiceLog(log) {
+  try { fs.writeFileSync(VOICE_LOG_PATH, JSON.stringify(log, null, 2)); } catch {}
+}
+function getVoiceForDate(date) { return _loadVoiceLog()[date] || null; }
 
 function getDailyVoice(callback) {
   const today = new Date().toISOString().slice(0, 10);
@@ -356,10 +367,12 @@ function getDailyVoice(callback) {
       try {
         const ids = JSON.parse(data).reference_ids || [];
         if (ids.length) {
-          // Seed by date for daily consistency
           const seed = today.split('-').reduce((a, b) => a + parseInt(b), 0);
           _todayVoice = ids[seed % ids.length];
           _todayVoiceDate = today;
+          // Persist to voice log
+          const log = _loadVoiceLog();
+          if (!log[today]) { log[today] = _todayVoice; _saveVoiceLog(log); }
           console.log(`Daily voice: ${_todayVoice} (from ${ids.length} available)`);
         }
       } catch {}
@@ -485,26 +498,47 @@ setTimeout(() => {
   });
 }, 5000);
 
+// Audio cache: avoid re-generating the same text+voice
+const _ttsCache = new Map(); // key: text+voice -> base64
+const TTS_CACHE_MAX = 30;
+
 app.post('/api/tts', async (req, res) => {
-  const { text } = req.body || {};
+  const { text, reference_id } = req.body || {};
   if (!text) return res.status(400).json({ error: 'text is required' });
 
-  res.json({ ok: true, status: 'generating' });
-  broadcast({ type: 'tts_status', status: _ttsWarmed ? 'generating' : 'compiling' });
+  const useVoice = (voice) => {
+    const cacheKey = text.slice(0, 100) + '|' + (voice || '');
+    const cached = _ttsCache.get(cacheKey);
+    if (cached) {
+      res.json({ ok: true, status: 'cached' });
+      broadcast({ type: 'soul_voice', audio: cached, mime: 'audio/mpeg' });
+      return;
+    }
+
+    res.json({ ok: true, status: 'generating' });
+    broadcast({ type: 'tts_status', status: _ttsWarmed ? 'generating' : 'compiling' });
+
+    ttsGenerate(text, voice,
+      (buf) => {
+        _ttsWarmed = true;
+        const b64 = buf.toString('base64');
+        // Cache it
+        if (_ttsCache.size >= TTS_CACHE_MAX) { const first = _ttsCache.keys().next().value; _ttsCache.delete(first); }
+        _ttsCache.set(cacheKey, b64);
+        broadcast({ type: 'soul_voice', audio: b64, mime: 'audio/mpeg' });
+      },
+      (e) => {
+        broadcast({ type: 'tts_status', status: 'error', error: e.message });
+      }
+    );
+  };
 
   try {
-    getDailyVoice((voice) => {
-      ttsGenerate(text, voice,
-        (buf) => {
-          _ttsWarmed = true;
-          const b64 = buf.toString('base64');
-          broadcast({ type: 'soul_voice', audio: b64, mime: 'audio/mpeg' });
-        },
-        (e) => {
-          broadcast({ type: 'tts_status', status: 'error', error: e.message });
-        }
-      );
-    });
+    if (reference_id) {
+      useVoice(reference_id);
+    } else {
+      getDailyVoice(useVoice);
+    }
   } catch (e) {
     broadcast({ type: 'tts_status', status: 'error', error: e.message });
   }
