@@ -380,7 +380,7 @@ class Governor:
                         permission_mode="bypassPermissions",
                         system_prompt=dept["prompt_prefix"],
                         max_turns=MAX_AGENT_TURNS,
-                        env=agent_env if agent_env else None,
+                        **({"env": agent_env} if agent_env else {}),
                     ),
                 ):
                     if isinstance(message, ResultMessage):
@@ -413,7 +413,8 @@ class Governor:
             # 部门协作
             if status == "done":
                 if dept_key == "engineering":
-                    # 工部完成 → 自动派刑部验收
+                    # 工部完成 → 自动派刑部验收（传入最新 output）
+                    task["output"] = output
                     self._dispatch_quality_review(task_id, task, task_cwd, project_name)
                 elif dept_key == "quality" and "VERDICT: FAIL" in output:
                     # 刑部验收失败 → 打回工部重做
@@ -425,7 +426,7 @@ class Governor:
         """工部完成任务后，自动创建刑部验收任务。跳过门下省审查（验收本身就是审查）。"""
         parent_spec = parent_task.get("spec", {})
         parent_action = parent_task.get("action", "")
-        parent_output = parent_task.get("output", "")
+        parent_output = parent_task.get("output") or ""
         # 防止验收链无限循环：如果父任务本身已经是验收任务，不再派生
         if parent_spec.get("department") == "quality":
             return
