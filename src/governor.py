@@ -124,7 +124,11 @@ DEPARTMENTS = {
 【红线】
 - 只读不写。发现问题写报告，不自行修改代码
 - 不因个人偏好否定可工作的代码
-【完成标准】输出 review 报告，列出发现的问题和建议，附文件路径和行号""",
+【完成标准】
+1. 输出 review 报告，列出发现的问题和建议，附文件路径和行号
+2. 最后一行必须输出裁决（二选一）：
+   VERDICT: PASS — 代码质量合格，无阻塞性问题
+   VERDICT: FAIL — 存在 🔴 级别问题，需工部返工。附一句话说明原因""",
         "tools": "Bash,Read,Glob,Grep",
     },
     "personnel": {
@@ -383,9 +387,14 @@ class Governor:
             self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
             log.info(f"Governor: task #{task_id} {status}")
 
-            # 部门协作：工部完成 → 自动派刑部验收
-            if status == "done" and dept_key == "engineering":
-                self._dispatch_quality_review(task_id, task, task_cwd, project_name)
+            # 部门协作
+            if status == "done":
+                if dept_key == "engineering":
+                    # 工部完成 → 自动派刑部验收
+                    self._dispatch_quality_review(task_id, task, task_cwd, project_name)
+                elif dept_key == "quality" and "VERDICT: FAIL" in output:
+                    # 刑部验收失败 → 打回工部重做
+                    self._dispatch_rework(task_id, task, task_cwd, project_name, output)
 
         return self.db.get_task(task_id)
 
@@ -416,6 +425,61 @@ class Governor:
         )
         self.db.write_log(f"工部任务 #{parent_id} 完成 → 派刑部验收任务 #{review_id}", "INFO", "governor")
         log.info(f"Governor: dispatched quality review #{review_id} for engineering task #{parent_id}")
+
+    MAX_REWORK = 1  # 最多打回重做 1 次，防止工部↔刑部死循环
+
+    def _dispatch_rework(self, review_task_id: int, review_task: dict,
+                         task_cwd: str, project_name: str, review_output: str):
+        """刑部验收失败，打回工部重做。追溯原始工部任务，携带刑部反馈。"""
+        review_spec = review_task.get("spec", {})
+        parent_id = review_task.get("parent_task_id")
+        if not parent_id:
+            log.warning(f"Governor: review #{review_task_id} has no parent_task_id, skip rework")
+            return
+
+        # 查原始工部任务，检查重做次数
+        original = self.db.get_task(parent_id)
+        if not original:
+            return
+        original_spec = original.get("spec", {})
+        rework_count = original_spec.get("rework_count", 0)
+        if rework_count >= self.MAX_REWORK:
+            self.db.write_log(
+                f"刑部验收任务 #{review_task_id} FAIL，但原任务 #{parent_id} 已重做 {rework_count} 次，不再打回",
+                "WARNING", "governor")
+            log.warning(f"Governor: task #{parent_id} hit max rework ({rework_count}), not dispatching")
+            return
+
+        # 提取刑部反馈（VERDICT 行之前的内容）
+        feedback_lines = []
+        for line in review_output.splitlines():
+            if line.startswith("VERDICT:"):
+                break
+            feedback_lines.append(line)
+        feedback = "\n".join(feedback_lines[-20:])  # 取最后 20 行，避免太长
+
+        rework_spec = {
+            "department": "engineering",
+            "project": project_name,
+            "cwd": task_cwd,
+            "problem": f"刑部验收任务 #{review_task_id} 驳回了工部任务 #{parent_id}，需要返工修复",
+            "observation": f"刑部反馈：\n{feedback}",
+            "expected": original_spec.get("expected", "修复刑部指出的问题"),
+            "summary": f"返工：{original.get('action', '')[:30]}（刑部驳回）",
+            "rework_count": rework_count + 1,
+        }
+        rework_id = self.db.create_task(
+            action=f"根据刑部反馈修复任务 #{parent_id} 的问题：{feedback[:100]}",
+            reason=f"刑部验收 #{review_task_id} FAIL，需返工",
+            priority="high",
+            spec=rework_spec,
+            source="auto",
+            parent_task_id=review_task_id,
+        )
+        self.db.write_log(
+            f"刑部验收 #{review_task_id} FAIL → 打回工部，创建返工任务 #{rework_id}（第 {rework_count + 1} 次）",
+            "WARNING", "governor")
+        log.info(f"Governor: dispatched rework #{rework_id} for failed review #{review_task_id}")
 
     def _visual_verify(self, task_id: int, task_cwd: str, spec: dict) -> str:
         """可选视觉验证：检查约定路径是否有截图，有则用 vision 模型验证。"""

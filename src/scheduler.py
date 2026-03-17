@@ -14,6 +14,7 @@ from src.governor import Governor
 from src.profile_analyst import ProfileAnalyst
 from src.health import HealthCheck
 from src.debt_scanner import DebtScanner
+from src.performance import PerformanceReport
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -167,13 +168,24 @@ def start():
             log.error(f"DebtScanner failed: {e}")
             db.write_log(f"注意力债务扫描失败: {e}", "ERROR", "debt_scanner")
 
+    def _performance_report():
+        db = EventsDB(DB_PATH)
+        try:
+            db.write_log("吏部开始生成绩效报告", "INFO", "performance")
+            perf = PerformanceReport(db=db)
+            perf.run()
+        except Exception as e:
+            log.error(f"PerformanceReport failed: {e}")
+            db.write_log(f"吏部绩效报告失败: {e}", "ERROR", "performance")
+
     scheduler.add_job(_collectors, "interval", hours=1, id="collectors")
     scheduler.add_job(_analysis, "interval", hours=6, id="analysis")
     scheduler.add_job(_profile_periodic, "interval", hours=6, id="profile_periodic")
     scheduler.add_job(_profile_daily, "cron", hour=6, timezone="Asia/Shanghai", id="profile_daily")
     scheduler.add_job(_debt_scan, "interval", hours=12, id="debt_scan")
+    scheduler.add_job(_performance_report, "cron", hour=8, timezone="Asia/Shanghai", id="performance_report")
 
-    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时", "INFO", "scheduler")
+    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，吏部绩效：每日08:00", "INFO", "scheduler")
 
     log.info("Scheduler started. Collectors: hourly. Analysis: every 6 hours. Debt scan: every 12 hours.")
     log.info("Running initial collection...")
