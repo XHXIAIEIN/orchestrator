@@ -323,6 +323,35 @@ app.get('/api/logs', (req, res) => {
 // ── TTS: SOUL 的声音 ──
 const TTS_HOST = process.env.TTS_HOST || 'http://host.docker.internal:23715';
 let _ttsWarmed = false;
+let _todayVoice = null;
+let _todayVoiceDate = null;
+
+function getDailyVoice(callback) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (_todayVoice && _todayVoiceDate === today) return callback(_todayVoice);
+
+  const httpLib = require('http');
+  const { URL } = require('url');
+  const url = new URL(`${TTS_HOST}/v1/references/list`);
+  const req = httpLib.get({ hostname: url.hostname, port: url.port, path: url.pathname, headers: { 'Accept': 'application/json' } }, (res) => {
+    let data = '';
+    res.on('data', d => { data += d; });
+    res.on('end', () => {
+      try {
+        const ids = JSON.parse(data).reference_ids || [];
+        if (ids.length) {
+          // Seed by date for daily consistency
+          const seed = today.split('-').reduce((a, b) => a + parseInt(b), 0);
+          _todayVoice = ids[seed % ids.length];
+          _todayVoiceDate = today;
+          console.log(`Daily voice: ${_todayVoice} (from ${ids.length} available)`);
+        }
+      } catch {}
+      callback(_todayVoice);
+    });
+  });
+  req.on('error', () => callback(null));
+}
 
 function ttsGenerate(text, reference_id, onDone, onError) {
   const httpLib = require('http');
@@ -357,30 +386,34 @@ function ttsGenerate(text, reference_id, onDone, onError) {
 
 // Warmup: silent TTS on startup to trigger torch.compile before user clicks
 setTimeout(() => {
-  ttsGenerate('。', null,
-    () => { _ttsWarmed = true; console.log('TTS warmup complete'); },
-    () => { console.log('TTS warmup failed (service may not be ready)'); }
-  );
+  getDailyVoice((voice) => {
+    ttsGenerate('。', voice,
+      () => { _ttsWarmed = true; console.log(`TTS warmup complete (voice: ${voice})`); },
+      () => { console.log('TTS warmup failed (service may not be ready)'); }
+    );
+  });
 }, 5000);
 
 app.post('/api/tts', async (req, res) => {
-  const { text, reference_id } = req.body || {};
+  const { text } = req.body || {};
   if (!text) return res.status(400).json({ error: 'text is required' });
 
   res.json({ ok: true, status: 'generating' });
   broadcast({ type: 'tts_status', status: _ttsWarmed ? 'generating' : 'compiling' });
 
   try {
-    ttsGenerate(text, reference_id,
-      (buf) => {
-        _ttsWarmed = true;
-        const b64 = buf.toString('base64');
-        broadcast({ type: 'soul_voice', audio: b64, mime: 'audio/mpeg' });
-      },
-      (e) => {
-        broadcast({ type: 'tts_status', status: 'error', error: e.message });
-      }
-    );
+    getDailyVoice((voice) => {
+      ttsGenerate(text, voice,
+        (buf) => {
+          _ttsWarmed = true;
+          const b64 = buf.toString('base64');
+          broadcast({ type: 'soul_voice', audio: b64, mime: 'audio/mpeg' });
+        },
+        (e) => {
+          broadcast({ type: 'tts_status', status: 'error', error: e.message });
+        }
+      );
+    });
   } catch (e) {
     broadcast({ type: 'tts_status', status: 'error', error: e.message });
   }

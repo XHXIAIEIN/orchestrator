@@ -38,6 +38,7 @@ CACHE_DIR = Path(os.environ.get("VOICE_CACHE_DIR", "D:/Agent/tmp/soul-tts/voice-
 # 黑名单：不想用的声音（按模型 title 关键词过滤）
 BLACKLIST = [
     "丁真", "孙笑川", "蔡徐坤", "卢本伟",  # 太有辨识度的名人
+    "郭德纲", "周杰伦", "樊登", "懒羊羊", "赛马娘",  # 辨识度高或角色IP
 ]
 
 
