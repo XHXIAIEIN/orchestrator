@@ -53,11 +53,7 @@ def get_anthropic_client():
     token, is_oauth = load_credentials()
     if not token:
         raise RuntimeError("未找到认证凭据：请配置 ANTHROPIC_API_KEY 或使用 Claude 订阅登录。")
-    if is_oauth:
-        return anthropic.Anthropic(
-            api_key="oauth-token",
-            default_headers={"Authorization": f"Bearer {token}"},
-        )
+    # sk-ant-oat01-* OAuth tokens 和普通 API key 都走 x-api-key 头
     return anthropic.Anthropic(api_key=token)
 
 

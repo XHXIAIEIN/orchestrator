@@ -1,13 +1,12 @@
 """
 LLM Router — 统一路由层。
-按 task_type 决定走 Ollama（本地）还是 Claude CLI（云端）。
+按 task_type 决定走 Ollama（本地）还是 Claude API SDK（云端）。
 Ollama 失败自动 fallback 到 Claude。
 """
 import base64
 import json
 import logging
 import os
-import subprocess
 import time
 import urllib.request
 import urllib.error
@@ -158,14 +157,22 @@ class LLMRouter:
 
     def _claude_generate(self, prompt: str, model: str, timeout: int,
                           max_tokens: int) -> str:
-        """调 Claude CLI（stdin 传 prompt，避免命令行长度限制）。"""
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "--print",
-             "--model", model, "-"],
-            capture_output=True, text=True,
-            timeout=timeout, input=prompt,
-        )
-        return result.stdout.strip() or result.stderr.strip() or ""
+        """调 Claude API SDK（替代旧的 subprocess CLI 调用）。"""
+        from src.config import get_anthropic_client
+        try:
+            client = get_anthropic_client()
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = next(
+                (b.text for b in response.content if b.type == "text"), ""
+            )
+            return text.strip()
+        except Exception as e:
+            log.error(f"router: Claude API failed: {e}")
+            return ""
 
     def check_ollama(self) -> bool:
         """探测 Ollama 是否可达 + 检查所需模型。启动时调用一次。"""

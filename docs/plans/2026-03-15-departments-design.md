@@ -14,7 +14,7 @@
 | 门下省审查（scrutiny） | ✅ 已实现 | 2026-03-15 |
 | 六部 prompt 升级为完整手册 | ✅ 已实现 | 2026-03-17 |
 | 工部→刑部协作链 + parent_task_id | ✅ 已实现 | 2026-03-17 |
-| Agent SDK 替换 `claude --print` | ⬚ 未开始 | — |
+| Agent SDK 替换 `claude --print` | ✅ 已实现 | 2026-03-17 |
 
 ## 架构
 
@@ -125,6 +125,6 @@ spec = {
 
 ## 待做
 
-- Agent SDK 替换 `claude --print`：解锁工具调用能力，六部 prompt 才能真正发挥作用
-- 刑部验收失败 → 打回工部重做（需要 retry 状态 + 重试次数上限）
-- 吏部定时报告：每日生成组件绩效报告写入 dashboard
+- 子 agent 模型选择：不同部门可用不同模型（刑部/吏部用 Haiku 省钱，工部用 Sonnet）
+- 部门间协作链拓展：兵部发现安全问题 → 工部修复
+- Dashboard 展示任务链（parent_task_id 可视化）

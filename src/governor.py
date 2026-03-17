@@ -1,5 +1,5 @@
 """
-Governor — picks top-priority insight recommendation and executes it via claude subprocess.
+Governor — picks top-priority insight recommendation and executes it via Agent SDK.
 Auto-triggered after InsightEngine; also called by dashboard approve endpoint.
 
 Flow (auto path):  pending → scrutinizing → running → done/failed
@@ -9,10 +9,12 @@ Flow (manual path): awaiting_approval → running → done/failed
 import json
 import logging
 import os
-import subprocess
 import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+import anyio
+from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
 
 from src.storage.events_db import EventsDB
 from src.llm_router import get_router
@@ -41,6 +43,17 @@ TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 
 CLAUDE_TIMEOUT = 300  # seconds
 STALE_THRESHOLD = CLAUDE_TIMEOUT + 120  # seconds — if a task is "running" longer than this, it's a zombie
 MAX_CONCURRENT = 3  # 最多同时跑几个 sub-agent
+MAX_AGENT_TURNS = 25  # Agent SDK 最大交互轮数（防止无限循环）
+
+
+def _in_async_context() -> bool:
+    """检测当前是否已在 async event loop 中（线程池 vs 主线程）。"""
+    try:
+        import sniffio
+        sniffio.current_async_library()
+        return True
+    except (ImportError, sniffio.AsyncLibraryNotFoundError):
+        return False
 
 # ── 六部路由表 ──
 DEPARTMENTS = {
@@ -341,37 +354,47 @@ class Governor:
         output = "(no output)"
         status = "failed"
         try:
-            tools = dept.get("tools", "")
-            cmd = ["claude", "--dangerously-skip-permissions", "--print",
-                   "--output-format", "json"]
-            if tools:
-                cmd.extend(["--tools", tools])
-            cmd.append("-")  # read prompt from stdin
+            tools_str = dept.get("tools", "")
+            allowed_tools = [t.strip() for t in tools_str.split(",") if t.strip()]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=CLAUDE_TIMEOUT,
-                cwd=task_cwd,
-                input=prompt,
-            )
-            raw = result.stdout.strip() or result.stderr.strip() or "(no output)"
-            # Parse JSON output for result text
-            try:
-                data = json.loads(raw)
-                output = data.get("result", raw[:2000])
-                status = "done" if not data.get("is_error") else "failed"
-            except (json.JSONDecodeError, TypeError):
-                output = raw[:2000]
-                status = "done" if result.returncode == 0 else "failed"
-        except subprocess.TimeoutExpired:
+            # Agent SDK 环境准备
+            agent_env = {}
+            # 清除嵌套会话检测（本地调试 / CI 需要）
+            if os.environ.get("CLAUDECODE"):
+                agent_env["CLAUDECODE"] = ""
+            # Windows 兼容：确保 Agent SDK 能找到 git-bash
+            if os.name == "nt" and not os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"):
+                git_bash = Path("D:/Program Files/Git/bin/bash.exe")
+                if not git_bash.exists():
+                    git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+                if git_bash.exists():
+                    agent_env["CLAUDE_CODE_GIT_BASH_PATH"] = str(git_bash)
+
+            async def _run_agent():
+                result_text = ""
+                async for message in query(
+                    prompt=prompt,
+                    options=ClaudeAgentOptions(
+                        cwd=task_cwd,
+                        allowed_tools=allowed_tools,
+                        permission_mode="bypassPermissions",
+                        system_prompt=dept["prompt_prefix"],
+                        max_turns=MAX_AGENT_TURNS,
+                        env=agent_env if agent_env else None,
+                    ),
+                ):
+                    if isinstance(message, ResultMessage):
+                        result_text = message.result or ""
+                return result_text
+
+            output = anyio.from_thread.run(_run_agent) if _in_async_context() else anyio.run(_run_agent)
+            output = output[:2000] if output else "(no output)"
+            status = "done" if output and output != "(no output)" else "failed"
+        except TimeoutError:
             output = f"timeout after {CLAUDE_TIMEOUT}s"
-        except FileNotFoundError:
-            output = "claude CLI not found"
-            log.error("Governor: claude CLI not found in PATH")
         except Exception as e:
-            output = str(e)
+            output = str(e)[:2000]
+            log.error(f"Governor: Agent SDK error for task #{task_id}: {e}")
         finally:
             # 视觉验证：如果 sub-agent 留下了截图，用 vision 模型检查
             if status == "done":
