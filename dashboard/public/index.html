@@ -84,7 +84,9 @@ nav {
   opacity: 0; animation: fadeIn .4s ease forwards;
 }
 .roast-history-item:last-child { border-bottom: none; }
-.roast-history-date { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); margin-bottom: 6px; }
+.roast-history-date { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.history-play-btn { background: none; border: 1px solid var(--border); border-radius: 50%; width: 20px; height: 20px; font-size: .5rem; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; justify-content: center; transition: all .15s; padding: 0; line-height: 1; }
+.history-play-btn:hover { color: var(--accent); border-color: var(--accent); }
 .roast-history-text { font-family: var(--serif); font-size: .9rem; line-height: 1.85; color: var(--text-mid); }
 
 /* ── Section ── */
@@ -683,6 +685,7 @@ async function loadAll(){
 }
 loadAll();setInterval(loadAll,60000);
 
+let _historyTexts=[];
 async function loadRoastHistory(){
   try{
     const items=await fetch('/api/profile-analysis/history').then(r=>r.json());
@@ -690,12 +693,24 @@ async function loadRoastHistory(){
     const past=items.slice(1);
     if(!past.length){$('roast-history-btn').style.display='none';return}
     $('roast-history-btn').style.display='';
+    _historyTexts=past.map(r=>r.commentary||r.daily_note);
     $('roast-history').innerHTML=past.map((r,i)=>{
       const ts=(r.date||'').replace('T',' ').slice(0,16);
       const text=r.commentary||r.daily_note;
-      return`<div class='roast-history-item' style='animation-delay:${i*0.08}s'><div class='roast-history-date'>${esc(ts)}</div><div class='roast-history-text'>${esc(text)}</div></div>`
+      return`<div class='roast-history-item' style='animation-delay:${i*0.08}s'><div class='roast-history-date'>${esc(ts)}<button class='history-play-btn' onclick='playHistory(${i})' title='播放'>&#9654;</button></div><div class='roast-history-text'>${esc(text)}</div></div>`
     }).join('');
   }catch{}
+}
+function playHistory(idx){
+  const text=_historyTexts[idx];
+  if(!text)return;
+  // Reuse the main voice infrastructure
+  voiceBtn.classList.add('loading');
+  voiceBtn.classList.remove('playing');
+  startTtsTimer();
+  fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}).catch(()=>{
+    stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('语音服务不可用','error');setTimeout(()=>setVoiceStatus(''),4000);
+  });
 }
 function toggleRoastHistory(){
   const el=$('roast-history');
