@@ -194,18 +194,36 @@ class DebtScanner:
             return []
 
     def _save_debt(self, debt: dict):
-        """写入单条 debt 到 DB。"""
-        now = datetime.now(timezone.utc).isoformat()
+        """写入单条 debt 到 DB，跳过与已有 debt 高度相似的条目。"""
+        project = debt.get("project", "")
+        summary = debt.get("summary", "")
+        if not summary:
+            return
+
+        # Fuzzy dedup: check if a similar debt already exists for this project
+        # Compare by checking if >60% of the keywords overlap
         try:
             with self.db._connect() as conn:
+                existing = conn.execute(
+                    "SELECT summary FROM attention_debts WHERE project = ? AND status = 'open'",
+                    (project,)
+                ).fetchall()
+                new_words = set(summary)
+                for (existing_summary,) in existing:
+                    existing_words = set(existing_summary)
+                    overlap = len(new_words & existing_words) / max(len(new_words), 1)
+                    if overlap > 0.6:
+                        return  # Too similar, skip
+
+                now = datetime.now(timezone.utc).isoformat()
                 conn.execute(
                     """INSERT OR IGNORE INTO attention_debts
                        (session_id, project, summary, severity, context, created_at)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (
                         debt.get("session_id", ""),
-                        debt.get("project", ""),
-                        debt.get("summary", ""),
+                        project,
+                        summary,
                         debt.get("severity", "medium"),
                         debt.get("context", ""),
                         now,
