@@ -353,21 +353,15 @@ function getDailyVoice(callback) {
   req.on('error', () => callback(null));
 }
 
-const TTS_SPEED = parseFloat(process.env.TTS_SPEED || '1.3');
+const TTS_SILENCE_MS = parseInt(process.env.TTS_SILENCE_MS || '350');
 
 function ttsPostProcess(buf, callback) {
-  if (TTS_SPEED === 1.0) return callback(buf);
-  const { execFile } = require('child_process');
-  const tmp = path.join(require('os').tmpdir(), `tts_raw_${Date.now()}.mp3`);
-  fs.writeFileSync(tmp, buf);
-  execFile('ffmpeg', ['-y', '-i', tmp, '-filter:a', `atempo=${TTS_SPEED}`, '-f', 'mp3', 'pipe:1'], { encoding: 'buffer', maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
-    try { fs.unlinkSync(tmp); } catch {}
-    if (err) return callback(buf); // fallback to raw on error
-    callback(stdout);
-  });
+  if (TTS_SILENCE_MS <= 0) return callback(buf);
+  // No speed change — sentence splitting already provides natural rhythm
+  callback(buf);
 }
 
-function ttsGenerate(text, reference_id, onDone, onError) {
+function ttsSingleRequest(text, reference_id, onDone, onError) {
   const httpLib = require('http');
   const { URL } = require('url');
   const url = new URL(`${TTS_HOST}/v1/tts`);
@@ -390,15 +384,79 @@ function ttsGenerate(text, reference_id, onDone, onError) {
   }, (ttsRes) => {
     const chunks = [];
     ttsRes.on('data', (chunk) => chunks.push(chunk));
-    ttsRes.on('end', () => {
-      const raw = Buffer.concat(chunks);
-      ttsPostProcess(raw, (processed) => onDone(processed));
-    });
+    ttsRes.on('end', () => onDone(Buffer.concat(chunks)));
   });
 
   ttsReq.on('error', onError);
   ttsReq.write(payload);
   ttsReq.end();
+}
+
+function ttsGenerate(text, reference_id, onDone, onError) {
+  // Split by sentence-ending punctuation, filter empties
+  const sentences = text.split(/(?<=[。！？.!?])\s*/).filter(s => s.trim());
+  if (sentences.length <= 1) {
+    return ttsSingleRequest(text, reference_id, onDone, onError);
+  }
+
+  // Generate each sentence, concat with silence gaps via ffmpeg
+  const tmpDir = require('os').tmpdir();
+  const ts = Date.now();
+  let completed = 0;
+  let failed = false;
+  const sentFiles = [];
+
+  sentences.forEach((sent, i) => {
+    const outFile = path.join(tmpDir, `tts_sent_${ts}_${i}.mp3`);
+    sentFiles.push(outFile);
+    ttsSingleRequest(sent, reference_id, (buf) => {
+      fs.writeFileSync(outFile, buf);
+      completed++;
+      if (completed === sentences.length && !failed) concatAll();
+    }, (e) => {
+      if (!failed) { failed = true; onError(e); }
+    });
+  });
+
+  function concatAll() {
+    // Build ffmpeg concat filter with silence between sentences
+    const silenceFile = path.join(tmpDir, `tts_silence_${ts}.mp3`);
+    const { execFile } = require('child_process');
+
+    // Generate silence gap
+    execFile('ffmpeg', ['-y', '-f', 'lavfi', '-i', `anullsrc=r=44100:cl=mono`, '-t', (TTS_SILENCE_MS / 1000).toFixed(3), '-f', 'mp3', silenceFile],
+      { timeout: 5000 }, (err) => {
+        // Build concat list: sent0 | silence | sent1 | silence | sent2 ...
+        const concatParts = [];
+        sentFiles.forEach((f, i) => {
+          concatParts.push(f);
+          if (i < sentFiles.length - 1) concatParts.push(silenceFile);
+        });
+        const concatStr = concatParts.join('|');
+        const outFile = path.join(tmpDir, `tts_final_${ts}.mp3`);
+
+        execFile('ffmpeg', ['-y', '-i', `concat:${concatStr}`, '-acodec', 'libmp3lame', '-q:a', '2', outFile],
+          { timeout: 10000 }, (err2) => {
+            // Cleanup temp files
+            const cleanup = () => {
+              sentFiles.forEach(f => { try { fs.unlinkSync(f); } catch {} });
+              try { fs.unlinkSync(silenceFile); } catch {};
+              try { fs.unlinkSync(outFile); } catch {};
+            };
+
+            if (err2) {
+              // Fallback: just concat without silence
+              const raw = Buffer.concat(sentFiles.map(f => fs.readFileSync(f)));
+              cleanup();
+              return onDone(raw);
+            }
+
+            const result = fs.readFileSync(outFile);
+            cleanup();
+            onDone(result);
+          });
+      });
+  }
 }
 
 // Warmup: silent TTS on startup to trigger torch.compile before user clicks
