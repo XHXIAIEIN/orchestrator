@@ -563,7 +563,8 @@ ws.onopen=()=>{$('h-ws').textContent='在线';$('h-dot').classList.remove('off')
 ws.onclose=()=>{$('h-ws').textContent='离线';$('h-dot').classList.add('off')};
 ws.onmessage=e=>{try{const d=JSON.parse(e.data);
   if(d.type==='task_update')loadAll();
-  if(d.type==='soul_voice'&&d.url){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('');voiceAudio.src=d.url;voiceAudio.currentTime=0;voiceAudio.oncanplay=()=>{voiceAudio.oncanplay=null;voiceAudio.play();voiceBtn.classList.add('playing')};voiceAudio.onended=()=>voiceBtn.classList.remove('playing')}
+  if(d.type==='soul_voice'&&d.audio){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('');const blob=new Blob([Uint8Array.from(atob(d.audio),c=>c.charCodeAt(0))],{type:d.mime||'audio/mpeg'});const blobUrl=URL.createObjectURL(blob);voiceAudio.src=blobUrl;voiceAudio.currentTime=0;voiceAudio.oncanplay=()=>{voiceAudio.oncanplay=null;voiceAudio.play();voiceBtn.classList.add('playing')};voiceAudio.onended=()=>{voiceBtn.classList.remove('playing');URL.revokeObjectURL(blobUrl)}}
+  if(d.type==='tts_status'&&(d.status==='compiling'||d.status==='generating')){_ttsPhase=d.status}
   if(d.type==='tts_status'&&d.status==='error'){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('生成失败: '+(d.error||'未知错误'),'error');setTimeout(()=>setVoiceStatus(''),5000)}
 }catch{}};
 
@@ -671,13 +672,20 @@ function setVoiceStatus(text, cls) {
   voiceStatus.className = 'voice-status' + (cls ? ' ' + cls : '');
 }
 
+let _ttsPhase = 'generating';
+
 function startTtsTimer() {
   let sec = 0;
-  setVoiceStatus('语音生成中... 0s', 'active');
-  _ttsTimer = setInterval(() => {
-    sec++;
+  _updateTtsLabel(sec);
+  _ttsTimer = setInterval(() => { sec++; _updateTtsLabel(sec); }, 1000);
+}
+
+function _updateTtsLabel(sec) {
+  if (_ttsPhase === 'compiling') {
+    setVoiceStatus(`首次启动，模型编译中... ${sec}s（约60s）`, 'active');
+  } else {
     setVoiceStatus(`语音生成中... ${sec}s`, 'active');
-  }, 1000);
+  }
 }
 
 function stopTtsTimer() {

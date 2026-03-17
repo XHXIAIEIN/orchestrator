@@ -322,57 +322,65 @@ app.get('/api/logs', (req, res) => {
 
 // ── TTS: SOUL 的声音 ──
 const TTS_HOST = process.env.TTS_HOST || 'http://host.docker.internal:23715';
+let _ttsWarmed = false;
+
+function ttsGenerate(text, reference_id, onDone, onError) {
+  const httpLib = require('http');
+  const { URL } = require('url');
+  const url = new URL(`${TTS_HOST}/v1/tts`);
+
+  const payload = JSON.stringify({
+    text,
+    reference_id: reference_id || null,
+    normalize: false,
+    temperature: 0.8,
+    format: 'mp3',
+  });
+
+  const ttsReq = httpLib.request({
+    hostname: url.hostname,
+    port: url.port,
+    path: url.pathname,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 120000,
+  }, (ttsRes) => {
+    const chunks = [];
+    ttsRes.on('data', (chunk) => chunks.push(chunk));
+    ttsRes.on('end', () => onDone(Buffer.concat(chunks)));
+  });
+
+  ttsReq.on('error', onError);
+  ttsReq.write(payload);
+  ttsReq.end();
+}
+
+// Warmup: silent TTS on startup to trigger torch.compile before user clicks
+setTimeout(() => {
+  ttsGenerate('。', null,
+    () => { _ttsWarmed = true; console.log('TTS warmup complete'); },
+    () => { console.log('TTS warmup failed (service may not be ready)'); }
+  );
+}, 5000);
 
 app.post('/api/tts', async (req, res) => {
   const { text, reference_id } = req.body || {};
   if (!text) return res.status(400).json({ error: 'text is required' });
 
-  // Respond immediately, generate in background, push result via WebSocket
   res.json({ ok: true, status: 'generating' });
-  broadcast({ type: 'tts_status', status: 'generating' });
+  broadcast({ type: 'tts_status', status: _ttsWarmed ? 'generating' : 'compiling' });
 
   try {
-    const payload = JSON.stringify({
-      text,
-      reference_id: reference_id || null,
-      normalize: false,
-      temperature: 0.8,
-      format: 'wav',
-    });
-
-    const ttsUrl = `${TTS_HOST}/v1/tts`;
-    const httpLib = require('http');
-    const { URL } = require('url');
-    const url = new URL(ttsUrl);
-
-    const ttsReq = httpLib.request({
-      hostname: url.hostname,
-      port: url.port,
-      path: url.pathname,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 120000,
-    }, (ttsRes) => {
-      const audioDir = path.join(__dirname, 'public', 'audio');
-      if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true });
-
-      const filename = `soul_${Date.now()}.wav`;
-      const outPath = path.join(audioDir, filename);
-      const file = fs.createWriteStream(outPath);
-
-      ttsRes.pipe(file);
-      file.on('finish', () => {
-        file.close();
-        broadcast({ type: 'soul_voice', url: `/audio/${filename}` });
-      });
-    });
-
-    ttsReq.on('error', (e) => {
-      broadcast({ type: 'tts_status', status: 'error', error: e.message });
-    });
-
-    ttsReq.write(payload);
-    ttsReq.end();
+    ttsGenerate(text, reference_id,
+      (buf) => {
+        _ttsWarmed = true;
+        const b64 = buf.toString('base64');
+        broadcast({ type: 'soul_voice', audio: b64, mime: 'audio/mpeg' });
+      },
+      (e) => {
+        broadcast({ type: 'tts_status', status: 'error', error: e.message });
+      }
+    );
   } catch (e) {
     broadcast({ type: 'tts_status', status: 'error', error: e.message });
   }
