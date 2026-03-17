@@ -195,6 +195,22 @@ app.get('/api/profile-analysis', (req, res) => {
   finally { db.close(); }
 });
 
+app.get('/api/profile-analysis/history', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  try {
+    const rows = dbAll(db, "SELECT generated_at, data_json FROM profile_analysis ORDER BY id DESC LIMIT 30");
+    const items = rows.map(r => {
+      try {
+        const d = JSON.parse(r.data_json);
+        return { date: r.generated_at, commentary: d.commentary || '', daily_note: d.daily_note || '' };
+      } catch { return null; }
+    }).filter(r => r && (r.commentary || r.daily_note));
+    res.json(items);
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
 app.post('/api/profile-analysis/refresh', (req, res) => {
   res.status(202).json({ status: 'accepted' });
 

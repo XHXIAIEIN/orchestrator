@@ -71,6 +71,22 @@ nav {
 @keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
+.roast-history-toggle {
+  font-family: var(--mono); font-size: .6rem; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--text-dim); background: none; border: 1px solid var(--border); border-radius: 3px;
+  padding: 3px 10px; cursor: pointer; margin-top: 16px; transition: all .15s;
+}
+.roast-history-toggle:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
+.roast-history { margin-top: 20px; }
+.roast-history.collapsed { display: none; }
+.roast-history-item {
+  padding: 16px 0; border-bottom: 1px solid #f0f0ec;
+  opacity: 0; animation: fadeIn .4s ease forwards;
+}
+.roast-history-item:last-child { border-bottom: none; }
+.roast-history-date { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); margin-bottom: 6px; }
+.roast-history-text { font-family: var(--serif); font-size: .9rem; line-height: 1.85; color: var(--text-mid); }
+
 /* ── Section ── */
 section { padding: 40px 0; border-bottom: 1px solid var(--border); }
 section:last-of-type { border-bottom: none; }
@@ -284,6 +300,8 @@ section:last-of-type { border-bottom: none; }
       <span class="voice-status" id="voice-status"></span>
     </div>
     <audio id="voice-audio" style="display:none"></audio>
+    <div id="roast-history" class="roast-history collapsed"></div>
+    <button class="roast-history-toggle" id="roast-history-btn" onclick="toggleRoastHistory()" style="display:none">往期语录</button>
   </div>
 
   <!-- 三省六部 -->
@@ -661,8 +679,30 @@ async function loadAll(){
   renderDebts(debts);
   renderGovernance(tasks);renderHeatmap(heatmap);buildSourceOptions();filterEvents();
   loadCats(1,document.querySelector('.cat-btn.active'));renderTasks(tasks);
+  loadRoastHistory();
 }
 loadAll();setInterval(loadAll,60000);
+
+async function loadRoastHistory(){
+  try{
+    const items=await fetch('/api/profile-analysis/history').then(r=>r.json());
+    // Skip first (it's the current one shown in hero)
+    const past=items.slice(1);
+    if(!past.length){$('roast-history-btn').style.display='none';return}
+    $('roast-history-btn').style.display='';
+    $('roast-history').innerHTML=past.map((r,i)=>{
+      const ts=(r.date||'').replace('T',' ').slice(0,16);
+      const text=r.commentary||r.daily_note;
+      return`<div class='roast-history-item' style='animation-delay:${i*0.08}s'><div class='roast-history-date'>${esc(ts)}</div><div class='roast-history-text'>${esc(text)}</div></div>`
+    }).join('');
+  }catch{}
+}
+function toggleRoastHistory(){
+  const el=$('roast-history');
+  const btn=$('roast-history-btn');
+  el.classList.toggle('collapsed');
+  btn.textContent=el.classList.contains('collapsed')?'往期语录':'收起';
+}
 
 // ── SOUL Voice ──
 const voiceBtn = document.getElementById('voice-btn');
