@@ -459,7 +459,7 @@ function renderGovernance(tasks){
     `<div class='gov-row'><span>自动</span><span class='gov-val'>${auto}</span></div>`+
     `<div class='gov-row'><span>手动</span><span class='gov-val'>${manual}</span></div>`+
     `<div class='gov-row'><span>总计</span><span class='gov-val'>${tasks.length}</span></div>`+
-    (recent?`<div class='gov-note'>最近：${esc((recent.action||'').slice(0,35))}</div>`:'');
+    (recent?`<div class='gov-note'>最近：${esc(recent.action||'')}</div>`:'');
   const scrutinized=tasks.filter(t=>t.scrutiny_note);
   const approved=scrutinized.filter(t=>(t.scrutiny_note||'').includes('准奏'));
   const rejected=tasks.filter(t=>t.status==='scrutiny_failed');
