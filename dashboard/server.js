@@ -353,6 +353,20 @@ function getDailyVoice(callback) {
   req.on('error', () => callback(null));
 }
 
+const TTS_SPEED = parseFloat(process.env.TTS_SPEED || '1.3');
+
+function ttsPostProcess(buf, callback) {
+  if (TTS_SPEED === 1.0) return callback(buf);
+  const { execFile } = require('child_process');
+  const tmp = path.join(require('os').tmpdir(), `tts_raw_${Date.now()}.mp3`);
+  fs.writeFileSync(tmp, buf);
+  execFile('ffmpeg', ['-y', '-i', tmp, '-filter:a', `atempo=${TTS_SPEED}`, '-f', 'mp3', 'pipe:1'], { encoding: 'buffer', maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+    try { fs.unlinkSync(tmp); } catch {}
+    if (err) return callback(buf); // fallback to raw on error
+    callback(stdout);
+  });
+}
+
 function ttsGenerate(text, reference_id, onDone, onError) {
   const httpLib = require('http');
   const { URL } = require('url');
@@ -376,7 +390,10 @@ function ttsGenerate(text, reference_id, onDone, onError) {
   }, (ttsRes) => {
     const chunks = [];
     ttsRes.on('data', (chunk) => chunks.push(chunk));
-    ttsRes.on('end', () => onDone(Buffer.concat(chunks)));
+    ttsRes.on('end', () => {
+      const raw = Buffer.concat(chunks);
+      ttsPostProcess(raw, (processed) => onDone(processed));
+    });
   });
 
   ttsReq.on('error', onError);

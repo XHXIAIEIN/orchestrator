@@ -3,7 +3,7 @@ FROM node:22-slim
 # Install Python and system deps
 RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-venv \
-    git curl procps \
+    git curl procps ffmpeg \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
