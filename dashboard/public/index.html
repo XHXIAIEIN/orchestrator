@@ -640,7 +640,7 @@ function renderDebts(debts){
 
 /* ── Main ── */
 async function loadAll(){
-  const[stats,events,tasks,heatmap,summary,insights,debts]=await Promise.all([
+  const[stats,events,tasks,heatmap,summary,insights,debts,profile]=await Promise.all([
     fetch('/api/stats').then(r=>r.json()).catch(()=>({})),
     fetch('/api/events?days=7').then(r=>r.json()).catch(()=>[]),
     fetch('/api/tasks').then(r=>r.json()).catch(()=>[]),
@@ -648,9 +648,12 @@ async function loadAll(){
     fetch('/api/summary').then(r=>r.json()).catch(()=>({})),
     fetch('/api/insights').then(r=>r.json()).catch(()=>({})),
     fetch('/api/debts').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/profile-analysis').then(r=>r.json()).catch(()=>({})),
   ]);
   _stats=stats;_events=events;_tasks=tasks;
-  $('roast').textContent=generateRoast(stats,events,tasks);
+  // Hero: prefer LLM commentary, fallback to template
+  const llmText=profile.commentary||profile.daily_note||'';
+  $('roast').textContent=llmText||generateRoast(stats,events,tasks);
   $('roast-date').textContent=`(${new Date().toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})})`;
   $('event-count').textContent=`${(stats.total||0).toLocaleString()} 条`;
   renderDailySummary(summary);
