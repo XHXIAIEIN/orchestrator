@@ -7,7 +7,7 @@ from pathlib import Path
 _ALLOWED_TASK_COLUMNS = {
     'spec', 'action', 'reason', 'priority', 'source',
     'status', 'output', 'approved_at', 'started_at', 'finished_at',
-    'scrutiny_note',
+    'scrutiny_note', 'parent_task_id',
 }
 
 
@@ -71,7 +71,8 @@ class EventsDB:
                     created_at TEXT NOT NULL,
                     approved_at TEXT,
                     started_at TEXT,
-                    finished_at TEXT
+                    finished_at TEXT,
+                    parent_task_id INTEGER
                 );
 
                 CREATE TABLE IF NOT EXISTS logs (
@@ -110,11 +111,12 @@ class EventsDB:
                 );
                 CREATE INDEX IF NOT EXISTS idx_debts_status ON attention_debts(status);
             """)
-            # Migration: add scrutiny_note column to existing databases
-            try:
-                conn.execute("ALTER TABLE tasks ADD COLUMN scrutiny_note TEXT")
-            except Exception:
-                pass  # Column already exists
+            # Migrations: add columns to existing databases
+            for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
+                try:
+                    conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {typ}")
+                except Exception:
+                    pass  # Column already exists
 
     def get_tables(self) -> list:
         with self._connect() as conn:
@@ -222,14 +224,16 @@ class EventsDB:
         return json.loads(row["profile_json"]) if row else {}
 
     def create_task(self, action: str, reason: str, priority: str,
-                    spec: dict, source: str = 'auto') -> int:
+                    spec: dict, source: str = 'auto',
+                    parent_task_id: int = None) -> int:
         now = datetime.now(timezone.utc).isoformat()
         status = 'pending' if source == 'auto' else 'awaiting_approval'
         with self._connect() as conn:
             cur = conn.execute(
-                """INSERT INTO tasks (spec, action, reason, priority, source, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (json.dumps(spec, ensure_ascii=False, default=str), action, reason, priority, source, status, now)
+                """INSERT INTO tasks (spec, action, reason, priority, source, status, created_at, parent_task_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (json.dumps(spec, ensure_ascii=False, default=str), action, reason, priority, source, status, now,
+                 parent_task_id)
             )
             return cur.lastrowid
 

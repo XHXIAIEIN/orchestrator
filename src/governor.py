@@ -383,7 +383,39 @@ class Governor:
             self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
             log.info(f"Governor: task #{task_id} {status}")
 
+            # 部门协作：工部完成 → 自动派刑部验收
+            if status == "done" and dept_key == "engineering":
+                self._dispatch_quality_review(task_id, task, task_cwd, project_name)
+
         return self.db.get_task(task_id)
+
+    def _dispatch_quality_review(self, parent_id: int, parent_task: dict, task_cwd: str, project_name: str):
+        """工部完成任务后，自动创建刑部验收任务。跳过门下省审查（验收本身就是审查）。"""
+        parent_spec = parent_task.get("spec", {})
+        parent_action = parent_task.get("action", "")
+        parent_output = parent_task.get("output", "")
+        # 防止验收链无限循环：如果父任务本身已经是验收任务，不再派生
+        if parent_spec.get("department") == "quality":
+            return
+        review_spec = {
+            "department": "quality",
+            "project": project_name,
+            "cwd": task_cwd,
+            "problem": f"验收工部任务 #{parent_id} 的执行结果",
+            "observation": f"工部执行内容：{parent_action}\n工部输出摘要：{parent_output[:500]}",
+            "expected": parent_spec.get("expected", "任务正确完成，无引入新问题"),
+            "summary": f"刑部验收：{parent_action[:40]}",
+        }
+        review_id = self.db.create_task(
+            action=f"Review 工部任务 #{parent_id} 的代码改动：检查 git diff、跑测试（如有）、确认无逻辑错误",
+            reason=f"工部任务 #{parent_id} 已完成，需刑部验收",
+            priority="medium",
+            spec=review_spec,
+            source="auto",
+            parent_task_id=parent_id,
+        )
+        self.db.write_log(f"工部任务 #{parent_id} 完成 → 派刑部验收任务 #{review_id}", "INFO", "governor")
+        log.info(f"Governor: dispatched quality review #{review_id} for engineering task #{parent_id}")
 
     def _visual_verify(self, task_id: int, task_cwd: str, spec: dict) -> str:
         """可选视觉验证：检查约定路径是否有截图，有则用 vision 模型验证。"""
