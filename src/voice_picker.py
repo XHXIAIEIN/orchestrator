@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 FISH_API = "https://api.fish.audio"
 TTS_HOST = os.environ.get("TTS_HOST", "http://localhost:23715")
 CACHE_DIR = Path(os.environ.get("VOICE_CACHE_DIR", "D:/Agent/tmp/soul-tts/voice-cache"))
+HISTORY_FILE = CACHE_DIR / "voice_history.json"
 
 # 黑名单：不想用的声音（按模型 title 关键词过滤）
 BLACKLIST = [
@@ -170,6 +171,103 @@ def _download_and_register(model: dict) -> str | None:
     except Exception as e:
         log.warning(f"voice_picker: register failed: {e}")
         return None
+
+
+def _load_history() -> dict:
+    """加载声音使用历史。"""
+    if HISTORY_FILE.exists():
+        try:
+            return json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"used": [], "current_pool": [], "last_refresh": None}
+
+
+def _save_history(history: dict):
+    """保存声音使用历史。"""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    HISTORY_FILE.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def refresh_voice_pool(pool_size: int = 12) -> list[str]:
+    """清空旧声音，从平台拉一批新的注册到 Fish S2 Pro。每 7 天调用一次。"""
+    from datetime import datetime
+    history = _load_history()
+    used_ids = set(history.get("used", []))
+
+    # 删除现有 references
+    opener = _get_opener()
+    try:
+        req = urllib.request.Request(f"{TTS_HOST}/v1/references/list",
+                                     headers={"Accept": "application/json"})
+        resp = opener.open(req, timeout=10)
+        old_ids = json.loads(resp.read()).get("reference_ids", [])
+        for rid in old_ids:
+            try:
+                body = json.dumps({"reference_id": rid}).encode()
+                dreq = urllib.request.Request(
+                    f"{TTS_HOST}/v1/references/delete",
+                    data=body, headers={"Content-Type": "application/json"},
+                    method="DELETE")
+                urllib.request.urlopen(dreq, timeout=10).read()
+            except Exception:
+                pass
+        log.info(f"voice_picker: cleared {len(old_ids)} old voices")
+    except Exception as e:
+        log.warning(f"voice_picker: failed to list/clear old voices: {e}")
+
+    # 搜索多种风格
+    tag_groups = [
+        ["male", "young", "narration"],
+        ["male", "young", "conversational"],
+        ["male", "energetic"],
+        ["male", "calm"],
+        ["female", "young", "conversational"],
+        ["female", "young", "narration"],
+        ["female", "warm"],
+    ]
+
+    candidates = {}
+    for tags in tag_groups:
+        for m in search_voices(tags=tags, language="zh", limit=15, min_uses=8000):
+            candidates[m["_id"]] = m
+
+    # 优先选没用过的，不够再从用过的里选
+    fresh = {k: v for k, v in candidates.items() if k not in used_ids}
+    if len(fresh) >= pool_size:
+        pool = random.sample(list(fresh.values()), pool_size)
+    else:
+        pool = list(fresh.values())
+        remaining = pool_size - len(pool)
+        recycled = [v for k, v in candidates.items() if k in used_ids]
+        pool += random.sample(recycled, min(remaining, len(recycled)))
+        if len(fresh) == 0:
+            log.info("voice_picker: all candidates used before, recycling")
+
+    registered = []
+    current_pool = []
+    for m in pool:
+        ref_id = _download_and_register(m)
+        if ref_id:
+            registered.append(ref_id)
+            current_pool.append({
+                "model_id": m["_id"],
+                "ref_id": ref_id,
+                "title": m.get("title", "?"),
+                "tags": m.get("tags", [])[:5],
+            })
+            used_ids.add(m["_id"])
+            log.info(f"voice_picker: pool += {m.get('title','?')} -> {ref_id}")
+
+    # 更新历史
+    history["used"] = list(used_ids)
+    history["current_pool"] = current_pool
+    history["last_refresh"] = datetime.now().isoformat()
+    _save_history(history)
+
+    log.info(f"voice_picker: refreshed pool with {len(registered)} voices "
+             f"({len(used_ids)} total used historically)")
+    return registered
 
 
 def list_cached_voices() -> list[str]:

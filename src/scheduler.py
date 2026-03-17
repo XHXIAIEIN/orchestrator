@@ -15,6 +15,7 @@ from src.profile_analyst import ProfileAnalyst
 from src.health import HealthCheck
 from src.debt_scanner import DebtScanner
 from src.performance import PerformanceReport
+from src.voice_picker import refresh_voice_pool
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -178,14 +179,25 @@ def start():
             log.error(f"PerformanceReport failed: {e}")
             db.write_log(f"吏部绩效报告失败: {e}", "ERROR", "performance")
 
+    def _voice_refresh():
+        db = EventsDB(DB_PATH)
+        try:
+            db.write_log("开始刷新声音池", "INFO", "voice_picker")
+            ids = refresh_voice_pool(pool_size=12)
+            db.write_log(f"声音池刷新完成：{len(ids)} 个新声音", "INFO", "voice_picker")
+        except Exception as e:
+            log.error(f"Voice refresh failed: {e}")
+            db.write_log(f"声音池刷新失败: {e}", "ERROR", "voice_picker")
+
     scheduler.add_job(_collectors, "interval", hours=1, id="collectors")
     scheduler.add_job(_analysis, "interval", hours=6, id="analysis")
     scheduler.add_job(_profile_periodic, "interval", hours=6, id="profile_periodic")
     scheduler.add_job(_profile_daily, "cron", hour=6, timezone="Asia/Shanghai", id="profile_daily")
     scheduler.add_job(_debt_scan, "interval", hours=12, id="debt_scan")
     scheduler.add_job(_performance_report, "cron", hour=8, timezone="Asia/Shanghai", id="performance_report")
+    scheduler.add_job(_voice_refresh, "interval", days=7, id="voice_refresh")
 
-    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，吏部绩效：每日08:00", "INFO", "scheduler")
+    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，吏部绩效：每日08:00，声音池：每7天", "INFO", "scheduler")
 
     log.info("Scheduler started. Collectors: hourly. Analysis: every 6 hours. Debt scan: every 12 hours.")
     log.info("Running initial collection...")
