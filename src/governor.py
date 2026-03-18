@@ -9,6 +9,7 @@ Flow (manual path): awaiting_approval → running → done/failed
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
 
 from src.storage.events_db import EventsDB
 from src.llm_router import get_router
+from src.run_logger import append_run_log, load_recent_runs, format_runs_for_context
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ def _in_async_context() -> bool:
 DEPARTMENTS = {
     "engineering": {
         "name": "工部",
+        "skill_path": "departments/engineering/SKILL.md",
         "prompt_prefix": """你是 Orchestrator 工部——代码工程部门。
 
 【身份】动手干活的实施者。写代码、改 bug、加功能、重构、优化性能。
@@ -76,6 +79,7 @@ DEPARTMENTS = {
     },
     "operations": {
         "name": "户部",
+        "skill_path": "departments/operations/SKILL.md",
         "prompt_prefix": """你是 Orchestrator 户部——系统运维部门。
 
 【身份】管家中的管家。负责 Orchestrator 自身的采集器修复、DB 管理、性能优化、数据清理。
@@ -93,6 +97,7 @@ DEPARTMENTS = {
     },
     "protocol": {
         "name": "礼部",
+        "skill_path": "departments/protocol/SKILL.md",
         "prompt_prefix": """你是 Orchestrator 礼部——注意力审计部门。
 
 【身份】记忆守护者。扫描项目中被遗忘的 TODO、未关闭的 issue、中断的计划、过时的文档。
@@ -109,6 +114,7 @@ DEPARTMENTS = {
     },
     "security": {
         "name": "兵部",
+        "skill_path": "departments/security/SKILL.md",
         "prompt_prefix": """你是 Orchestrator 兵部——安全防御部门。
 
 【身份】安全哨兵。检查备份完整性、数据一致性、权限配置、敏感信息泄露。
@@ -126,6 +132,7 @@ DEPARTMENTS = {
     },
     "quality": {
         "name": "刑部",
+        "skill_path": "departments/quality/SKILL.md",
         "prompt_prefix": """你是 Orchestrator 刑部——质量验收部门。
 
 【身份】代码法官。Review 代码质量、跑测试、检查逻辑错误、验证最近改动是否引入问题。
@@ -146,6 +153,7 @@ DEPARTMENTS = {
     },
     "personnel": {
         "name": "吏部",
+        "skill_path": "departments/personnel/SKILL.md",
         "prompt_prefix": """你是 Orchestrator 吏部——绩效管理部门。
 
 【身份】绩效考官。监控各采集器、分析器、Governor 任务的健康状态和执行效率。
@@ -161,6 +169,18 @@ DEPARTMENTS = {
         "tools": "Read,Glob,Grep",
     },
 }
+
+def load_department(name: str) -> str | None:
+    """从 departments/{name}/SKILL.md 加载部门 prompt。文件不存在时返回 None（fallback 到 DEPARTMENTS dict）。"""
+    skill_path = Path(__file__).parent.parent / "departments" / name / "SKILL.md"
+    try:
+        if skill_path.exists():
+            return skill_path.read_text(encoding="utf-8")
+    except Exception as e:
+        log.warning(f"Governor: failed to load SKILL.md for {name}: {e}")
+    return None
+
+
 SCRUTINY_PROMPT = """你是 Orchestrator 的门下省审查官——管家脑子里那个负责说"等等，这靠谱吗？"的声音。
 
 主人花 $200/月养着这个 AI 管家，所以既不能让管家摸鱼不干活（过度驳回），也不能让管家搞砸事情（放行危险操作）。
@@ -343,7 +363,17 @@ class Governor:
             action=task.get("action", ""),
             reason=task.get("reason", ""),
         )
-        prompt = dept["prompt_prefix"] + "\n\n" + base_prompt
+        # 优先从 SKILL.md 加载部门 prompt，fallback 到内置 dict
+        skill_content = load_department(dept_key)
+        dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
+
+        # 注入最近执行记录
+        recent_runs = load_recent_runs(dept_key, n=5)
+        runs_context = format_runs_for_context(recent_runs)
+
+        prompt = dept_prompt + "\n\n" + base_prompt
+        if runs_context:
+            prompt += "\n\n" + runs_context
         log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), project={project_name}, cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
@@ -378,7 +408,7 @@ class Governor:
                         cwd=task_cwd,
                         allowed_tools=allowed_tools,
                         permission_mode="bypassPermissions",
-                        system_prompt=dept["prompt_prefix"],
+                        system_prompt=dept_prompt,
                         max_turns=MAX_AGENT_TURNS,
                         **({"env": agent_env} if agent_env else {}),
                     ),
@@ -409,6 +439,34 @@ class Governor:
                 log.error(f"Governor: failed to update task #{task_id} status: {e}")
             self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
             log.info(f"Governor: task #{task_id} {status}")
+
+            # 部门执行记忆
+            try:
+                duration_s = 0
+                started_at = task.get("started_at") or now
+                try:
+                    started_dt = datetime.fromisoformat(started_at)
+                    finished_dt = datetime.fromisoformat(finished)
+                    duration_s = int((finished_dt - started_dt).total_seconds())
+                except (ValueError, TypeError):
+                    pass
+                # 尝试从 output 中提取 commit hash
+                commit_hash = ""
+                commit_match = re.search(r'\b([0-9a-f]{7,40})\b', output) if "commit" in output.lower() else None
+                if commit_match:
+                    commit_hash = commit_match.group(1)
+                append_run_log(
+                    department=dept_key,
+                    task_id=task_id,
+                    mode=task.get("source", "auto"),
+                    summary=task.get("action", "")[:200],
+                    commit=commit_hash,
+                    status=status,
+                    duration_s=duration_s,
+                    notes=output[:200] if status == "failed" else "",
+                )
+            except Exception as e:
+                log.warning(f"Governor: failed to write run-log for task #{task_id}: {e}")
 
             # 部门协作
             if status == "done":
