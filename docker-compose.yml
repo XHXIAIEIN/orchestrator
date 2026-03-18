@@ -17,6 +17,7 @@ services:
       - GIT_REPOS_ROOT=/git-repos
       - ORCHESTRATOR_ROOT=/orchestrator
       - STEAM_PATH=/steam-data
+      - QQMUSIC_DATA_PATH=/qqmusic-data
       # Terminal appearance
       - TERM=xterm-256color
       - COLORTERM=truecolor
@@ -47,4 +48,9 @@ services:
       - type: bind
         source: ${STEAM_PATH_HOST:-D:/Steam}
         target: /steam-data
+        read_only: true
+      # QQ Music data (read-only)
+      - type: bind
+        source: ${QQMUSIC_DATA:-C:/Users/test/AppData/Roaming/Tencent/QQMusic}
+        target: /qqmusic-data
         read_only: true
