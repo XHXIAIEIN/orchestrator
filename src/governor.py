@@ -20,6 +20,7 @@ from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
 from src.storage.events_db import EventsDB
 from src.llm_router import get_router
 from src.run_logger import append_run_log, load_recent_runs, format_runs_for_context
+from src.context_assembler import assemble_context
 
 log = logging.getLogger(__name__)
 
@@ -485,6 +486,15 @@ class Governor:
         prompt += "\n\n" + base_prompt
         if runs_context:
             prompt += "\n\n" + runs_context
+
+        # 动态上下文组装（Parlant 模式：只注入任务相关的规则和知识）
+        try:
+            dynamic_ctx = assemble_context(dept_key, task)
+            if dynamic_ctx:
+                prompt += "\n\n" + dynamic_ctx
+        except Exception as e:
+            log.warning(f"Governor: context assembly failed ({e}), continuing without dynamic context")
+
         log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, project={project_name}, cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
