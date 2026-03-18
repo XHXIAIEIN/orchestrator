@@ -134,7 +134,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
     <span class="badge bb" id="flow-badge">实时动线</span>
   </div>
   <div class="cb" style="padding:16px 16px 8px;">
-    <svg id="flowsvg" viewBox="0 0 728 680" width="728" height="680" style="display:block;overflow:visible;">
+    <svg id="flowsvg" viewBox="0 0 728 720" width="728" height="720" style="display:block;overflow:visible;">
     <defs>
       <!-- Glow filters -->
       <filter id="fg" x="-50%" y="-50%" width="200%" height="200%">
@@ -170,13 +170,13 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
       <path id="pg0b" d="M500,490 C500,510 340,510 340,528"/>
       <!-- CogMode → Scrutiny (门下省) -->
       <path id="pg1" d="M340,560 L340,598"/>
-      <!-- Scrutiny → Departments (fan out) -->
-      <path id="pe0" d="M340,630 C340,650 75,650 75,668"/>
-      <path id="pe1" d="M340,630 C340,650 205,650 205,668"/>
-      <path id="pe2" d="M340,630 C340,650 335,650 335,668"/>
-      <path id="pe3" d="M340,630 C340,650 465,650 465,668"/>
-      <path id="pe4" d="M340,630 C340,650 595,650 595,668"/>
-      <path id="pe5" d="M340,630 C340,650 665,650 665,668"/>
+      <!-- Scrutiny → Departments (fan out to 6 evenly spaced nodes) -->
+      <path id="pe0" d="M340,630 C340,650 62,650 62,668"/>
+      <path id="pe1" d="M340,630 C340,650 177,650 177,668"/>
+      <path id="pe2" d="M340,630 C340,650 292,650 292,668"/>
+      <path id="pe3" d="M340,630 C340,650 407,650 407,668"/>
+      <path id="pe4" d="M340,630 C340,650 522,650 522,668"/>
+      <path id="pe5" d="M340,630 C340,650 637,650 637,668"/>
     </defs>
 
     <!-- ════ VISIBLE LINES ════ -->
@@ -358,36 +358,36 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
       <text x="340" y="623" text-anchor="middle" fill="#fbbf24" font-size="9" opacity=".6" id="scrutiny-sub">Haiku 审查 · APPROVE / REJECT</text>
     </g>
 
-    <!-- ── 六部 (6 Department nodes) ── -->
+    <!-- ── 六部 (6 Department nodes, evenly spaced across 680px) ── -->
     <g id="n-dept-gongbu">
-      <rect x="30" y="668" width="90" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
-      <text x="75" y="681" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">工部</text>
-      <text x="75" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-gongbu">--</text>
+      <rect x="15" y="668" width="95" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
+      <text x="62" y="681" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">工部</text>
+      <text x="62" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-engineering">--</text>
     </g>
     <g id="n-dept-hubu">
-      <rect x="160" y="668" width="90" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
-      <text x="205" y="681" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">户部</text>
-      <text x="205" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-hubu">--</text>
+      <rect x="130" y="668" width="95" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
+      <text x="177" y="681" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">户部</text>
+      <text x="177" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-operations">--</text>
     </g>
     <g id="n-dept-xingbu">
-      <rect x="290" y="668" width="90" height="32" rx="5" fill="#1f0d0d" stroke="#3a1a1a"/>
-      <text x="335" y="681" text-anchor="middle" fill="#f87171" font-size="10" font-weight="600">刑部</text>
-      <text x="335" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-xingbu">--</text>
+      <rect x="245" y="668" width="95" height="32" rx="5" fill="#1f0d0d" stroke="#3a1a1a"/>
+      <text x="292" y="681" text-anchor="middle" fill="#f87171" font-size="10" font-weight="600">刑部</text>
+      <text x="292" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-quality">--</text>
     </g>
     <g id="n-dept-libu">
-      <rect x="420" y="668" width="90" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
-      <text x="465" y="681" text-anchor="middle" fill="#818cf8" font-size="10" font-weight="600">礼部</text>
-      <text x="465" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-libu">--</text>
+      <rect x="360" y="668" width="95" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
+      <text x="407" y="681" text-anchor="middle" fill="#818cf8" font-size="10" font-weight="600">礼部</text>
+      <text x="407" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-protocol">--</text>
     </g>
     <g id="n-dept-bingbu">
-      <rect x="550" y="668" width="90" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
-      <text x="595" y="681" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">兵部</text>
-      <text x="595" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-bingbu">--</text>
+      <rect x="475" y="668" width="95" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
+      <text x="522" y="681" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">兵部</text>
+      <text x="522" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-security">--</text>
     </g>
     <g id="n-dept-libu2">
-      <rect x="620" y="668" width="90" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <text x="665" y="681" text-anchor="middle" fill="#9090a8" font-size="10" font-weight="600">吏部</text>
-      <text x="665" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-libu2">--</text>
+      <rect x="590" y="668" width="95" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <text x="637" y="681" text-anchor="middle" fill="#9090a8" font-size="10" font-weight="600">吏部</text>
+      <text x="637" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-personnel">--</text>
     </g>
 
     </svg>
@@ -395,7 +395,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── 流状态说明卡片 ── -->
-<div class="card" style="left:840px;top:60px;width:240px;">
+<div class="card" style="left:850px;top:60px;width:230px;">
   <div class="ch"><span class="ci">⚡</span><span class="ct">流状态说明</span></div>
   <div class="cb">
     <div class="rl">
@@ -412,7 +412,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── Governor 任务卡片 ── -->
-<div class="card" style="left:840px;top:340px;width:240px;">
+<div class="card" style="left:850px;top:370px;width:230px;">
   <div class="ch"><span class="ci">🎯</span><span class="ct">Governor 任务</span><span class="badge bi" id="task-count">--</span></div>
   <div class="cb">
     <div class="rl" id="tasks-list">
@@ -422,7 +422,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── 六部状态卡片 ── -->
-<div class="card" style="left:840px;top:580px;width:240px;">
+<div class="card" style="left:850px;top:660px;width:230px;">
   <div class="ch"><span class="ci">🏛</span><span class="ct">六部</span></div>
   <div class="cb">
     <div class="rl" id="dept-list">
@@ -432,7 +432,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── 调度卡片 ── -->
-<div class="card" style="left:1100px;top:60px;width:220px;">
+<div class="card" style="left:1100px;top:60px;width:200px;">
   <div class="ch"><span class="ci">⏱</span><span class="ct">调度</span></div>
   <div class="cb">
     <div class="rl" id="schedule-info">
@@ -442,7 +442,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── 实时日志卡片 ── -->
-<div class="card" style="left:60px;top:830px;width:1000px;">
+<div class="card" style="left:60px;top:870px;width:1000px;">
   <div class="ch"><span class="ci">📜</span><span class="ct">系统日志</span><span class="badge bb" id="log-badge">实时流</span></div>
   <div class="cb">
     <div class="lt" id="logs-list">
@@ -659,14 +659,13 @@ function updateNodes() {
     dotGov.setAttribute('filter', 'url(#fg)');
   }
 
-  // Update department subtexts
+  // Update department subtexts (API keys: engineering, operations, quality, protocol, security, personnel)
   const depts = pipelineData.depts;
   if (depts && typeof depts === 'object') {
     for (const [key, info] of Object.entries(depts)) {
-      // Try to match dept key to node
       const subEl = document.getElementById(`dept-sub-${key}`);
       if (subEl && info) {
-        const total = info.total ?? 0;
+        const total = info.total_runs ?? info.total ?? 0;
         const rate = info.success_rate != null ? `${Math.round(info.success_rate * 100)}%` : '--';
         subEl.textContent = `${total}任务 · ${rate}`;
       }
