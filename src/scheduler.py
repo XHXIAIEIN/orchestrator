@@ -16,6 +16,7 @@ from src.health import HealthCheck
 from src.debt_scanner import DebtScanner
 from src.performance import PerformanceReport
 from src.voice_picker import refresh_voice_pool
+from src.skill_evolver import run_evolution
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -189,6 +190,17 @@ def start():
             log.error(f"Voice refresh failed: {e}")
             db.write_log(f"声音池刷新失败: {e}", "ERROR", "voice_picker")
 
+    def _skill_evolution():
+        db = EventsDB(DB_PATH)
+        try:
+            db.write_log("开始 Skill 演进分析", "INFO", "skill_evolver")
+            results = run_evolution()
+            summary = ", ".join(f"{k}: {v}" for k, v in (results or {}).items())
+            db.write_log(f"Skill 演进分析完成: {summary}", "INFO", "skill_evolver")
+        except Exception as e:
+            log.error(f"SkillEvolver failed: {e}")
+            db.write_log(f"Skill 演进分析失败: {e}", "ERROR", "skill_evolver")
+
     scheduler.add_job(_collectors, "interval", hours=1, id="collectors")
     scheduler.add_job(_analysis, "interval", hours=6, id="analysis")
     scheduler.add_job(_profile_periodic, "interval", hours=6, id="profile_periodic")
@@ -196,8 +208,9 @@ def start():
     scheduler.add_job(_debt_scan, "interval", hours=12, id="debt_scan")
     scheduler.add_job(_performance_report, "cron", hour=8, timezone="Asia/Shanghai", id="performance_report")
     scheduler.add_job(_voice_refresh, "interval", days=7, id="voice_refresh")
+    scheduler.add_job(_skill_evolution, "cron", day_of_week="mon", hour=9, timezone="Asia/Shanghai", id="skill_evolution")
 
-    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，吏部绩效：每日08:00，声音池：每7天", "INFO", "scheduler")
+    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00", "INFO", "scheduler")
 
     log.info("Scheduler started. Collectors: hourly. Analysis: every 6 hours. Debt scan: every 12 hours.")
     log.info("Running initial collection...")
