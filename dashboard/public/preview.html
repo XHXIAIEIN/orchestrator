@@ -34,11 +34,10 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 .fd-govern{background:var(--indigo);color:var(--indigo);}
 
 #wrap{position:fixed;top:40px;left:0;right:0;bottom:0;overflow:auto;background-image:radial-gradient(circle,#18182a 1px,transparent 1px);background-size:28px 28px;}
-#cv{display:grid;grid-template-columns:1fr 260px;grid-template-rows:auto auto;gap:16px;padding:20px 24px 40px;min-height:100%;}
-#cv .flow-col{grid-column:1;grid-row:1;}
-#cv .info-col{grid-column:2;grid-row:1;display:flex;flex-direction:column;gap:12px;}
-#cv .log-row{grid-column:1 / -1;grid-row:2;}
-@media(max-width:1100px){#cv{grid-template-columns:1fr;} #cv .info-col{grid-column:1;grid-row:2;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));} #cv .log-row{grid-row:3;}}
+#cv{display:grid;grid-template-columns:1fr 260px;gap:16px;padding:20px 24px 40px;min-height:100%;}
+#cv .flow-col{grid-column:1;}
+#cv .info-col{grid-column:2;display:flex;flex-direction:column;gap:12px;}
+@media(max-width:1100px){#cv{grid-template-columns:1fr;} #cv .info-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}}
 
 .card{background:var(--card);border:1px solid var(--b1);border-radius:10px;}
 .ch{padding:11px 14px 10px;border-bottom:1px solid var(--b2);display:flex;align-items:center;gap:8px;}
@@ -400,6 +399,16 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
   </div>
 </div>
 
+<!-- ── 实时日志卡片 (在流程图下方) ── -->
+<div class="card" style="margin-top:12px;">
+  <div class="ch"><span class="ci">📜</span><span class="ct">系统日志</span><span class="badge bb" id="log-badge">实时流</span></div>
+  <div class="cb">
+    <div class="lt" id="logs-list">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+</div>
+
 </div><!-- end flow-col -->
 
 <!-- ═══ RIGHT COLUMN: Info Cards ═══ -->
@@ -453,21 +462,6 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 </div><!-- end info-col -->
-
-<!-- ═══ BOTTOM ROW: Logs ═══ -->
-<div class="log-row">
-
-<!-- ── 实时日志卡片 ── -->
-<div class="card">
-  <div class="ch"><span class="ci">📜</span><span class="ct">系统日志</span><span class="badge bb" id="log-badge">实时流</span></div>
-  <div class="cb">
-    <div class="lt" id="logs-list">
-      <div class="empty-state">加载中...</div>
-    </div>
-  </div>
-</div>
-
-</div><!-- end log-row -->
 
 </div></div>
 
