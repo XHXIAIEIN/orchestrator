@@ -17,6 +17,7 @@ from src.governor import Governor
 from src.profile_analyst import ProfileAnalyst
 from src.health import HealthCheck
 from src.debt_scanner import DebtScanner
+from src.debt_resolver import resolve_debts, check_resolved_debts
 from src.performance import PerformanceReport
 from src.voice_picker import refresh_voice_pool
 from src.skill_evolver import run_evolution
@@ -176,6 +177,25 @@ def start():
             log.error(f"DebtScanner failed: {e}")
             db.write_log(f"注意力债务扫描失败: {e}", "ERROR", "debt_scanner")
 
+    def _debt_resolve():
+        db = EventsDB(DB_PATH)
+        try:
+            # Check if previously tasked debts are now resolved
+            resolved = check_resolved_debts(db)
+            if resolved:
+                db.write_log(f"Debt closed-loop: {resolved} debts confirmed resolved", "INFO", "debt_resolver")
+
+            # Convert new debts into Governor tasks
+            results = resolve_debts(db)
+            if results["tasked"]:
+                db.write_log(
+                    f"Debt dispatch: evaluated {results['evaluated']}, tasked {results['tasked']}, skipped {results['skipped']}",
+                    "INFO", "debt_resolver"
+                )
+        except Exception as e:
+            log.error(f"DebtResolver failed: {e}")
+            db.write_log(f"DebtResolver failed: {e}", "ERROR", "debt_resolver")
+
     def _performance_report():
         db = EventsDB(DB_PATH)
         try:
@@ -212,19 +232,22 @@ def start():
     scheduler.add_job(_profile_periodic, "interval", hours=6, id="profile_periodic")
     scheduler.add_job(_profile_daily, "cron", hour=6, timezone="Asia/Shanghai", id="profile_daily")
     scheduler.add_job(_debt_scan, "interval", hours=12, id="debt_scan")
+    scheduler.add_job(_debt_resolve, "interval", hours=12, start_date="2026-01-01 01:00:00", timezone="Asia/Shanghai", id="debt_resolve")
     scheduler.add_job(_performance_report, "cron", hour=8, timezone="Asia/Shanghai", id="performance_report")
     scheduler.add_job(_voice_refresh, "interval", days=7, id="voice_refresh")
     scheduler.add_job(_skill_evolution, "cron", day_of_week="mon", hour=9, timezone="Asia/Shanghai", id="skill_evolution")
 
-    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00", "INFO", "scheduler")
+    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00", "INFO", "scheduler")
 
     log.info("Scheduler started. Collectors: hourly. Analysis: every 6 hours. Debt scan: every 12 hours.")
     log.info("Running initial collection...")
     _collectors()
 
-    # 启动后运行一次增量债务扫描
+    # 启动后运行一次增量债务扫描，然后尝试转化 debt 为任务
     log.info("Running initial debt scan...")
     _debt_scan()
+    log.info("Running initial debt resolve...")
+    _debt_resolve()
 
     try:
         scheduler.start()
