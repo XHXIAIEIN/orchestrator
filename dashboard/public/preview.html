@@ -33,11 +33,14 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 .fd-analysis{background:var(--amber);color:var(--amber);}
 .fd-govern{background:var(--indigo);color:var(--indigo);}
 
-#wrap{position:fixed;top:40px;left:0;right:0;bottom:0;overflow:hidden;cursor:grab;}
-#wrap.drag{cursor:grabbing;}
-#cv{position:absolute;width:5000px;height:4000px;background-image:radial-gradient(circle,#18182a 1px,transparent 1px);background-size:28px 28px;transform-origin:0 0;}
+#wrap{position:fixed;top:40px;left:0;right:0;bottom:0;overflow:auto;background-image:radial-gradient(circle,#18182a 1px,transparent 1px);background-size:28px 28px;}
+#cv{display:grid;grid-template-columns:1fr 260px;grid-template-rows:auto auto;gap:16px;padding:20px 24px 40px;min-height:100%;}
+#cv .flow-col{grid-column:1;grid-row:1;}
+#cv .info-col{grid-column:2;grid-row:1;display:flex;flex-direction:column;gap:12px;}
+#cv .log-row{grid-column:1 / -1;grid-row:2;}
+@media(max-width:1100px){#cv{grid-template-columns:1fr;} #cv .info-col{grid-column:1;grid-row:2;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));} #cv .log-row{grid-row:3;}}
 
-.card{position:absolute;background:var(--card);border:1px solid var(--b1);border-radius:10px;}
+.card{background:var(--card);border:1px solid var(--b1);border-radius:10px;}
 .ch{padding:11px 14px 10px;border-bottom:1px solid var(--b2);display:flex;align-items:center;gap:8px;}
 .ci{font-size:13px;} .ct{font-size:11px;font-weight:600;letter-spacing:.2px;}
 .cb{padding:14px 16px;}
@@ -95,11 +98,11 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 /* empty state */
 .empty-state{font-size:11px;color:var(--t3);text-align:center;padding:20px 0;}
 
-#zm{position:fixed;bottom:16px;left:16px;z-index:100;display:flex;gap:3px;}
+#zm{display:none;}
 .zb{width:26px;height:26px;background:var(--card);border:1px solid var(--b1);border-radius:5px;color:var(--t2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .zb:hover{background:#13131e;color:var(--t1);}
 .zp{height:26px;padding:0 9px;background:var(--card);border:1px solid var(--b1);border-radius:5px;font-size:10px;color:var(--t3);display:flex;align-items:center;}
-#mm{position:fixed;bottom:16px;right:16px;width:150px;height:90px;background:var(--card);border:1px solid var(--b1);border-radius:8px;overflow:hidden;z-index:100;}
+#mm{display:none;}
 #mmvp{position:absolute;border:1px solid #4ade8055;background:#4ade8008;border-radius:2px;}
 .mml{position:absolute;bottom:5px;left:7px;font-size:9px;color:var(--t3);}
 
@@ -126,15 +129,18 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 
 <div id="wrap"><div id="cv">
 
+<!-- ═══ LEFT COLUMN: Flow Chart ═══ -->
+<div class="flow-col">
+
 <!-- ── 主流程图卡片 ── -->
-<div class="card" style="left:60px;top:60px;width:760px;">
+<div class="card">
   <div class="ch">
     <span class="ci">🔀</span>
     <span class="ct">Agent 数据流</span>
     <span class="badge bb" id="flow-badge">实时动线</span>
   </div>
   <div class="cb" style="padding:16px 16px 8px;">
-    <svg id="flowsvg" viewBox="0 0 728 720" width="728" height="720" style="display:block;overflow:visible;">
+    <svg id="flowsvg" viewBox="0 0 728 550" width="100%" style="display:block;overflow:visible;max-width:728px;">
     <defs>
       <!-- Glow filters -->
       <filter id="fg" x="-50%" y="-50%" width="200%" height="200%">
@@ -152,31 +158,31 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 
       <!-- ── Connection paths ── -->
       <!-- Source → Collector (6 sources) -->
-      <path id="pc0" d="M65,66  C65,110 340,110 340,148"/>
-      <path id="pc1" d="M185,66 C185,110 340,110 340,148"/>
-      <path id="pc2" d="M305,66 C305,110 340,110 340,148"/>
-      <path id="pc3" d="M425,66 C425,110 340,110 340,148"/>
-      <path id="pc4s" d="M545,66 C545,110 340,110 340,148"/>
-      <path id="pc5" d="M665,66 C665,110 340,110 340,148"/>
+      <path id="pc0" d="M65,66  C65,95 340,95 340,120"/>
+      <path id="pc1" d="M185,66 C185,95 340,95 340,120"/>
+      <path id="pc2" d="M305,66 C305,95 340,95 340,120"/>
+      <path id="pc3" d="M425,66 C425,95 340,95 340,120"/>
+      <path id="pc4s" d="M545,66 C545,95 340,95 340,120"/>
+      <path id="pc5" d="M665,66 C665,95 340,95 340,120"/>
       <!-- Collector → DB -->
-      <path id="pc6" d="M340,180 L340,248"/>
+      <path id="pc6" d="M340,152 L340,200"/>
       <!-- Analysis: DB → Analyst, DB → Insights, Analyst → Insights -->
-      <path id="pa0" d="M340,280 C340,330 180,330 180,358"/>
-      <path id="pa1" d="M340,280 C340,330 500,330 500,358"/>
-      <path id="pa2" d="M260,375 C340,375 420,375 475,375"/>
+      <path id="pa0" d="M340,232 C340,260 180,260 180,280"/>
+      <path id="pa1" d="M340,232 C340,260 500,260 500,280"/>
+      <path id="pa2" d="M260,296 C340,296 420,296 475,296"/>
       <!-- Governance: Insights → Governor -->
-      <path id="pg0" d="M500,390 L500,458"/>
+      <path id="pg0" d="M500,312 L500,360"/>
       <!-- Governor → CogMode classifier -->
-      <path id="pg0b" d="M500,490 C500,510 340,510 340,528"/>
+      <path id="pg0b" d="M500,392 C500,405 340,405 340,413"/>
       <!-- CogMode → Scrutiny (门下省) -->
-      <path id="pg1" d="M340,560 L340,598"/>
-      <!-- Scrutiny → Departments (fan out to 6 evenly spaced nodes) -->
-      <path id="pe0" d="M340,630 C340,650 62,650 62,668"/>
-      <path id="pe1" d="M340,630 C340,650 177,650 177,668"/>
-      <path id="pe2" d="M340,630 C340,650 292,650 292,668"/>
-      <path id="pe3" d="M340,630 C340,650 407,650 407,668"/>
-      <path id="pe4" d="M340,630 C340,650 522,650 522,668"/>
-      <path id="pe5" d="M340,630 C340,650 637,650 637,668"/>
+      <path id="pg1" d="M340,445 L340,458"/>
+      <!-- Scrutiny → Departments (fan out) -->
+      <path id="pe0" d="M340,490 C340,505 62,505 62,510"/>
+      <path id="pe1" d="M340,490 C340,505 177,505 177,510"/>
+      <path id="pe2" d="M340,490 C340,505 292,505 292,510"/>
+      <path id="pe3" d="M340,490 C340,505 407,505 407,510"/>
+      <path id="pe4" d="M340,490 C340,505 522,505 522,510"/>
+      <path id="pe5" d="M340,490 C340,505 637,505 637,510"/>
     </defs>
 
     <!-- ════ VISIBLE LINES ════ -->
@@ -248,22 +254,22 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 
     <!-- ── LAYER LABELS ── -->
     <text x="4" y="56" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">数据源</text>
-    <text x="4" y="170" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">采集</text>
-    <text x="4" y="270" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">存储</text>
-    <text x="4" y="376" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">分析</text>
-    <text x="4" y="476" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">治理</text>
-    <text x="4" y="546" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">认知</text>
-    <text x="4" y="616" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">审查</text>
-    <text x="4" y="686" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">六部</text>
+    <text x="4" y="136" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">采集</text>
+    <text x="4" y="216" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">存储</text>
+    <text x="4" y="296" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">分析</text>
+    <text x="4" y="376" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">治理</text>
+    <text x="4" y="426" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">认知</text>
+    <text x="4" y="470" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">审查</text>
+    <text x="4" y="525" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">六部</text>
 
     <!-- Divider lines -->
-    <line x1="36" y1="95"  x2="720" y2="95"  stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="200" x2="720" y2="200" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="310" x2="720" y2="310" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="420" x2="720" y2="420" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="520" x2="720" y2="520" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="590" x2="720" y2="590" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="655" x2="720" y2="655" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="82"  x2="720" y2="82"  stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="165" x2="720" y2="165" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="245" x2="720" y2="245" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="325" x2="720" y2="325" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="403" x2="720" y2="403" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="450" x2="720" y2="450" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="498" x2="720" y2="498" stroke="#141420" stroke-width="1"/>
 
     <!-- ── 6 Source nodes ── -->
     <g id="n-claude" class="node">
@@ -305,97 +311,102 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 
     <!-- ── Collector ── -->
     <g id="n-collector">
-      <rect x="210" y="148" width="260" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
-      <circle cx="227" cy="164" r="3.5" fill="#4ade80" filter="url(#fg)"/>
-      <text x="340" y="160" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="600">Collectors</text>
-      <text x="340" y="173" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".6" id="collector-sub">Claude · Browser · Git · Steam · YTMusic · Codebase</text>
+      <rect x="210" y="120" width="260" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
+      <circle cx="227" cy="136" r="3.5" fill="#4ade80" filter="url(#fg)"/>
+      <text x="340" y="132" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="600">Collectors</text>
+      <text x="340" y="145" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".6" id="collector-sub">Claude · Browser · Git · Steam · YTMusic · Codebase</text>
     </g>
 
     <!-- ── EventsDB ── -->
     <g id="n-db">
-      <rect x="230" y="248" width="220" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
-      <circle cx="247" cy="264" r="3.5" fill="#818cf8" filter="url(#fi)"/>
-      <text x="340" y="260" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="600">EventsDB</text>
-      <text x="340" y="273" text-anchor="middle" fill="#818cf8" font-size="9" opacity=".6">SQLite · 事件存储 · 分析缓存</text>
+      <rect x="230" y="200" width="220" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
+      <circle cx="247" cy="216" r="3.5" fill="#818cf8" filter="url(#fi)"/>
+      <text x="340" y="212" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="600">EventsDB</text>
+      <text x="340" y="225" text-anchor="middle" fill="#818cf8" font-size="9" opacity=".6">SQLite · 事件存储 · 分析缓存</text>
     </g>
 
     <!-- ── DailyAnalyst ── -->
     <g id="n-analyst">
-      <rect x="100" y="358" width="160" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="116" cy="374" r="3.5" fill="#38384a" id="dot-analyst"/>
-      <text x="180" y="370" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">DailyAnalyst</text>
-      <text x="180" y="383" text-anchor="middle" fill="#6b6b82" font-size="9">每日分析</text>
+      <rect x="100" y="280" width="160" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="116" cy="296" r="3.5" fill="#38384a" id="dot-analyst"/>
+      <text x="180" y="292" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">DailyAnalyst</text>
+      <text x="180" y="305" text-anchor="middle" fill="#6b6b82" font-size="9">每日分析</text>
     </g>
     <!-- ── InsightEngine ── -->
     <g id="n-insights">
-      <rect x="415" y="358" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="431" cy="374" r="3.5" fill="#38384a" id="dot-insights"/>
-      <text x="500" y="370" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">InsightEngine</text>
-      <text x="500" y="383" text-anchor="middle" fill="#6b6b82" font-size="9">7天洞察 · 任务提案</text>
+      <rect x="415" y="280" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="431" cy="296" r="3.5" fill="#38384a" id="dot-insights"/>
+      <text x="500" y="292" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">InsightEngine</text>
+      <text x="500" y="305" text-anchor="middle" fill="#6b6b82" font-size="9">7天洞察 · 任务提案</text>
     </g>
 
     <!-- ── Governor ── -->
     <g id="n-governor">
-      <rect x="415" y="458" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="431" cy="474" r="3.5" fill="#38384a" id="dot-governor"/>
-      <text x="500" y="470" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">Governor</text>
-      <text x="500" y="483" text-anchor="middle" fill="#6b6b82" font-size="9" id="gov-sub">中书省 · --</text>
+      <rect x="415" y="360" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="431" cy="376" r="3.5" fill="#38384a" id="dot-governor"/>
+      <text x="500" y="372" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">Governor</text>
+      <text x="500" y="385" text-anchor="middle" fill="#6b6b82" font-size="9" id="gov-sub">中书省 · --</text>
     </g>
 
     <!-- ── Cognition Mode Classifier (new) ── -->
     <g id="n-cogmode">
-      <rect x="250" y="528" width="180" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
-      <circle cx="267" cy="544" r="3.5" fill="#818cf8" filter="url(#fi)"/>
-      <text x="340" y="540" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="600">认知分类器</text>
-      <text x="340" y="553" text-anchor="middle" fill="#818cf8" font-size="9" opacity=".6" id="cogmode-sub">direct · react · hypothesis · designer</text>
+      <rect x="250" y="413" width="180" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
+      <circle cx="267" cy="429" r="3.5" fill="#818cf8" filter="url(#fi)"/>
+      <text x="340" y="425" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="600">认知分类器</text>
+      <text x="340" y="438" text-anchor="middle" fill="#818cf8" font-size="9" opacity=".6" id="cogmode-sub">direct · react · hypothesis · designer</text>
     </g>
 
     <!-- ── 门下省 (Scrutiny) ── -->
     <g id="n-scrutiny">
-      <rect x="250" y="598" width="180" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
-      <circle cx="267" cy="614" r="3.5" fill="#fbbf24"/>
-      <text x="340" y="610" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="600">门下省</text>
-      <text x="340" y="623" text-anchor="middle" fill="#fbbf24" font-size="9" opacity=".6" id="scrutiny-sub">Haiku 审查 · APPROVE / REJECT</text>
+      <rect x="250" y="458" width="180" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
+      <circle cx="267" cy="474" r="3.5" fill="#fbbf24"/>
+      <text x="340" y="470" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="600">门下省</text>
+      <text x="340" y="483" text-anchor="middle" fill="#fbbf24" font-size="9" opacity=".6" id="scrutiny-sub">Haiku 审查 · APPROVE / REJECT</text>
     </g>
 
     <!-- ── 六部 (6 Department nodes, evenly spaced across 680px) ── -->
     <g id="n-dept-gongbu">
-      <rect x="15" y="668" width="95" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
-      <text x="62" y="681" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">工部</text>
-      <text x="62" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-engineering">--</text>
+      <rect x="15" y="510" width="95" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
+      <text x="62" y="523" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">工部</text>
+      <text x="62" y="535" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-engineering">--</text>
     </g>
     <g id="n-dept-hubu">
-      <rect x="130" y="668" width="95" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
-      <text x="177" y="681" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">户部</text>
-      <text x="177" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-operations">--</text>
+      <rect x="130" y="510" width="95" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
+      <text x="177" y="523" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">户部</text>
+      <text x="177" y="535" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-operations">--</text>
     </g>
     <g id="n-dept-xingbu">
-      <rect x="245" y="668" width="95" height="32" rx="5" fill="#1f0d0d" stroke="#3a1a1a"/>
-      <text x="292" y="681" text-anchor="middle" fill="#f87171" font-size="10" font-weight="600">刑部</text>
-      <text x="292" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-quality">--</text>
+      <rect x="245" y="510" width="95" height="32" rx="5" fill="#1f0d0d" stroke="#3a1a1a"/>
+      <text x="292" y="523" text-anchor="middle" fill="#f87171" font-size="10" font-weight="600">刑部</text>
+      <text x="292" y="535" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-quality">--</text>
     </g>
     <g id="n-dept-libu">
-      <rect x="360" y="668" width="95" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
-      <text x="407" y="681" text-anchor="middle" fill="#818cf8" font-size="10" font-weight="600">礼部</text>
-      <text x="407" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-protocol">--</text>
+      <rect x="360" y="510" width="95" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
+      <text x="407" y="523" text-anchor="middle" fill="#818cf8" font-size="10" font-weight="600">礼部</text>
+      <text x="407" y="535" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-protocol">--</text>
     </g>
     <g id="n-dept-bingbu">
-      <rect x="475" y="668" width="95" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
-      <text x="522" y="681" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">兵部</text>
-      <text x="522" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-security">--</text>
+      <rect x="475" y="510" width="95" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
+      <text x="522" y="523" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">兵部</text>
+      <text x="522" y="535" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-security">--</text>
     </g>
     <g id="n-dept-libu2">
-      <rect x="590" y="668" width="95" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <text x="637" y="681" text-anchor="middle" fill="#9090a8" font-size="10" font-weight="600">吏部</text>
-      <text x="637" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-personnel">--</text>
+      <rect x="590" y="510" width="95" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <text x="637" y="523" text-anchor="middle" fill="#9090a8" font-size="10" font-weight="600">吏部</text>
+      <text x="637" y="535" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-personnel">--</text>
     </g>
 
     </svg>
   </div>
 </div>
 
+</div><!-- end flow-col -->
+
+<!-- ═══ RIGHT COLUMN: Info Cards ═══ -->
+<div class="info-col">
+
 <!-- ── 流状态说明卡片 ── -->
-<div class="card" style="left:850px;top:60px;width:230px;">
+<div class="card">
   <div class="ch"><span class="ci">⚡</span><span class="ct">流状态说明</span></div>
   <div class="cb">
     <div class="rl">
@@ -412,7 +423,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── Governor 任务卡片 ── -->
-<div class="card" style="left:850px;top:370px;width:230px;">
+<div class="card">
   <div class="ch"><span class="ci">🎯</span><span class="ct">Governor 任务</span><span class="badge bi" id="task-count">--</span></div>
   <div class="cb">
     <div class="rl" id="tasks-list">
@@ -422,7 +433,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── 六部状态卡片 ── -->
-<div class="card" style="left:850px;top:660px;width:230px;">
+<div class="card">
   <div class="ch"><span class="ci">🏛</span><span class="ct">六部</span></div>
   <div class="cb">
     <div class="rl" id="dept-list">
@@ -432,7 +443,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 </div>
 
 <!-- ── 调度卡片 ── -->
-<div class="card" style="left:1100px;top:60px;width:200px;">
+<div class="card">
   <div class="ch"><span class="ci">⏱</span><span class="ct">调度</span></div>
   <div class="cb">
     <div class="rl" id="schedule-info">
@@ -441,8 +452,13 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
   </div>
 </div>
 
+</div><!-- end info-col -->
+
+<!-- ═══ BOTTOM ROW: Logs ═══ -->
+<div class="log-row">
+
 <!-- ── 实时日志卡片 ── -->
-<div class="card" style="left:60px;top:870px;width:1000px;">
+<div class="card">
   <div class="ch"><span class="ci">📜</span><span class="ct">系统日志</span><span class="badge bb" id="log-badge">实时流</span></div>
   <div class="cb">
     <div class="lt" id="logs-list">
@@ -450,6 +466,8 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
     </div>
   </div>
 </div>
+
+</div><!-- end log-row -->
 
 </div></div>
 
@@ -462,23 +480,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 <div id="mm"><div id="mmvp"></div><span class="mml">导航</span></div>
 
 <script>
-/* ── pan/zoom ── */
-const wrap=document.getElementById('wrap'),cv=document.getElementById('cv');
-let tx=-30,ty=-20,sc=0.75,drag=false,sx,sy,stx,sty;
-function apply(){
-  cv.style.transform=`translate(${tx}px,${ty}px) scale(${sc})`;
-  document.getElementById('zpct').textContent=Math.round(sc*100)+'%';
-  const mm=document.getElementById('mm'),vp=document.getElementById('mmvp');
-  vp.style.cssText=`left:${-tx/sc*(mm.offsetWidth/5000)}px;top:${-ty/sc*(mm.offsetHeight/4000)}px;width:${wrap.offsetWidth/sc*(mm.offsetWidth/5000)}px;height:${wrap.offsetHeight/sc*(mm.offsetHeight/4000)}px`;
-}
-wrap.addEventListener('mousedown',e=>{if(e.target.closest('.card'))return;drag=true;sx=e.clientX;sy=e.clientY;stx=tx;sty=ty;wrap.classList.add('drag');});
-window.addEventListener('mousemove',e=>{if(!drag)return;tx=stx+(e.clientX-sx);ty=sty+(e.clientY-sy);apply();});
-window.addEventListener('mouseup',()=>{drag=false;wrap.classList.remove('drag');});
-wrap.addEventListener('wheel',e=>{e.preventDefault();const d=e.deltaY>0?.92:1.09,ns=Math.min(3,Math.max(.2,sc*d)),r=wrap.getBoundingClientRect();tx=(e.clientX-r.left)-(e.clientX-r.left-tx)*d;ty=(e.clientY-r.top)-(e.clientY-r.top-ty)*d;sc=ns;apply();},{passive:false});
-document.getElementById('zi').onclick=()=>{sc=Math.min(3,sc*1.15);apply();};
-document.getElementById('zo').onclick=()=>{sc=Math.max(.2,sc/1.15);apply();};
-document.getElementById('zf').onclick=()=>{tx=-30;ty=-20;sc=0.75;apply();};
-apply();
+/* ── pan/zoom removed — using normal scroll layout ── */
 
 /* ── Data state ── */
 let pipelineData = { status: {}, logs: [], tasks: [], depts: {} };
@@ -562,16 +564,12 @@ function taskIcon(status) {
 
 /* ── Department name map ── */
 const deptNames = {
-  gongbu: '工部', hubu: '户部', xingbu: '刑部',
-  libu: '礼部', bingbu: '兵部', libu2: '吏部',
-  engineering: '工部', finance: '户部', justice: '刑部',
-  rites: '礼部', military: '兵部', personnel: '吏部'
+  engineering: '工部', operations: '户部', quality: '刑部',
+  protocol: '礼部', security: '兵部', personnel: '吏部'
 };
 const deptColors = {
-  gongbu: 'var(--green)', hubu: 'var(--blue)', xingbu: 'var(--red)',
-  libu: 'var(--indigo)', bingbu: 'var(--amber)', libu2: '#9090a8',
-  engineering: 'var(--green)', finance: 'var(--blue)', justice: 'var(--red)',
-  rites: 'var(--indigo)', military: 'var(--amber)', personnel: '#9090a8'
+  engineering: 'var(--green)', operations: 'var(--blue)', quality: 'var(--red)',
+  protocol: 'var(--indigo)', security: 'var(--amber)', personnel: '#9090a8'
 };
 
 /* ── API fetch with fallback ── */
