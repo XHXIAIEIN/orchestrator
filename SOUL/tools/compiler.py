@@ -21,6 +21,7 @@ TOOLS_DIR = Path(__file__).parent
 
 # 源文件路径
 IDENTITY_PATH = SOUL_DIR / 'identity.md'
+MANAGEMENT_PATH = SOUL_DIR / 'management.md'
 RELATIONSHIP_PATH = SOUL_DIR / 'relationship.md'
 CALIBRATION_PATH = SOUL_DIR / 'calibration.jsonl'
 EXPERIENCES_PATH = SOUL_DIR / 'experiences.jsonl'
@@ -88,6 +89,17 @@ def read_relationship(path: Optional[Path] = None) -> str:
     text = re.sub(r'^# .*\n+', '', text)
     # 去掉"上次更新"行
     text = re.sub(r'上次更新：.*\n+', '', text)
+    return text.strip()
+
+
+def read_management(path: Optional[Path] = None) -> str:
+    """读取 management.md（管理哲学）"""
+    p = path or MANAGEMENT_PATH
+    if not p.exists():
+        return ''
+    text = p.read_text(encoding='utf-8')
+    # 去掉顶级标题行（编译时用 identity 的 section 结构）
+    text = re.sub(r'^# .*\n+', '', text)
     return text.strip()
 
 
@@ -270,6 +282,16 @@ def compile_boot(
 
     # 1. 核心身份
     identity = extract_identity_core()
+
+    # 1.5 管理哲学（插入到"你的性格"和"你对主人的了解"之间）
+    management = read_management()
+    if management:
+        marker = '## 你对主人的了解'
+        if marker in identity:
+            identity = identity.replace(
+                marker,
+                f'{management}\n\n---\n\n{marker}',
+            )
 
     # 2. 关系状态
     relationship = read_relationship()
