@@ -1,0 +1,9 @@
+[     121ms] TypeError: d.recommendations.map is not a function
+    at renderInsights (http://localhost:23714/:420:31)
+    at load (http://localhost:23714/:510:51)
+[     176ms] TypeError: d.recommendations.map is not a function
+    at renderInsights (http://localhost:23714/:420:31)
+    at load (http://localhost:23714/:510:51)
+[     238ms] TypeError: d.recommendations.map is not a function
+    at renderInsights (http://localhost:23714/:420:31)
+    at load (http://localhost:23714/:510:51)

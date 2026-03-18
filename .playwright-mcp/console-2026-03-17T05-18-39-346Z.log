@@ -1,0 +1,5 @@
+[  205222ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
+[  205231ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:23714/api/tts:0
+[  205231ms] [ERROR] TTS error: TypeError: Failed to fetch
+    at speakRoast (http://localhost:23714/:656:24)
+    at HTMLButtonElement.onclick (http://localhost:23714/:273:90) @ http://localhost:23714/:673

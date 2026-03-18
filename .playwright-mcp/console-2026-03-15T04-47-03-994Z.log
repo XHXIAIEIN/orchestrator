@@ -1,0 +1,12 @@
+[      18ms] ReferenceError: loadCategories is not defined
+    at http://localhost:23714/:523:1
+[     118ms] ReferenceError: buildSourceOptions is not defined
+    at load (http://localhost:23714/:470:3)
+[     168ms] [ERROR] loadTasks error: ReferenceError: Cannot access 'PRIORITY_ZH' before initialization
+    at taskCardHtml (http://localhost:23714/:640:15)
+    at Array.map (<anonymous>)
+    at loadTasks (http://localhost:23714/:664:26) @ http://localhost:23714/:670
+[     178ms] ReferenceError: buildSourceOptions is not defined
+    at load (http://localhost:23714/:470:3)
+[     226ms] ReferenceError: buildSourceOptions is not defined
+    at load (http://localhost:23714/:470:3)

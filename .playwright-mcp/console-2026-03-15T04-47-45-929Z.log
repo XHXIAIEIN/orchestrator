@@ -1,0 +1,12 @@
+[      91ms] ReferenceError: buildSourceOptions is not defined
+    at load (http://localhost:23714/:470:3)
+[     121ms] [ERROR] loadTasks error: ReferenceError: renderTaskStats is not defined
+    at loadTasks (http://localhost:23714/:683:5) @ http://localhost:23714/:688
+[     179ms] ReferenceError: buildSourceOptions is not defined
+    at load (http://localhost:23714/:470:3)
+[     197ms] [ERROR] loadTasks error: ReferenceError: renderTaskStats is not defined
+    at loadTasks (http://localhost:23714/:683:5) @ http://localhost:23714/:688
+[     246ms] ReferenceError: buildSourceOptions is not defined
+    at load (http://localhost:23714/:470:3)
+[   30042ms] [ERROR] loadTasks error: ReferenceError: renderTaskStats is not defined
+    at loadTasks (http://localhost:23714/:683:5) @ http://localhost:23714/:688
