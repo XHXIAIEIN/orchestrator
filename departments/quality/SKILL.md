@@ -8,6 +8,8 @@
 - 发现问题按严重程度标注：🔴 必须修（逻辑错误/数据丢失）/ 🟡 建议改 / 💭 可选
 - 如果有测试，先跑测试再 review
 - 检查最近 commit 的 diff，关注边界条件和错误处理
+- 验收时必须自行查看 git diff，不要仅依赖工部提供的摘要。运行 `git diff <commit>~1..<commit>` 或 `git log -1 -p <commit>` 查看实际改动
+- 如果没有 commit hash，运行 `git log --oneline -3` 查看最近提交
 
 ## 红线
 - 只读不写。发现问题写报告，不自行修改代码

@@ -591,20 +591,75 @@ class Governor:
 
         return self.db.get_task(task_id)
 
+    @staticmethod
+    def _extract_artifact(task: dict) -> dict:
+        """从完成的任务中提取结构化 artifact。"""
+        try:
+            output = task.get("output") or ""
+
+            # 提取 commit hash（从 output 中找 7-40 位 hex 前面带 commit 关键词的）
+            commit_match = re.search(r'(?:commit|committed|提交)[:\s]*([0-9a-f]{7,40})', output, re.IGNORECASE)
+            commit = commit_match.group(1) if commit_match else ""
+
+            # 提取改动文件（从 output 中找文件路径模式）
+            file_patterns = re.findall(r'(?:src|departments|SOUL|dashboard|scripts|tests)/[\w/.-]+\.\w+', output)
+            files_changed = list(set(file_patterns))[:10]  # 去重，最多10个
+
+            # 提取 DONE 行作为 summary
+            done_match = re.search(r'DONE:\s*(.+)', output)
+            summary = done_match.group(1).strip() if done_match else task.get("action", "")[:100]
+
+            return {
+                "task_id": task.get("id", 0),
+                "summary": summary,
+                "files_changed": files_changed,
+                "commit": commit,
+                "status": task.get("status", ""),
+            }
+        except Exception:
+            # fallback: 返回最小可用 artifact
+            return {
+                "task_id": task.get("id", 0),
+                "summary": task.get("action", "")[:100],
+                "files_changed": [],
+                "commit": "",
+                "status": task.get("status", ""),
+            }
+
     def _dispatch_quality_review(self, parent_id: int, parent_task: dict, task_cwd: str, project_name: str):
         """工部完成任务后，自动创建刑部验收任务。跳过门下省审查（验收本身就是审查）。"""
         parent_spec = parent_task.get("spec", {})
         parent_action = parent_task.get("action", "")
-        parent_output = parent_task.get("output") or ""
         # 防止验收链无限循环：如果父任务本身已经是验收任务，不再派生
         if parent_spec.get("department") == "quality":
             return
+
+        # 从工部 output 中提取结构化信息
+        artifact = self._extract_artifact(parent_task)
+        files_str = ", ".join(artifact["files_changed"]) if artifact["files_changed"] else "未检测到"
+        commit_str = artifact["commit"] or "未检测到"
+
+        if artifact["commit"]:
+            observation = (
+                f"工部执行摘要：{artifact['summary']}\n"
+                f"改动文件：{files_str}\n"
+                f"Commit: {commit_str}\n\n"
+                f"请自行运行 git diff {artifact['commit']}~1..{artifact['commit']} 查看实际代码改动，不要依赖上述摘要做判断。"
+            )
+        else:
+            observation = (
+                f"工部执行摘要：{artifact['summary']}\n"
+                f"改动文件：{files_str}\n"
+                f"Commit: {commit_str}\n\n"
+                f"未检测到 commit hash，请运行 git log --oneline -3 查看最近提交，然后用 git diff 查看实际改动。"
+            )
+
         review_spec = {
             "department": "quality",
             "project": project_name,
             "cwd": task_cwd,
             "problem": f"验收工部任务 #{parent_id} 的执行结果",
-            "observation": f"工部执行内容：{parent_action}\n工部输出摘要：{parent_output[:500]}",
+            "observation": observation,
             "expected": parent_spec.get("expected", "任务正确完成，无引入新问题"),
             "summary": f"刑部验收：{parent_action[:40]}",
         }
@@ -643,13 +698,21 @@ class Governor:
             log.warning(f"Governor: task #{parent_id} hit max rework ({rework_count}), not dispatching")
             return
 
-        # 提取刑部反馈（VERDICT 行之前的内容）
-        feedback_lines = []
-        for line in review_output.splitlines():
-            if line.startswith("VERDICT:"):
-                break
-            feedback_lines.append(line)
-        feedback = "\n".join(feedback_lines[-20:])  # 取最后 20 行，避免太长
+        # 提取刑部的具体问题（优先提取标记行，fallback 到 VERDICT 前的最后 10 行）
+        issue_lines = [
+            l for l in review_output.splitlines()
+            if l.strip().startswith(('\U0001f534', '\U0001f7e1', '[CRITICAL]', '[BUG]', '[WARN]'))
+        ]
+        if issue_lines:
+            feedback = "\n".join(issue_lines[:10])
+        else:
+            # fallback: VERDICT 行之前的最后 10 行
+            feedback_lines = []
+            for line in review_output.splitlines():
+                if line.startswith("VERDICT:"):
+                    break
+                feedback_lines.append(line)
+            feedback = "\n".join(feedback_lines[-10:])
 
         rework_spec = {
             "department": "engineering",
