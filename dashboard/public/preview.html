@@ -2,6 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestrator Flow</title>
 <style>
 :root {
@@ -10,6 +11,7 @@
   --t1:    #dddde8; --t2:    #6b6b82; --t3:    #38384a;
   --green: #4ade80; --amber: #fbbf24; --red:   #f87171;
   --indigo:#818cf8; --blue:  #60a5fa;
+  --cm-direct: #60a5fa; --cm-react: #4ade80; --cm-hypothesis: #fbbf24; --cm-designer: #818cf8;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh;-webkit-font-smoothing:antialiased;}
@@ -22,13 +24,14 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 .tp{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .tst{font-size:10px;color:var(--green);}
-
-/* state switcher */
-.state-btn{font-size:10px;padding:3px 10px;border-radius:12px;border:1px solid var(--b1);background:transparent;color:var(--t3);cursor:pointer;transition:all .2s;}
-.state-btn.on{color:var(--bg);font-weight:600;}
-.state-btn.collect.on{background:var(--blue);border-color:var(--blue);}
-.state-btn.analysis.on{background:var(--amber);border-color:var(--amber);}
-.state-btn.govern.on{background:var(--indigo);border-color:var(--indigo);}
+.tst.off{color:var(--red);}
+.flow-ind{display:flex;gap:8px;align-items:center;}
+.flow-dot{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3);}
+.flow-dot .fd{width:6px;height:6px;border-radius:50%;opacity:.3;transition:opacity .4s;}
+.flow-dot .fd.on{opacity:1;box-shadow:0 0 6px currentColor;}
+.fd-collect{background:var(--blue);color:var(--blue);}
+.fd-analysis{background:var(--amber);color:var(--amber);}
+.fd-govern{background:var(--indigo);color:var(--indigo);}
 
 #wrap{position:fixed;top:40px;left:0;right:0;bottom:0;overflow:hidden;cursor:grab;}
 #wrap.drag{cursor:grabbing;}
@@ -41,24 +44,56 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 .badge{margin-left:auto;font-size:10px;padding:2px 8px;border-radius:12px;}
 .bg{color:var(--green);background:#0d1f12;} .bd{color:var(--t3);background:var(--inset);}
 .bb{color:var(--blue);background:#0d1320;} .bi{color:var(--indigo);background:#100d1f;}
+.ba{color:var(--amber);background:#1f1800;font-size:10px;padding:2px 8px;border-radius:12px;}
+.br{color:var(--red);background:#1f0d0d;font-size:10px;padding:2px 8px;border-radius:12px;}
 
 .rl{display:flex;flex-direction:column;gap:3px;}
 .ri{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:5px;background:var(--inset);}
 .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
 .dg{background:var(--green);box-shadow:0 0 5px var(--green);}
-.da{background:var(--amber);} .dd{background:var(--t3);}
-.ll{font-size:11px;color:var(--t1);flex:1;} .ls{font-size:10px;color:var(--t2);}
+.da{background:var(--amber);} .dd{background:var(--t3);} .dr{background:var(--red);}
+.ll{font-size:11px;color:var(--t1);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;}
+.ls{font-size:10px;color:var(--t2);}
 .lr{margin-left:auto;}
-.ba{color:var(--amber);background:#1f1800;font-size:10px;padding:2px 8px;border-radius:12px;}
 
 .lt{display:flex;flex-direction:column;gap:3px;}
 .li{display:flex;align-items:flex-start;gap:8px;padding:6px 9px;border-radius:5px;background:var(--inset);}
 .ltag{font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;flex-shrink:0;margin-top:1px;}
 .ti{color:var(--blue);background:#0d1320;} .ta{color:var(--indigo);background:#100d1f;}
 .tg{color:var(--green);background:#0d1f12;} .te{color:var(--red);background:#1f0d0d;}
+.tw{color:var(--amber);background:#1f1800;}
 .lsrc{font-size:10px;color:var(--t3);min-width:52px;flex-shrink:0;margin-top:2px;}
 .lmsg{font-size:11px;color:var(--t2);flex:1;line-height:1.4;}
 .ltm{font-size:10px;color:var(--t3);flex-shrink:0;margin-top:2px;}
+
+/* cognition mode badges */
+.cm-badge{font-size:9px;padding:2px 6px;border-radius:10px;font-weight:600;letter-spacing:.3px;}
+.cm-direct{color:var(--cm-direct);background:#0d1320;}
+.cm-react{color:var(--cm-react);background:#0d1f12;}
+.cm-hypothesis{color:var(--cm-hypothesis);background:#1f1800;}
+.cm-designer{color:var(--cm-designer);background:#100d1f;}
+
+/* blast radius badges */
+.blast-badge{font-size:9px;padding:2px 6px;border-radius:10px;font-weight:600;}
+.blast-low{color:var(--green);background:#0d1f12;}
+.blast-medium{color:var(--amber);background:#1f1800;}
+.blast-high{color:var(--red);background:#1f0d0d;}
+
+/* dept mini bar */
+.dept-bar{height:3px;background:var(--b1);border-radius:2px;overflow:hidden;margin-top:4px;width:100%;}
+.dept-bar-fill{height:100%;border-radius:2px;transition:width .4s;}
+
+/* task status icons */
+.task-icon{font-size:11px;flex-shrink:0;}
+
+/* schedule countdown */
+.sched-item{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;border-radius:5px;background:var(--inset);}
+.sched-name{font-size:11px;color:var(--t1);}
+.sched-next{font-size:10px;color:var(--t2);}
+.sched-cd{font-size:10px;color:var(--green);font-variant-numeric:tabular-nums;}
+
+/* empty state */
+.empty-state{font-size:11px;color:var(--t3);text-align:center;padding:20px 0;}
 
 #zm{position:fixed;bottom:16px;left:16px;z-index:100;display:flex;gap:3px;}
 .zb{width:26px;height:26px;background:var(--card);border:1px solid var(--b1);border-radius:5px;color:var(--t2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
@@ -67,6 +102,10 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 #mm{position:fixed;bottom:16px;right:16px;width:150px;height:90px;background:var(--card);border:1px solid var(--b1);border-radius:8px;overflow:hidden;z-index:100;}
 #mmvp{position:absolute;border:1px solid #4ade8055;background:#4ade8008;border-radius:2px;}
 .mml{position:absolute;bottom:5px;left:7px;font-size:9px;color:var(--t3);}
+
+/* refresh indicator */
+.refresh-spin{animation:spin 1s linear infinite;display:inline-block;}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -74,26 +113,28 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
   <span class="tl">ORCH</span><div class="ts"></div>
   <span class="th">数据流视图</span>
   <div class="tr">
-    <span class="th">模拟流状态：</span>
-    <button class="state-btn collect on" onclick="setState('collect',this)">采集中</button>
-    <button class="state-btn analysis" onclick="setState('analysis',this)">分析中</button>
-    <button class="state-btn govern" onclick="setState('govern',this)">治理中</button>
+    <div class="flow-ind">
+      <div class="flow-dot"><span class="fd fd-collect" id="fi-collect"></span>采集</div>
+      <div class="flow-dot"><span class="fd fd-analysis" id="fi-analysis"></span>分析</div>
+      <div class="flow-dot"><span class="fd fd-govern" id="fi-govern"></span>治理</div>
+    </div>
     <div class="ts"></div>
-    <div class="tp"></div><span class="tst">运行中</span>
+    <div class="tp" id="sys-pulse"></div><span class="tst" id="sys-status">连接中...</span>
+    <span class="th" id="refresh-timer"></span>
   </div>
 </div>
 
 <div id="wrap"><div id="cv">
 
 <!-- ── 主流程图卡片 ── -->
-<div class="card" style="left:60px;top:60px;width:700px;">
+<div class="card" style="left:60px;top:60px;width:760px;">
   <div class="ch">
     <span class="ci">🔀</span>
     <span class="ct">Agent 数据流</span>
-    <span class="badge bb">实时动线</span>
+    <span class="badge bb" id="flow-badge">实时动线</span>
   </div>
   <div class="cb" style="padding:16px 16px 8px;">
-    <svg id="flowsvg" viewBox="0 0 668 590" width="668" height="590" style="display:block;overflow:visible;">
+    <svg id="flowsvg" viewBox="0 0 728 680" width="728" height="680" style="display:block;overflow:visible;">
     <defs>
       <!-- Glow filters -->
       <filter id="fg" x="-50%" y="-50%" width="200%" height="200%">
@@ -110,94 +151,100 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
       </filter>
 
       <!-- ── Connection paths ── -->
-      <!-- Collection layer: sources → collector -->
-      <path id="pc0" d="M75,66  C75,110 300,110 300,148"/>
-      <path id="pc1" d="M215,66 C215,110 300,110 300,148"/>
-      <path id="pc2" d="M375,66 C375,110 300,110 300,148"/>
-      <path id="pc3" d="M515,66 C515,110 300,110 300,148"/>
-      <!-- collector → db -->
-      <path id="pc4" d="M300,180 L300,248"/>
-      <!-- Analysis layer: db → analyst, db → insights, analyst → insights -->
-      <path id="pa0" d="M300,280 C300,330 150,330 150,358"/>
-      <path id="pa1" d="M300,280 C300,330 450,330 450,358"/>
-      <path id="pa2" d="M225,375 C300,375 375,375 425,375"/>
-      <!-- Governance layer: insights → governor -->
-      <path id="pg0" d="M450,390 L450,458"/>
-      <!-- governor → scrutiny (haiku) -->
-      <path id="pg1" d="M450,490 C450,540 265,540 265,558"/>
-      <!-- governor → executor -->
-      <path id="pg2" d="M450,490 C450,540 555,540 555,558"/>
-      <!-- scrutiny → executor (approve) -->
-      <path id="pg3" d="M340,574 C420,574 480,574 520,574"/>
+      <!-- Source → Collector (6 sources) -->
+      <path id="pc0" d="M65,66  C65,110 340,110 340,148"/>
+      <path id="pc1" d="M185,66 C185,110 340,110 340,148"/>
+      <path id="pc2" d="M305,66 C305,110 340,110 340,148"/>
+      <path id="pc3" d="M425,66 C425,110 340,110 340,148"/>
+      <path id="pc4s" d="M545,66 C545,110 340,110 340,148"/>
+      <path id="pc5" d="M665,66 C665,110 340,110 340,148"/>
+      <!-- Collector → DB -->
+      <path id="pc6" d="M340,180 L340,248"/>
+      <!-- Analysis: DB → Analyst, DB → Insights, Analyst → Insights -->
+      <path id="pa0" d="M340,280 C340,330 180,330 180,358"/>
+      <path id="pa1" d="M340,280 C340,330 500,330 500,358"/>
+      <path id="pa2" d="M260,375 C340,375 420,375 475,375"/>
+      <!-- Governance: Insights → Governor -->
+      <path id="pg0" d="M500,390 L500,458"/>
+      <!-- Governor → CogMode classifier -->
+      <path id="pg0b" d="M500,490 C500,510 340,510 340,528"/>
+      <!-- CogMode → Scrutiny (门下省) -->
+      <path id="pg1" d="M340,560 L340,598"/>
+      <!-- Scrutiny → Departments (fan out) -->
+      <path id="pe0" d="M340,630 C340,650 75,650 75,668"/>
+      <path id="pe1" d="M340,630 C340,650 205,650 205,668"/>
+      <path id="pe2" d="M340,630 C340,650 335,650 335,668"/>
+      <path id="pe3" d="M340,630 C340,650 465,650 465,668"/>
+      <path id="pe4" d="M340,630 C340,650 595,650 595,668"/>
+      <path id="pe5" d="M340,630 C340,650 665,650 665,668"/>
     </defs>
 
     <!-- ════ VISIBLE LINES ════ -->
-    <!-- Collection lines -->
     <g class="lines-collect">
       <use href="#pc0" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.25"/>
       <use href="#pc1" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.25"/>
       <use href="#pc2" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.15"/>
       <use href="#pc3" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.15"/>
-      <use href="#pc4" fill="none" stroke="#818cf8" stroke-width="1.5" opacity="0.3"/>
+      <use href="#pc4s" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pc5" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pc6" fill="none" stroke="#818cf8" stroke-width="1.5" opacity="0.3"/>
     </g>
-    <!-- Analysis lines -->
     <g class="lines-analysis">
       <use href="#pa0" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.2"/>
       <use href="#pa1" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.2"/>
       <use href="#pa2" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.2"/>
     </g>
-    <!-- Governance lines -->
     <g class="lines-govern">
       <use href="#pg0" fill="none" stroke="#818cf8" stroke-width="1.5" opacity="0.2"/>
+      <use href="#pg0b" fill="none" stroke="#818cf8" stroke-width="1.5" opacity="0.2"/>
       <use href="#pg1" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.2"/>
-      <use href="#pg2" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.2"/>
-      <use href="#pg3" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pe0" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pe1" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pe2" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pe3" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pe4" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.15"/>
+      <use href="#pe5" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.15"/>
     </g>
 
     <!-- ════ PARTICLES ════ -->
-    <!-- Collection particles (blue, active by default) -->
     <g id="particles-collect">
-      <!-- claude → collector (4 staggered) -->
-      <circle r="3.5" fill="#60a5fa" opacity="0.9"><animateMotion dur="2.2s" begin="0s"     repeatCount="indefinite"><mpath href="#pc0"/></animateMotion></circle>
-      <circle r="2.5" fill="#60a5fa" opacity="0.5"><animateMotion dur="2.2s" begin="0.55s"  repeatCount="indefinite"><mpath href="#pc0"/></animateMotion></circle>
-      <circle r="3.5" fill="#60a5fa" opacity="0.9"><animateMotion dur="2.2s" begin="1.1s"   repeatCount="indefinite"><mpath href="#pc0"/></animateMotion></circle>
-      <circle r="2.5" fill="#60a5fa" opacity="0.5"><animateMotion dur="2.2s" begin="1.65s"  repeatCount="indefinite"><mpath href="#pc0"/></animateMotion></circle>
-      <!-- browser → collector -->
-      <circle r="3.5" fill="#60a5fa" opacity="0.9"><animateMotion dur="2.2s" begin="0.3s"   repeatCount="indefinite"><mpath href="#pc1"/></animateMotion></circle>
-      <circle r="2.5" fill="#60a5fa" opacity="0.5"><animateMotion dur="2.2s" begin="0.85s"  repeatCount="indefinite"><mpath href="#pc1"/></animateMotion></circle>
-      <circle r="3.5" fill="#60a5fa" opacity="0.9"><animateMotion dur="2.2s" begin="1.4s"   repeatCount="indefinite"><mpath href="#pc1"/></animateMotion></circle>
-      <circle r="2.5" fill="#60a5fa" opacity="0.5"><animateMotion dur="2.2s" begin="1.95s"  repeatCount="indefinite"><mpath href="#pc1"/></animateMotion></circle>
-      <!-- git → collector (slow/dim — idle source) -->
+      <circle r="3.5" fill="#60a5fa" opacity="0.9"><animateMotion dur="2.2s" begin="0s" repeatCount="indefinite"><mpath href="#pc0"/></animateMotion></circle>
+      <circle r="2.5" fill="#60a5fa" opacity="0.5"><animateMotion dur="2.2s" begin="0.55s" repeatCount="indefinite"><mpath href="#pc0"/></animateMotion></circle>
+      <circle r="3.5" fill="#60a5fa" opacity="0.9"><animateMotion dur="2.2s" begin="1.1s" repeatCount="indefinite"><mpath href="#pc0"/></animateMotion></circle>
+      <circle r="3.5" fill="#60a5fa" opacity="0.9"><animateMotion dur="2.2s" begin="0.3s" repeatCount="indefinite"><mpath href="#pc1"/></animateMotion></circle>
+      <circle r="2.5" fill="#60a5fa" opacity="0.5"><animateMotion dur="2.2s" begin="0.85s" repeatCount="indefinite"><mpath href="#pc1"/></animateMotion></circle>
       <circle r="2" fill="#60a5fa" opacity="0.3"><animateMotion dur="4s" begin="0s" repeatCount="indefinite"><mpath href="#pc2"/></animateMotion></circle>
-      <!-- steam → collector (slow/dim) -->
       <circle r="2" fill="#60a5fa" opacity="0.3"><animateMotion dur="4s" begin="1.5s" repeatCount="indefinite"><mpath href="#pc3"/></animateMotion></circle>
-      <!-- collector → db -->
-      <circle r="4" fill="#818cf8" opacity="0.9"><animateMotion dur="1.2s" begin="0s"    repeatCount="indefinite"><mpath href="#pc4"/></animateMotion></circle>
-      <circle r="3" fill="#818cf8" opacity="0.5"><animateMotion dur="1.2s" begin="0.4s"  repeatCount="indefinite"><mpath href="#pc4"/></animateMotion></circle>
-      <circle r="4" fill="#818cf8" opacity="0.9"><animateMotion dur="1.2s" begin="0.8s"  repeatCount="indefinite"><mpath href="#pc4"/></animateMotion></circle>
+      <circle r="2" fill="#60a5fa" opacity="0.3"><animateMotion dur="4s" begin="0.8s" repeatCount="indefinite"><mpath href="#pc4s"/></animateMotion></circle>
+      <circle r="2" fill="#60a5fa" opacity="0.3"><animateMotion dur="4s" begin="2s" repeatCount="indefinite"><mpath href="#pc5"/></animateMotion></circle>
+      <circle r="4" fill="#818cf8" opacity="0.9"><animateMotion dur="1.2s" begin="0s" repeatCount="indefinite"><mpath href="#pc6"/></animateMotion></circle>
+      <circle r="3" fill="#818cf8" opacity="0.5"><animateMotion dur="1.2s" begin="0.4s" repeatCount="indefinite"><mpath href="#pc6"/></animateMotion></circle>
+      <circle r="4" fill="#818cf8" opacity="0.9"><animateMotion dur="1.2s" begin="0.8s" repeatCount="indefinite"><mpath href="#pc6"/></animateMotion></circle>
     </g>
 
-    <!-- Analysis particles (amber, dim by default) -->
     <g id="particles-analysis" opacity="0.15">
-      <circle r="3.5" fill="#fbbf24"><animateMotion dur="3s" begin="0s"   repeatCount="indefinite"><mpath href="#pa0"/></animateMotion></circle>
-      <circle r="2.5" fill="#fbbf24"><animateMotion dur="3s" begin="1s"   repeatCount="indefinite"><mpath href="#pa0"/></animateMotion></circle>
+      <circle r="3.5" fill="#fbbf24"><animateMotion dur="3s" begin="0s" repeatCount="indefinite"><mpath href="#pa0"/></animateMotion></circle>
+      <circle r="2.5" fill="#fbbf24"><animateMotion dur="3s" begin="1s" repeatCount="indefinite"><mpath href="#pa0"/></animateMotion></circle>
       <circle r="3.5" fill="#fbbf24"><animateMotion dur="3s" begin="0.5s" repeatCount="indefinite"><mpath href="#pa1"/></animateMotion></circle>
       <circle r="2.5" fill="#fbbf24"><animateMotion dur="3s" begin="1.5s" repeatCount="indefinite"><mpath href="#pa1"/></animateMotion></circle>
-      <circle r="3"   fill="#fbbf24"><animateMotion dur="2s" begin="0s"   repeatCount="indefinite"><mpath href="#pa2"/></animateMotion></circle>
+      <circle r="3" fill="#fbbf24"><animateMotion dur="2s" begin="0s" repeatCount="indefinite"><mpath href="#pa2"/></animateMotion></circle>
     </g>
 
-    <!-- Governance particles (indigo/green, dim by default) -->
     <g id="particles-govern" opacity="0.15">
-      <circle r="3.5" fill="#818cf8"><animateMotion dur="2s" begin="0s"   repeatCount="indefinite"><mpath href="#pg0"/></animateMotion></circle>
+      <circle r="3.5" fill="#818cf8"><animateMotion dur="2s" begin="0s" repeatCount="indefinite"><mpath href="#pg0"/></animateMotion></circle>
       <circle r="2.5" fill="#818cf8"><animateMotion dur="2s" begin="0.7s" repeatCount="indefinite"><mpath href="#pg0"/></animateMotion></circle>
-      <circle r="3.5" fill="#fbbf24"><animateMotion dur="2.5s" begin="0s"   repeatCount="indefinite"><mpath href="#pg1"/></animateMotion></circle>
-      <circle r="3.5" fill="#4ade80"><animateMotion dur="2.5s" begin="0.3s" repeatCount="indefinite"><mpath href="#pg2"/></animateMotion></circle>
-      <circle r="2.5" fill="#4ade80"><animateMotion dur="2.5s" begin="1.0s" repeatCount="indefinite"><mpath href="#pg2"/></animateMotion></circle>
-      <circle r="3"   fill="#4ade80"><animateMotion dur="1.8s" begin="0s"   repeatCount="indefinite"><mpath href="#pg3"/></animateMotion></circle>
+      <circle r="3" fill="#818cf8"><animateMotion dur="2.5s" begin="0s" repeatCount="indefinite"><mpath href="#pg0b"/></animateMotion></circle>
+      <circle r="3.5" fill="#fbbf24"><animateMotion dur="2s" begin="0s" repeatCount="indefinite"><mpath href="#pg1"/></animateMotion></circle>
+      <circle r="2.5" fill="#fbbf24"><animateMotion dur="2s" begin="0.6s" repeatCount="indefinite"><mpath href="#pg1"/></animateMotion></circle>
+      <circle r="3" fill="#4ade80"><animateMotion dur="2.5s" begin="0s" repeatCount="indefinite"><mpath href="#pe0"/></animateMotion></circle>
+      <circle r="3" fill="#4ade80"><animateMotion dur="2.5s" begin="0.4s" repeatCount="indefinite"><mpath href="#pe1"/></animateMotion></circle>
+      <circle r="3" fill="#4ade80"><animateMotion dur="2.5s" begin="0.8s" repeatCount="indefinite"><mpath href="#pe2"/></animateMotion></circle>
+      <circle r="3" fill="#4ade80"><animateMotion dur="2.5s" begin="1.2s" repeatCount="indefinite"><mpath href="#pe3"/></animateMotion></circle>
+      <circle r="3" fill="#4ade80"><animateMotion dur="2.5s" begin="1.6s" repeatCount="indefinite"><mpath href="#pe4"/></animateMotion></circle>
+      <circle r="3" fill="#4ade80"><animateMotion dur="2.5s" begin="2.0s" repeatCount="indefinite"><mpath href="#pe5"/></animateMotion></circle>
     </g>
 
     <!-- ════ NODES ════ -->
-    <!-- Helper: node at cx,cy w=120 h=32 rx=5 -->
 
     <!-- ── LAYER LABELS ── -->
     <text x="4" y="56" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">数据源</text>
@@ -205,142 +252,201 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
     <text x="4" y="270" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">存储</text>
     <text x="4" y="376" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">分析</text>
     <text x="4" y="476" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">治理</text>
-    <text x="4" y="576" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">执行</text>
+    <text x="4" y="546" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">认知</text>
+    <text x="4" y="616" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">审查</text>
+    <text x="4" y="686" fill="#38384a" font-size="9" font-weight="600" letter-spacing=".5">六部</text>
 
     <!-- Divider lines -->
-    <line x1="36" y1="95"  x2="660" y2="95"  stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="200" x2="660" y2="200" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="310" x2="660" y2="310" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="420" x2="660" y2="420" stroke="#141420" stroke-width="1"/>
-    <line x1="36" y1="525" x2="660" y2="525" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="95"  x2="720" y2="95"  stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="200" x2="720" y2="200" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="310" x2="720" y2="310" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="420" x2="720" y2="420" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="520" x2="720" y2="520" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="590" x2="720" y2="590" stroke="#141420" stroke-width="1"/>
+    <line x1="36" y1="655" x2="720" y2="655" stroke="#141420" stroke-width="1"/>
 
-    <!-- ── Source nodes ── -->
-    <!-- Claude -->
-    <g id="n-claude" class="node node-source">
-      <rect x="15" y="34" width="120" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
-      <circle cx="30" cy="50" r="3.5" fill="#4ade80" filter="url(#fg)"/>
-      <text x="78" y="46" text-anchor="middle" fill="#dddde8" font-size="11" font-weight="600">Claude</text>
-      <text x="78" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">会话采集</text>
+    <!-- ── 6 Source nodes ── -->
+    <g id="n-claude" class="node">
+      <rect x="5" y="34" width="120" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
+      <circle cx="20" cy="50" r="3.5" fill="var(--t3)" id="dot-claude"/>
+      <text x="65" y="46" text-anchor="middle" fill="#dddde8" font-size="11" font-weight="600">Claude</text>
+      <text x="65" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">会话采集</text>
     </g>
-    <!-- Browser -->
-    <g id="n-browser" class="node node-source">
-      <rect x="155" y="34" width="120" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
-      <circle cx="170" cy="50" r="3.5" fill="#4ade80" filter="url(#fg)"/>
-      <text x="215" y="46" text-anchor="middle" fill="#dddde8" font-size="11" font-weight="600">Browser</text>
-      <text x="215" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">浏览历史</text>
+    <g id="n-browser" class="node">
+      <rect x="125" y="34" width="120" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
+      <circle cx="140" cy="50" r="3.5" fill="var(--t3)" id="dot-browser"/>
+      <text x="185" y="46" text-anchor="middle" fill="#dddde8" font-size="11" font-weight="600">Browser</text>
+      <text x="185" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">浏览历史</text>
     </g>
-    <!-- Git -->
-    <g id="n-git" class="node node-source-idle">
-      <rect x="315" y="34" width="120" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="330" cy="50" r="3.5" fill="#38384a"/>
-      <text x="375" y="46" text-anchor="middle" fill="#8888a0" font-size="11" font-weight="600">Git</text>
-      <text x="375" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">提交记录</text>
+    <g id="n-git" class="node">
+      <rect x="245" y="34" width="120" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="260" cy="50" r="3.5" fill="var(--t3)" id="dot-git"/>
+      <text x="305" y="46" text-anchor="middle" fill="#8888a0" font-size="11" font-weight="600">Git</text>
+      <text x="305" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">提交记录</text>
     </g>
-    <!-- Steam -->
-    <g id="n-steam" class="node node-source-idle">
-      <rect x="455" y="34" width="120" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="470" cy="50" r="3.5" fill="#38384a"/>
-      <text x="515" y="46" text-anchor="middle" fill="#8888a0" font-size="11" font-weight="600">Steam</text>
-      <text x="515" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">游戏时长</text>
+    <g id="n-steam" class="node">
+      <rect x="365" y="34" width="120" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="380" cy="50" r="3.5" fill="var(--t3)" id="dot-steam"/>
+      <text x="425" y="46" text-anchor="middle" fill="#8888a0" font-size="11" font-weight="600">Steam</text>
+      <text x="425" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">游戏时长</text>
+    </g>
+    <g id="n-ytmusic" class="node">
+      <rect x="485" y="34" width="120" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="500" cy="50" r="3.5" fill="var(--t3)" id="dot-ytmusic"/>
+      <text x="545" y="46" text-anchor="middle" fill="#8888a0" font-size="11" font-weight="600">YT Music</text>
+      <text x="545" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">音乐记录</text>
+    </g>
+    <g id="n-codebase" class="node">
+      <rect x="605" y="34" width="120" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="620" cy="50" r="3.5" fill="var(--t3)" id="dot-codebase"/>
+      <text x="665" y="46" text-anchor="middle" fill="#8888a0" font-size="11" font-weight="600">Codebase</text>
+      <text x="665" y="59" text-anchor="middle" fill="#6b6b82" font-size="9">代码扫描</text>
     </g>
 
     <!-- ── Collector ── -->
     <g id="n-collector">
-      <rect x="190" y="148" width="220" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
-      <circle cx="207" cy="164" r="3.5" fill="#4ade80" filter="url(#fg)"/>
-      <text x="300" y="160" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="600">Collectors</text>
-      <text x="300" y="173" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".6">Claude · Browser · Git · Steam · YouTube</text>
+      <rect x="210" y="148" width="260" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
+      <circle cx="227" cy="164" r="3.5" fill="#4ade80" filter="url(#fg)"/>
+      <text x="340" y="160" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="600">Collectors</text>
+      <text x="340" y="173" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".6" id="collector-sub">Claude · Browser · Git · Steam · YTMusic · Codebase</text>
     </g>
 
     <!-- ── EventsDB ── -->
     <g id="n-db">
-      <rect x="200" y="248" width="200" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
-      <circle cx="217" cy="264" r="3.5" fill="#818cf8" filter="url(#fi)"/>
-      <text x="300" y="260" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="600">EventsDB</text>
-      <text x="300" y="273" text-anchor="middle" fill="#818cf8" font-size="9" opacity=".6">SQLite · 事件存储 · 分析缓存</text>
+      <rect x="230" y="248" width="220" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
+      <circle cx="247" cy="264" r="3.5" fill="#818cf8" filter="url(#fi)"/>
+      <text x="340" y="260" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="600">EventsDB</text>
+      <text x="340" y="273" text-anchor="middle" fill="#818cf8" font-size="9" opacity=".6">SQLite · 事件存储 · 分析缓存</text>
     </g>
 
-    <!-- ── Analyst ── -->
+    <!-- ── DailyAnalyst ── -->
     <g id="n-analyst">
-      <rect x="70" y="358" width="160" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="86" cy="374" r="3.5" fill="#38384a"/>
-      <text x="150" y="370" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">DailyAnalyst</text>
-      <text x="150" y="383" text-anchor="middle" fill="#6b6b82" font-size="9">每日分析</text>
+      <rect x="100" y="358" width="160" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="116" cy="374" r="3.5" fill="#38384a" id="dot-analyst"/>
+      <text x="180" y="370" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">DailyAnalyst</text>
+      <text x="180" y="383" text-anchor="middle" fill="#6b6b82" font-size="9">每日分析</text>
     </g>
-    <!-- InsightEngine -->
+    <!-- ── InsightEngine ── -->
     <g id="n-insights">
-      <rect x="365" y="358" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="381" cy="374" r="3.5" fill="#38384a"/>
-      <text x="450" y="370" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">InsightEngine</text>
-      <text x="450" y="383" text-anchor="middle" fill="#6b6b82" font-size="9">7天洞察 · 任务提案</text>
+      <rect x="415" y="358" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="431" cy="374" r="3.5" fill="#38384a" id="dot-insights"/>
+      <text x="500" y="370" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">InsightEngine</text>
+      <text x="500" y="383" text-anchor="middle" fill="#6b6b82" font-size="9">7天洞察 · 任务提案</text>
     </g>
 
     <!-- ── Governor ── -->
     <g id="n-governor">
-      <rect x="365" y="458" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="381" cy="474" r="3.5" fill="#38384a"/>
-      <text x="450" y="470" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">Governor</text>
-      <text x="450" y="483" text-anchor="middle" fill="#6b6b82" font-size="9">治理 · 中书省</text>
+      <rect x="415" y="458" width="170" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <circle cx="431" cy="474" r="3.5" fill="#38384a" id="dot-governor"/>
+      <text x="500" y="470" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">Governor</text>
+      <text x="500" y="483" text-anchor="middle" fill="#6b6b82" font-size="9" id="gov-sub">中书省 · --</text>
     </g>
 
-    <!-- ── 门下省 (Haiku Scrutiny) ── -->
-    <g id="n-scrutiny">
-      <rect x="185" y="558" width="160" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
-      <circle cx="201" cy="574" r="3.5" fill="#fbbf24"/>
-      <text x="265" y="570" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="600">门下省</text>
-      <text x="265" y="583" text-anchor="middle" fill="#fbbf24" font-size="9" opacity=".6">Haiku 审查 · APPROVE / REJECT</text>
+    <!-- ── Cognition Mode Classifier (new) ── -->
+    <g id="n-cogmode">
+      <rect x="250" y="528" width="180" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
+      <circle cx="267" cy="544" r="3.5" fill="#818cf8" filter="url(#fi)"/>
+      <text x="340" y="540" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="600">认知分类器</text>
+      <text x="340" y="553" text-anchor="middle" fill="#818cf8" font-size="9" opacity=".6" id="cogmode-sub">direct · react · hypothesis · designer</text>
     </g>
-    <!-- ── 尚书省 (Executor) ── -->
-    <g id="n-executor">
-      <rect x="490" y="558" width="160" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
-      <circle cx="506" cy="574" r="3.5" fill="#38384a"/>
-      <text x="570" y="570" text-anchor="middle" fill="#9090a8" font-size="11" font-weight="600">尚书省</text>
-      <text x="570" y="583" text-anchor="middle" fill="#6b6b82" font-size="9">Claude CLI · 执行输出</text>
+
+    <!-- ── 门下省 (Scrutiny) ── -->
+    <g id="n-scrutiny">
+      <rect x="250" y="598" width="180" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
+      <circle cx="267" cy="614" r="3.5" fill="#fbbf24"/>
+      <text x="340" y="610" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="600">门下省</text>
+      <text x="340" y="623" text-anchor="middle" fill="#fbbf24" font-size="9" opacity=".6" id="scrutiny-sub">Haiku 审查 · APPROVE / REJECT</text>
+    </g>
+
+    <!-- ── 六部 (6 Department nodes) ── -->
+    <g id="n-dept-gongbu">
+      <rect x="30" y="668" width="90" height="32" rx="5" fill="#0d1f12" stroke="#2d4a2d"/>
+      <text x="75" y="681" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">工部</text>
+      <text x="75" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-gongbu">--</text>
+    </g>
+    <g id="n-dept-hubu">
+      <rect x="160" y="668" width="90" height="32" rx="5" fill="#0d1520" stroke="#1a2a40"/>
+      <text x="205" y="681" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">户部</text>
+      <text x="205" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-hubu">--</text>
+    </g>
+    <g id="n-dept-xingbu">
+      <rect x="290" y="668" width="90" height="32" rx="5" fill="#1f0d0d" stroke="#3a1a1a"/>
+      <text x="335" y="681" text-anchor="middle" fill="#f87171" font-size="10" font-weight="600">刑部</text>
+      <text x="335" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-xingbu">--</text>
+    </g>
+    <g id="n-dept-libu">
+      <rect x="420" y="668" width="90" height="32" rx="5" fill="#100d1f" stroke="#2a1f4a"/>
+      <text x="465" y="681" text-anchor="middle" fill="#818cf8" font-size="10" font-weight="600">礼部</text>
+      <text x="465" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-libu">--</text>
+    </g>
+    <g id="n-dept-bingbu">
+      <rect x="550" y="668" width="90" height="32" rx="5" fill="#1f1800" stroke="#3a2e00"/>
+      <text x="595" y="681" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">兵部</text>
+      <text x="595" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-bingbu">--</text>
+    </g>
+    <g id="n-dept-libu2">
+      <rect x="620" y="668" width="90" height="32" rx="5" fill="#0a0a12" stroke="#1c1c28"/>
+      <text x="665" y="681" text-anchor="middle" fill="#9090a8" font-size="10" font-weight="600">吏部</text>
+      <text x="665" y="693" text-anchor="middle" fill="#6b6b82" font-size="8" id="dept-sub-libu2">--</text>
     </g>
 
     </svg>
   </div>
 </div>
 
-<!-- ── Legend 卡片 ── -->
-<div class="card" style="left:780px;top:60px;width:220px;">
+<!-- ── 流状态说明卡片 ── -->
+<div class="card" style="left:840px;top:60px;width:240px;">
   <div class="ch"><span class="ci">⚡</span><span class="ct">流状态说明</span></div>
   <div class="cb">
     <div class="rl">
       <div class="ri"><div class="dot" style="background:#60a5fa;box-shadow:0 0 5px #60a5fa"></div><div style="flex:1"><div class="ll">采集流</div><div class="ls">源 → Collector → DB</div></div></div>
       <div class="ri"><div class="dot da"></div><div style="flex:1"><div class="ll">分析流</div><div class="ls">DB → Analyst → Insights</div></div></div>
-      <div class="ri"><div class="dot" style="background:#818cf8"></div><div style="flex:1"><div class="ll">治理流</div><div class="ls">Insights → Governor</div></div></div>
-      <div class="ri"><div class="dot dg"></div><div style="flex:1"><div class="ll">执行流</div><div class="ls">Governor → Executor</div></div></div>
+      <div class="ri"><div class="dot" style="background:#818cf8"></div><div style="flex:1"><div class="ll">治理流</div><div class="ls">Insights → Governor → 六部</div></div></div>
+      <div class="ri"><div class="dot dg"></div><div style="flex:1"><div class="ll">执行流</div><div class="ls">门下省 → 六部执行</div></div></div>
     </div>
     <div style="margin-top:10px;padding:8px;background:var(--inset);border-radius:5px;">
-      <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">粒子亮度 = 流量强度</div>
-      <div style="font-size:10px;color:var(--t2);">大粒子快速 = 活跃<br>小粒子慢速 = 待机</div>
+      <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">自动检测流状态</div>
+      <div style="font-size:10px;color:var(--t2);">5分钟内有采集日志 → 采集流高亮<br>有分析日志 → 分析流高亮<br>有运行任务 → 治理流高亮</div>
     </div>
   </div>
 </div>
 
-<!-- ── Autonomous 操作卡片 ── -->
-<div class="card" style="left:780px;top:350px;width:220px;">
-  <div class="ch"><span class="ci">🤖</span><span class="ct">Autonomous</span><span class="badge bi">自治</span></div>
+<!-- ── Governor 任务卡片 ── -->
+<div class="card" style="left:840px;top:340px;width:240px;">
+  <div class="ch"><span class="ci">🎯</span><span class="ct">Governor 任务</span><span class="badge bi" id="task-count">--</span></div>
   <div class="cb">
-    <div class="rl">
-      <div class="ri"><div class="dot dg"></div><div style="flex:1"><div class="ll">分析报告</div><div class="ls">InsightEngine · 06:29</div></div><span class="badge bg">✓</span></div>
-      <div class="ri"><div class="dot da"></div><div style="flex:1"><div class="ll" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px">bun 崩溃分析</div><div class="ls">Governor · 驳回</div></div><span class="ba">✗</span></div>
-      <div class="ri"><div class="dot dg"></div><div style="flex:1"><div class="ll">数据采集</div><div class="ls">Collector · 66+555</div></div><span class="badge bg">✓</span></div>
+    <div class="rl" id="tasks-list">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 六部状态卡片 ── -->
+<div class="card" style="left:840px;top:580px;width:240px;">
+  <div class="ch"><span class="ci">🏛</span><span class="ct">六部</span></div>
+  <div class="cb">
+    <div class="rl" id="dept-list">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 调度卡片 ── -->
+<div class="card" style="left:1100px;top:60px;width:220px;">
+  <div class="ch"><span class="ci">⏱</span><span class="ct">调度</span></div>
+  <div class="cb">
+    <div class="rl" id="schedule-info">
+      <div class="empty-state">加载中...</div>
     </div>
   </div>
 </div>
 
 <!-- ── 实时日志卡片 ── -->
-<div class="card" style="left:60px;top:740px;width:940px;">
-  <div class="ch"><span class="ci">📜</span><span class="ct">系统日志</span><span class="badge bb">实时流</span></div>
+<div class="card" style="left:60px;top:830px;width:1000px;">
+  <div class="ch"><span class="ci">📜</span><span class="ct">系统日志</span><span class="badge bb" id="log-badge">实时流</span></div>
   <div class="cb">
-    <div class="lt">
-      <div class="li"><span class="ltag tg">GOV</span><span class="lsrc">scheduler</span><span class="lmsg">调度器已启动，采集：每小时，分析：每6小时</span><span class="ltm">06:29</span></div>
-      <div class="li"><span class="ltag ti">INFO</span><span class="lsrc">collector</span><span class="lmsg">采集完成：claude 66, browser 555</span><span class="ltm">06:29</span></div>
-      <div class="li"><span class="ltag ta">AUTO</span><span class="lsrc">insights</span><span class="lmsg">开始生成洞察（7天跨源分析）</span><span class="ltm">06:30</span></div>
-      <div class="li"><span class="ltag ti">INFO</span><span class="lsrc">collector</span><span class="lmsg">采集完成：browser +1</span><span class="ltm">06:32</span></div>
-      <div class="li"><span class="ltag ta">AUTO</span><span class="lsrc">governor</span><span class="lmsg">Governor 开始检查任务</span><span class="ltm">06:32</span></div>
+    <div class="lt" id="logs-list">
+      <div class="empty-state">加载中...</div>
     </div>
   </div>
 </div>
@@ -374,17 +480,390 @@ document.getElementById('zo').onclick=()=>{sc=Math.max(.2,sc/1.15);apply();};
 document.getElementById('zf').onclick=()=>{tx=-30;ty=-20;sc=0.75;apply();};
 apply();
 
-/* ── flow state control ── */
-function setState(mode, btn) {
-  document.querySelectorAll('.state-btn').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on');
+/* ── Data state ── */
+let pipelineData = { status: {}, logs: [], tasks: [], depts: {} };
+let lastRefresh = 0;
+let apiOnline = false;
+
+/* ── Time helpers ── */
+function relTime(ts) {
+  if (!ts) return '--';
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 0) return '刚刚';
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}秒前`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}小时前`;
+  return `${Math.floor(h/24)}天前`;
+}
+
+function countdown(ts) {
+  if (!ts) return '--';
+  const diff = new Date(ts).getTime() - Date.now();
+  if (diff <= 0) return '即将';
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}时${m%60}分`;
+  return `${m}分`;
+}
+
+/* ── Level badge class ── */
+function levelClass(level) {
+  if (!level) return 'ti';
+  const l = level.toLowerCase();
+  if (l === 'error' || l === 'err') return 'te';
+  if (l === 'warn' || l === 'warning') return 'tw';
+  if (l === 'info') return 'ti';
+  if (l === 'gov' || l === 'governance') return 'tg';
+  if (l === 'auto' || l === 'autonomous') return 'ta';
+  return 'ti';
+}
+
+/* ── Cognition mode badge ── */
+function cmBadge(mode) {
+  if (!mode) return '';
+  const m = mode.toLowerCase();
+  const cls = ['direct','react','hypothesis','designer'].includes(m) ? `cm-${m}` : 'cm-direct';
+  return `<span class="cm-badge ${cls}">${mode}</span>`;
+}
+
+/* ── Blast radius badge ── */
+function blastBadge(radius) {
+  if (!radius) return '';
+  const r = radius.toLowerCase();
+  const cls = r === 'high' ? 'blast-high' : r === 'medium' ? 'blast-medium' : 'blast-low';
+  const label = r === 'high' ? '高' : r === 'medium' ? '中' : '低';
+  return `<span class="blast-badge ${cls}">💥${label}</span>`;
+}
+
+/* ── Status dot color ── */
+function statusColor(status) {
+  if (!status) return 'var(--t3)';
+  const s = status.toLowerCase();
+  if (s === 'ok' || s === 'active' || s === 'running') return 'var(--green)';
+  if (s === 'error' || s === 'failed') return 'var(--red)';
+  if (s === 'idle' || s === 'pending') return 'var(--amber)';
+  return 'var(--t3)';
+}
+
+/* ── Task status icon ── */
+function taskIcon(status) {
+  if (!status) return '⏳';
+  const s = status.toLowerCase();
+  if (s === 'completed' || s === 'done' || s === 'success') return '✅';
+  if (s === 'running' || s === 'active') return '🔄';
+  if (s === 'failed' || s === 'error') return '❌';
+  if (s === 'rejected') return '🚫';
+  if (s === 'pending' || s === 'queued') return '⏳';
+  return '📋';
+}
+
+/* ── Department name map ── */
+const deptNames = {
+  gongbu: '工部', hubu: '户部', xingbu: '刑部',
+  libu: '礼部', bingbu: '兵部', libu2: '吏部',
+  engineering: '工部', finance: '户部', justice: '刑部',
+  rites: '礼部', military: '兵部', personnel: '吏部'
+};
+const deptColors = {
+  gongbu: 'var(--green)', hubu: 'var(--blue)', xingbu: 'var(--red)',
+  libu: 'var(--indigo)', bingbu: 'var(--amber)', libu2: '#9090a8',
+  engineering: 'var(--green)', finance: 'var(--blue)', justice: 'var(--red)',
+  rites: 'var(--indigo)', military: 'var(--amber)', personnel: '#9090a8'
+};
+
+/* ── API fetch with fallback ── */
+async function fetchJSON(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch(e) {
+    return null;
+  }
+}
+
+/* ── Refresh pipeline data ── */
+async function refreshPipeline() {
+  const [status, logs, tasks, depts] = await Promise.all([
+    fetchJSON('/api/pipeline/status'),
+    fetchJSON('/api/pipeline/logs?limit=15'),
+    fetchJSON('/api/pipeline/tasks?limit=10'),
+    fetchJSON('/api/pipeline/departments'),
+  ]);
+
+  apiOnline = !!(status || logs || tasks || depts);
+  pipelineData = {
+    status: status || {},
+    logs: Array.isArray(logs) ? logs : [],
+    tasks: Array.isArray(tasks) ? tasks : [],
+    depts: depts || {},
+  };
+  lastRefresh = Date.now();
+
+  updateSystemStatus();
+  updateNodes();
+  updateCards();
+  updateFlowState();
+}
+
+/* ── Update system status indicator ── */
+function updateSystemStatus() {
+  const pulse = document.getElementById('sys-pulse');
+  const label = document.getElementById('sys-status');
+  if (apiOnline) {
+    pulse.style.background = 'var(--green)';
+    label.textContent = '运行中';
+    label.className = 'tst';
+  } else {
+    pulse.style.background = 'var(--red)';
+    label.textContent = '离线';
+    label.className = 'tst off';
+  }
+}
+
+/* ── Update SVG nodes based on API data ── */
+function updateNodes() {
+  const s = pipelineData.status;
+
+  // Update collector dots
+  const collectors = s.collectors || {};
+  const collectorNames = ['claude','browser','git','steam','ytmusic','codebase'];
+  for (const name of collectorNames) {
+    const dot = document.getElementById(`dot-${name}`);
+    if (!dot) continue;
+    const info = collectors[name];
+    if (info) {
+      dot.setAttribute('fill', statusColor(info.status));
+      if (info.status === 'ok' || info.status === 'active') {
+        dot.setAttribute('filter', 'url(#fg)');
+      } else {
+        dot.removeAttribute('filter');
+      }
+    }
+  }
+
+  // Update Governor node
+  const gov = s.governance || {};
+  const govSub = document.getElementById('gov-sub');
+  if (govSub) {
+    const running = gov.tasks_running ?? '--';
+    const pending = gov.tasks_pending ?? '--';
+    govSub.textContent = `运行: ${running} · 待处理: ${pending}`;
+  }
+  const dotGov = document.getElementById('dot-governor');
+  if (dotGov && gov.tasks_running > 0) {
+    dotGov.setAttribute('fill', 'var(--green)');
+    dotGov.setAttribute('filter', 'url(#fg)');
+  }
+
+  // Update department subtexts
+  const depts = pipelineData.depts;
+  if (depts && typeof depts === 'object') {
+    for (const [key, info] of Object.entries(depts)) {
+      // Try to match dept key to node
+      const subEl = document.getElementById(`dept-sub-${key}`);
+      if (subEl && info) {
+        const total = info.total ?? 0;
+        const rate = info.success_rate != null ? `${Math.round(info.success_rate * 100)}%` : '--';
+        subEl.textContent = `${total}任务 · ${rate}`;
+      }
+    }
+  }
+}
+
+/* ── Update info cards ── */
+function updateCards() {
+  updateTasksCard();
+  updateDeptCard();
+  updateScheduleCard();
+  updateLogsCard();
+}
+
+/* ── Tasks card ── */
+function updateTasksCard() {
+  const list = document.getElementById('tasks-list');
+  const countBadge = document.getElementById('task-count');
+  const tasks = pipelineData.tasks;
+
+  if (!tasks.length) {
+    list.innerHTML = '<div class="empty-state">暂无任务</div>';
+    countBadge.textContent = '0';
+    return;
+  }
+
+  countBadge.textContent = tasks.length;
+  list.innerHTML = tasks.map(t => {
+    const icon = taskIcon(t.status);
+    const action = t.action || t.description || t.title || '未知任务';
+    const dept = t.department || t.dept || '';
+    const deptLabel = deptNames[dept] || dept || '';
+    const mode = t.cognition_mode || t.cognitive_mode || '';
+    const blast = t.blast_radius || '';
+    return `<div class="ri">
+      <span class="task-icon">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div class="ll">${action}</div>
+        <div class="ls" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;">
+          ${deptLabel ? `<span style="color:${deptColors[dept]||'var(--t2)'}">${deptLabel}</span>` : ''}
+          ${cmBadge(mode)}
+          ${blastBadge(blast)}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ── Department card ── */
+function updateDeptCard() {
+  const list = document.getElementById('dept-list');
+  const depts = pipelineData.depts;
+
+  if (!depts || !Object.keys(depts).length) {
+    list.innerHTML = '<div class="empty-state">暂无部门数据</div>';
+    return;
+  }
+
+  list.innerHTML = Object.entries(depts).map(([key, info]) => {
+    const name = deptNames[key] || key;
+    const color = deptColors[key] || 'var(--t2)';
+    const total = info.total ?? 0;
+    const rate = info.success_rate != null ? Math.round(info.success_rate * 100) : 0;
+    const recent = info.latest_action || info.recent || '';
+    return `<div class="ri" style="flex-direction:column;align-items:stretch;gap:4px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;color:${color}">${name}</span>
+        <span style="font-size:10px;color:var(--t2)">${total} 任务</span>
+      </div>
+      <div class="dept-bar"><div class="dept-bar-fill" style="width:${rate}%;background:${color}"></div></div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="font-size:9px;color:var(--t3)">成功率 ${rate}%</span>
+        ${recent ? `<span style="font-size:9px;color:var(--t3);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${recent}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ── Schedule card ── */
+function updateScheduleCard() {
+  const el = document.getElementById('schedule-info');
+  const sched = pipelineData.status.scheduler;
+
+  if (!sched || !sched.jobs || !sched.jobs.length) {
+    // Show default schedule info if API has no scheduler data
+    const defaultJobs = [
+      { name: '数据采集', interval: '每小时' },
+      { name: '每日分析', interval: '每6小时' },
+      { name: '洞察生成', interval: '每日' },
+      { name: '治理检查', interval: '每日' },
+    ];
+    el.innerHTML = defaultJobs.map(j => `
+      <div class="sched-item">
+        <span class="sched-name">${j.name}</span>
+        <span class="sched-next">${j.interval}</span>
+        <span class="sched-cd">--</span>
+      </div>
+    `).join('');
+    return;
+  }
+
+  el.innerHTML = sched.jobs.map(j => {
+    const name = j.name || j.id || '任务';
+    const next = j.next_run ? new Date(j.next_run).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}) : '--';
+    const cd = j.next_run ? countdown(j.next_run) : '--';
+    return `<div class="sched-item">
+      <span class="sched-name">${name}</span>
+      <span class="sched-next">${next}</span>
+      <span class="sched-cd">${cd}</span>
+    </div>`;
+  }).join('');
+}
+
+/* ── Logs card ── */
+function updateLogsCard() {
+  const list = document.getElementById('logs-list');
+  const logs = pipelineData.logs;
+
+  if (!logs.length) {
+    list.innerHTML = '<div class="empty-state">暂无日志</div>';
+    return;
+  }
+
+  list.innerHTML = logs.map(l => {
+    const level = (l.level || 'INFO').toUpperCase();
+    const cls = levelClass(l.level);
+    const src = l.source || l.component || '--';
+    const msg = l.message || l.msg || '';
+    const time = l.created_at ? relTime(l.created_at) : (l.timestamp ? relTime(l.timestamp) : '--');
+    return `<div class="li">
+      <span class="ltag ${cls}">${level}</span>
+      <span class="lsrc">${src}</span>
+      <span class="lmsg">${msg}</span>
+      <span class="ltm">${time}</span>
+    </div>`;
+  }).join('');
+}
+
+/* ── Auto flow state detection ── */
+function updateFlowState() {
+  const s = pipelineData.status;
+  const logs = pipelineData.logs || [];
+  const now = Date.now();
+  const fiveMin = 5 * 60 * 1000;
+
+  const recentCollect = logs.some(l =>
+    (l.source === 'collector' || l.source === 'collectors') &&
+    (now - new Date(l.created_at || l.timestamp).getTime()) < fiveMin
+  );
+  const recentAnalysis = logs.some(l =>
+    (l.source === 'insights' || l.source === 'analyst' || l.source === 'analysis') &&
+    (now - new Date(l.created_at || l.timestamp).getTime()) < fiveMin
+  );
+  const hasRunning = (s?.governance?.tasks_running ?? 0) > 0;
+
+  // Update particle group opacities
   const pc = document.getElementById('particles-collect');
   const pa = document.getElementById('particles-analysis');
   const pg = document.getElementById('particles-govern');
-  if(mode==='collect'){  pc.style.opacity='1'; pa.style.opacity='0.12'; pg.style.opacity='0.12'; }
-  if(mode==='analysis'){ pc.style.opacity='0.3'; pa.style.opacity='1'; pg.style.opacity='0.1'; }
-  if(mode==='govern'){   pc.style.opacity='0.2'; pa.style.opacity='0.3'; pg.style.opacity='1'; }
+  pc.style.opacity = recentCollect ? '1' : '0.15';
+  pa.style.opacity = recentAnalysis ? '1' : '0.15';
+  pg.style.opacity = hasRunning ? '1' : '0.15';
+
+  // Update flow indicator dots in toolbar
+  document.getElementById('fi-collect').classList.toggle('on', recentCollect);
+  document.getElementById('fi-analysis').classList.toggle('on', recentAnalysis);
+  document.getElementById('fi-govern').classList.toggle('on', hasRunning);
+
+  // If nothing is active but API is online, show collect at low opacity
+  if (apiOnline && !recentCollect && !recentAnalysis && !hasRunning) {
+    pc.style.opacity = '0.3';
+  }
 }
+
+/* ── Refresh timer display ── */
+function updateRefreshTimer() {
+  const el = document.getElementById('refresh-timer');
+  if (!lastRefresh) { el.textContent = ''; return; }
+  const ago = Math.floor((Date.now() - lastRefresh) / 1000);
+  const next = Math.max(0, 30 - ago);
+  el.textContent = `刷新: ${next}s`;
+}
+
+/* ── Schedule countdown updater ── */
+function updateCountdowns() {
+  // Re-render schedule card to update countdowns
+  if (pipelineData.status.scheduler) {
+    updateScheduleCard();
+  }
+}
+
+/* ── Init ── */
+refreshPipeline();
+setInterval(refreshPipeline, 30000);
+setInterval(updateRefreshTimer, 1000);
+setInterval(updateCountdowns, 60000);
 </script>
 </body>
 </html>
