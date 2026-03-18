@@ -48,6 +48,96 @@ MAX_CONCURRENT = 3  # 最多同时跑几个 sub-agent
 MAX_AGENT_TURNS = 25  # Agent SDK 最大交互轮数（防止无限循环）
 
 
+# ── 认知模式 ──
+
+def classify_cognitive_mode(task: dict) -> str:
+    """根据任务特征选择认知模式。
+
+    - direct: 简单任务，直接执行
+    - react: 中等复杂，边做边想 (Think-Act-Observe)
+    - hypothesis: 诊断类，先假设后验证
+    - designer: 大型改动，先设计后实现
+    """
+    action = (task.get("action") or "").lower()
+    spec = task.get("spec", {})
+    problem = (spec.get("problem") or "").lower()
+    summary = (spec.get("summary") or "").lower()
+    combined = f"{action} {problem} {summary}"
+
+    # 诊断类关键词 → hypothesis
+    diagnostic_signals = ["为什么", "why", "原因", "cause", "失败率",
+                          "不工作", "not working", "异常", "anomaly",
+                          "诊断", "diagnose", "排查", "investigate"]
+    if any(s in combined for s in diagnostic_signals):
+        return "hypothesis"
+
+    # 大型改动 → designer
+    designer_signals = ["重构", "refactor", "新增子系统", "redesign", "架构",
+                       "architecture", "新模块", "new module", "迁移", "migrate"]
+    if any(s in combined for s in designer_signals):
+        return "designer"
+
+    # 简单操作 → direct
+    simple_signals = ["typo", "改名", "rename", "删除", "清理", "cleanup",
+                      "更新版本", "bump", "调整参数", "config", "格式化",
+                      "format", "注释", "comment"]
+    if any(s in combined for s in simple_signals):
+        return "direct"
+
+    # 默认 → react
+    return "react"
+
+
+COGNITIVE_MODE_PROMPTS = {
+    "direct": "",  # 简单任务不加额外指令
+
+    "react": """
+【思维模式：边做边想 (Think-Act-Observe)】
+每完成一个步骤后，先观察结果：
+1. 这步做对了吗？有没有意外？
+2. 原来的计划还成立吗？需要调整吗？
+3. 下一步应该做什么？
+不要一口气做完所有事。每步都停下来想。""",
+
+    "hypothesis": """
+【思维模式：先诊断后治疗 (Hypothesis-Driven)】
+在动手修复之前，必须先完成诊断：
+1. 列出 2-3 个可能的原因
+2. 说明你认为最可能的是哪个，以及为什么
+3. 设计一个验证步骤（不改代码，只检查/测试）
+4. 执行验证，确认或推翻假设
+5. 假设被确认后才开始修复
+如果第一个假设被推翻，不要硬修——换下一个假设重来。""",
+
+    "designer": """
+【思维模式：先设计后实现 (Design-First)】
+在写任何代码之前，先输出完整的改动方案：
+1. 要改哪些文件
+2. 每个文件的改动意图（一句话）
+3. 改动之间的依赖关系（先改 A 才能改 B）
+4. 风险评估：哪个改动最可能出错
+方案输出后，逐个文件实现。每改完一个文件确认无误再改下一个。""",
+}
+
+
+def estimate_blast_radius(spec: dict) -> str:
+    """评估任务的爆炸半径——出错时影响范围有多大。"""
+    problem = (spec.get("problem") or "").lower()
+    action = (spec.get("action") or "").lower() if spec.get("action") else ""
+    combined = f"{problem} {action}"
+
+    high_risk = ["schema", "migration", "database", "events.db", "docker",
+                 "重启", "restart", "删除", "delete", "清理数据", "credentials", "密钥"]
+    if any(k in combined for k in high_risk):
+        return "HIGH — 数据/基础设施级别，不可逆或难以恢复"
+
+    medium_risk = ["重构", "refactor", "多个文件", "接口", "api", "config"]
+    if any(k in combined for k in medium_risk):
+        return "MEDIUM — 多文件改动，可能引入回归"
+
+    return "LOW — 局部改动，容易回滚"
+
+
 def _in_async_context() -> bool:
     """检测当前是否已在 async event loop 中（线程池 vs 主线程）。"""
     try:
@@ -193,12 +283,16 @@ SCRUTINY_PROMPT = """你是 Orchestrator 的门下省审查官——管家脑子
 【预期结果】{expected}
 【执行动作】{action}
 【执行原因】{reason}
+【认知模式】{cognitive_mode}
+【爆炸半径】{blast_radius}
 
 审查维度：
 1. 可行性：目标工作目录存在吗？任务在该项目范围内可执行吗？
 2. 完整性：描述够清晰吗？
 3. 风险：会不会搞坏代码、删错文件、发错消息？跨项目操作更需谨慎。
 4. 必要性：值得自动执行，还是该让主人自己决定？
+5. 模式匹配：认知模式选对了吗？（direct/react/hypothesis/designer）
+6. 逆推：如果执行结果与预期相反，最坏情况是什么？
 
 用以下格式回复（只回复这两行，不要其他内容）：
 VERDICT: APPROVE
@@ -218,6 +312,8 @@ class Governor:
             from src.project_registry import resolve_project
             task_cwd = resolve_project(project_name) or os.environ.get("ORCHESTRATOR_ROOT", "/orchestrator")
 
+        cognitive_mode = classify_cognitive_mode(task)
+        blast_radius = estimate_blast_radius(spec)
         prompt = SCRUTINY_PROMPT.format(
             summary=spec.get("summary", task.get("action", "")),
             project=project_name,
@@ -227,6 +323,8 @@ class Governor:
             expected=spec.get("expected", ""),
             action=task.get("action", ""),
             reason=task.get("reason", ""),
+            cognitive_mode=cognitive_mode,
+            blast_radius=blast_radius,
         )
         try:
             text = get_router().generate(prompt, task_type="scrutiny")
@@ -304,6 +402,11 @@ class Governor:
         )
         log.info(f"Governor: created task #{task_id}: {rec.get('summary', '')}")
 
+        # 写入认知模式到 spec
+        task_dict = self.db.get_task(task_id)
+        spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
+        self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+
         # 门下省审查
         self.db.update_task(task_id, status="scrutinizing")
         self.db.write_log(f"门下省审查任务 #{task_id}：{rec.get('summary', '')[:50]}", "INFO", "governor")
@@ -367,14 +470,22 @@ class Governor:
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
 
+        # 认知模式注入
+        cognitive_mode = classify_cognitive_mode(task)
+        mode_prompt = COGNITIVE_MODE_PROMPTS.get(cognitive_mode, "")
+
         # 注入最近执行记录
         recent_runs = load_recent_runs(dept_key, n=5)
         runs_context = format_runs_for_context(recent_runs)
 
-        prompt = dept_prompt + "\n\n" + base_prompt
+        # 组装最终 prompt: 部门身份 + 认知模式 + 任务 + 执行记录
+        prompt = dept_prompt
+        if mode_prompt:
+            prompt += "\n\n" + mode_prompt
+        prompt += "\n\n" + base_prompt
         if runs_context:
             prompt += "\n\n" + runs_context
-        log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), project={project_name}, cwd={task_cwd}")
+        log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, project={project_name}, cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
         self.db.update_task(task_id, status="running", started_at=now)
