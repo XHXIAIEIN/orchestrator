@@ -40,7 +40,6 @@ def run_collectors():
         ("youtube_music", YouTubeMusicCollector(db=db)),
         ("qqmusic", QQMusicCollector(db=db)),
         ("orchestrator_codebase", CodebaseCollector(db=db)),
-<<<<<<< HEAD
         ("vscode", VSCodeCollector(db=db)),
         ("network", NetworkCollector(db=db)),
     ]:
