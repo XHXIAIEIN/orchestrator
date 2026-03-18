@@ -554,6 +554,205 @@ app.get('/api/tts/health', async (req, res) => {
   }
 });
 
+// ── Pipeline API endpoints ──
+
+const DEPARTMENTS_DIR = path.join(__dirname, '..', 'departments');
+const DEPT_KEYS = ['engineering', 'quality', 'operations', 'protocol', 'security', 'personnel'];
+
+app.get('/api/pipeline/status', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({ collectors: {}, analysis: {}, governance: {}, departments: {}, scheduler: {} });
+  try {
+    // ── Collectors: parse last collector log message for per-source counts ──
+    const collectors = {};
+    const collectorNames = ['claude', 'browser', 'git', 'steam', 'youtube_music', 'orchestrator_codebase'];
+    const collectorLogs = dbAll(db,
+      "SELECT message, created_at FROM logs WHERE source = 'collector' AND message LIKE '%采集完成%' ORDER BY id DESC LIMIT 1"
+    );
+    const lastCollectorRun = collectorLogs[0] ? collectorLogs[0].created_at : null;
+    const msg = collectorLogs[0] ? collectorLogs[0].message : '';
+    // Parse counts from message like "采集完成：claude, browser, git 各 [4, 500, 14] 条"
+    const namesMatch = msg.match(/采集完成：([^各]+)各/);
+    const countsMatch = msg.match(/各\s*\[([^\]]+)\]/);
+    const okNames = namesMatch ? namesMatch[1].split(',').map(s => s.trim()) : [];
+    const okCounts = countsMatch ? countsMatch[1].split(',').map(s => parseInt(s.trim())) : [];
+    // Parse failed sources
+    const failMatch = msg.match(/失败：(.+)$/);
+    const failNames = failMatch ? failMatch[1].split(',').map(s => s.trim()) : [];
+
+    for (const name of collectorNames) {
+      const idx = okNames.indexOf(name);
+      if (idx >= 0 && idx < okCounts.length) {
+        collectors[name] = { status: 'ok', last_count: okCounts[idx], last_run: lastCollectorRun };
+      } else if (failNames.includes(name)) {
+        collectors[name] = { status: 'error', last_count: -1, last_run: lastCollectorRun };
+      } else {
+        collectors[name] = { status: 'unknown', last_count: 0, last_run: lastCollectorRun };
+      }
+    }
+
+    // ── Analysis: last insight ──
+    let analysis = { last_run: null, status: 'idle', insights_count: 0 };
+    try {
+      const insightRow = dbAll(db, "SELECT generated_at FROM insights ORDER BY generated_at DESC LIMIT 1");
+      const insightCount = dbAll(db, "SELECT COUNT(*) as cnt FROM insights");
+      analysis = {
+        last_run: insightRow[0] ? insightRow[0].generated_at : null,
+        status: 'idle',
+        insights_count: insightCount[0] ? insightCount[0].cnt : 0,
+      };
+    } catch { /* insights table may not exist */ }
+
+    // ── Governance: task stats ──
+    let governance = { tasks_running: 0, tasks_pending: 0, tasks_done_today: 0, last_task: null };
+    try {
+      const running = dbAll(db, "SELECT COUNT(*) as cnt FROM tasks WHERE status = 'running'");
+      const pending = dbAll(db, "SELECT COUNT(*) as cnt FROM tasks WHERE status = 'pending'");
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const doneToday = dbAll(db, "SELECT COUNT(*) as cnt FROM tasks WHERE status = 'done' AND finished_at >= ?", [todayStr]);
+      const lastTask = dbAll(db, "SELECT * FROM tasks ORDER BY id DESC LIMIT 1");
+      let lastTaskObj = null;
+      if (lastTask[0]) {
+        const t = lastTask[0];
+        let spec = {};
+        try { spec = JSON.parse(t.spec || '{}'); } catch {}
+        lastTaskObj = {
+          id: t.id, action: t.action, status: t.status,
+          department: spec.department || null,
+          cognitive_mode: spec.cognitive_mode || null,
+        };
+      }
+      governance = {
+        tasks_running: running[0] ? running[0].cnt : 0,
+        tasks_pending: pending[0] ? pending[0].cnt : 0,
+        tasks_done_today: doneToday[0] ? doneToday[0].cnt : 0,
+        last_task: lastTaskObj,
+      };
+    } catch { /* tasks table may not exist */ }
+
+    // ── Departments: stats from tasks table by spec.department ──
+    const departments = {};
+    try {
+      const allTasks = dbAll(db, "SELECT spec, status, finished_at FROM tasks");
+      const deptStats = {};
+      for (const t of allTasks) {
+        let spec = {};
+        try { spec = JSON.parse(t.spec || '{}'); } catch {}
+        const dept = spec.department;
+        if (!dept) continue;
+        if (!deptStats[dept]) deptStats[dept] = { tasks_done: 0, tasks_failed: 0, last_active: null };
+        if (t.status === 'done') deptStats[dept].tasks_done++;
+        if (t.status === 'failed') deptStats[dept].tasks_failed++;
+        if (t.finished_at && (!deptStats[dept].last_active || t.finished_at > deptStats[dept].last_active)) {
+          deptStats[dept].last_active = t.finished_at;
+        }
+      }
+      Object.assign(departments, deptStats);
+    } catch { /* ignore */ }
+
+    // ── Scheduler: from scheduler_status table ──
+    let scheduler = {};
+    try {
+      const statusRows = dbAll(db, "SELECT key, value FROM scheduler_status");
+      for (const r of statusRows) {
+        scheduler[r.key] = r.value;
+      }
+    } catch { /* table may not exist */ }
+
+    res.json({ collectors, analysis, governance, departments, scheduler });
+  } catch (e) {
+    res.json({ collectors: {}, analysis: {}, governance: {}, departments: {}, scheduler: {}, error: e.message });
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/api/pipeline/logs', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 200);
+    const rows = dbAll(db, 'SELECT id, level, source, message, created_at FROM logs ORDER BY id DESC LIMIT ?', [limit]);
+    res.json(rows);
+  } catch {
+    res.json([]);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/api/pipeline/tasks', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+    const rows = dbAll(db, 'SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?', [limit]);
+    res.json(rows.map(r => {
+      let spec = {};
+      try { spec = JSON.parse(r.spec || '{}'); } catch {}
+      return {
+        id: r.id,
+        action: r.action,
+        status: r.status,
+        department: spec.department || null,
+        cognitive_mode: spec.cognitive_mode || null,
+        blast_radius: spec.blast_radius || null,
+        created_at: r.created_at,
+        started_at: r.started_at || null,
+        finished_at: r.finished_at || null,
+        output: r.output || null,
+        scrutiny_note: r.scrutiny_note || null,
+      };
+    }));
+  } catch {
+    res.json([]);
+  } finally {
+    db.close();
+  }
+});
+
+app.get('/api/pipeline/departments', (req, res) => {
+  const result = {};
+  for (const dept of DEPT_KEYS) {
+    const deptDir = path.join(DEPARTMENTS_DIR, dept);
+    const runLogPath = path.join(deptDir, 'run-log.jsonl');
+    const suggestionsPath = path.join(deptDir, 'skill-suggestions.md');
+
+    let runs = [];
+    try {
+      const content = fs.readFileSync(runLogPath, 'utf8').trim();
+      if (content) {
+        runs = content.split('\n').filter(l => l.trim()).map(l => {
+          try { return JSON.parse(l); } catch { return null; }
+        }).filter(Boolean);
+      }
+    } catch { /* file doesn't exist */ }
+
+    const totalRuns = runs.length;
+    const recentRuns = runs.slice(-10).reverse().map(r => ({
+      ts: r.ts || null,
+      task_id: r.task_id || null,
+      mode: r.mode || null,
+      summary: r.summary || '',
+      status: r.status || 'unknown',
+    }));
+
+    const doneRuns = runs.filter(r => r.status === 'done').length;
+    const successRate = totalRuns > 0 ? Math.round((doneRuns / totalRuns) * 100) / 100 : 0;
+
+    let hasSuggestions = false;
+    try { hasSuggestions = fs.existsSync(suggestionsPath); } catch {}
+
+    result[dept] = {
+      total_runs: totalRuns,
+      recent_runs: recentRuns,
+      success_rate: successRate,
+      has_suggestions: hasSuggestions,
+    };
+  }
+  res.json(result);
+});
+
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'connected', message: 'Orchestrator Dashboard' }));
 });
