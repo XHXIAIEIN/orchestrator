@@ -17,6 +17,7 @@ services:
       - GIT_REPOS_ROOT=/git-repos
       - ORCHESTRATOR_ROOT=/orchestrator
       - STEAM_PATH=/steam-data
+      - VSCODE_DATA_PATH=/vscode-data
       # Terminal appearance
       - TERM=xterm-256color
       - COLORTERM=truecolor
@@ -47,4 +48,9 @@ services:
       - type: bind
         source: ${STEAM_PATH_HOST:-D:/Steam}
         target: /steam-data
+        read_only: true
+      # VS Code data (read-only)
+      - type: bind
+        source: ${VSCODE_DATA:-C:/Users/test/AppData/Roaming/Code/User}
+        target: /vscode-data
         read_only: true

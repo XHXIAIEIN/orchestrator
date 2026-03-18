@@ -8,6 +8,7 @@ from src.collectors.git_collector import GitCollector
 from src.collectors.steam_collector import SteamCollector
 from src.collectors.youtube_music_collector import YouTubeMusicCollector
 from src.collectors.codebase_collector import CodebaseCollector
+from src.collectors.vscode_collector import VSCodeCollector
 from src.analyst import DailyAnalyst
 from src.insights import InsightEngine
 from src.governor import Governor
@@ -36,6 +37,7 @@ def run_collectors():
         ("steam", SteamCollector(db=db)),
         ("youtube_music", YouTubeMusicCollector(db=db)),
         ("orchestrator_codebase", CodebaseCollector(db=db)),
+        ("vscode", VSCodeCollector(db=db)),
     ]:
         try:
             count = collector.collect()
