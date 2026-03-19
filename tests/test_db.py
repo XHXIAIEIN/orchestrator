@@ -1,5 +1,5 @@
 import pytest
-from src.db import Database
+from src.core.db import Database
 
 
 def test_database_creates_tables(tmp_path):

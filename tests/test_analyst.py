@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.analyst import DailyAnalyst
+from src.analysis.analyst import DailyAnalyst
 from src.storage.events_db import EventsDB
 
 
@@ -26,7 +26,7 @@ def test_analyst_runs(tmp_path):
     db.insert_event("claude", "coding", "写代码", 60, 0.8, ["python"], {})
     db.insert_event("browser_chrome", "dev", "看文档", 30, 0.6, ["docs"], {})
 
-    with patch("src.analyst.anthropic.Anthropic") as MockAnthropic:
+    with patch("src.analysis.analyst.anthropic.Anthropic") as MockAnthropic:
         mock_client = MagicMock()
         MockAnthropic.return_value = mock_client
         mock_client.messages.create.return_value = make_analyst_response()

@@ -1,9 +1,0 @@
-[  251956ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
-[  370967ms] play() failed because the user didn't interact with the document first. https://goo.gl/xX8pDD
-[  517488ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
-[  517871ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:23714/api/schedule-status:0
-[  994721ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
-[ 1087762ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
-[ 1088452ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:23714/api/schedule-status:0
-[ 1348328ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
-[ 1348450ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:23714/api/schedule-status:0

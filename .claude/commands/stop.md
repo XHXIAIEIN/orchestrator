@@ -1,25 +1,25 @@
 ---
-description: 停止 orchestrator
+description: Stop orchestrator
 ---
 
-停止正在运行的 orchestrator 系统。
+Stop the running orchestrator system.
 
-## 步骤
+## Steps
 
-**Docker 模式：**
+**Docker mode:**
 ```bash
-cd D:/Users/Administrator/Documents/GitHub/orchestrator
+cd $(git rev-parse --show-toplevel)
 docker compose down
 ```
 
-**仅停止容器但保留网络/卷（快速重启场景）：**
+**Stop container only, preserving networks/volumes (for quick restart):**
 ```bash
 docker stop orchestrator
 ```
 
-停止后确认：
+Confirm after stopping:
 ```bash
 docker ps | grep orchestrator
 ```
 
-无输出则表示已完全停止。
+No output means it has been fully stopped.

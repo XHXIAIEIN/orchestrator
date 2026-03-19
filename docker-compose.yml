@@ -34,29 +34,29 @@ services:
       - /orchestrator/dashboard/node_modules
       # Chrome browser history (read-only)
       - type: bind
-        source: ${CHROME_USER_DATA:-C:/Users/test/AppData/Local/Google/Chrome/User Data}
+        source: ${CHROME_USER_DATA}
         target: /chrome-data
         read_only: true
       # Claude Code home — writable so Claude CLI can refresh OAuth tokens
       - type: bind
-        source: ${CLAUDE_HOME_HOST:-C:/Users/test/.claude}
+        source: ${CLAUDE_HOME_HOST}
         target: /claude-home
       # Git repos (read-write for cross-project task execution)
       - type: bind
-        source: ${GIT_ROOT:-C:/Users/test/Documents/GitHub}
+        source: ${GIT_ROOT}
         target: /git-repos
       # Steam data (read-only, optional)
       - type: bind
-        source: ${STEAM_PATH_HOST:-D:/Steam}
+        source: ${STEAM_PATH_HOST}
         target: /steam-data
         read_only: true
       # QQ Music data (read-only)
       - type: bind
-        source: ${QQMUSIC_DATA:-C:/Users/test/AppData/Roaming/Tencent/QQMusic}
+        source: ${QQMUSIC_DATA}
         target: /qqmusic-data
         read_only: true
       # VS Code data (read-only)
       - type: bind
-        source: ${VSCODE_DATA:-C:/Users/test/AppData/Roaming/Code/User}
+        source: ${VSCODE_DATA}
         target: /vscode-data
         read_only: true

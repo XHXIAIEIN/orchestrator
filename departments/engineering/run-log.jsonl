@@ -1,0 +1,1 @@
+{"ts": "2026-03-19T03:41:47.380896+00:00", "task_id": 27, "mode": "debt_resolver", "summary": "resolve attention debt #2003: STT 生成失败（连接错误 192.168.65.254:23715），对话以「debt scan 在跑」结尾，未确认修复", "files_changed": [], "commit": "", "status": "done", "duration_s": 49, "notes": ""}

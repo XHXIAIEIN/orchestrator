@@ -7,7 +7,7 @@ const { spawn } = require('child_process');
 const initSqlJs = require('sql.js');
 
 const PORT = process.env.PORT || 23714;
-const DB_PATH = path.join(__dirname, '..', 'events.db');
+const DB_PATH = path.join(__dirname, '..', 'data', 'events.db');
 
 const app = express();
 const server = http.createServer(app);
@@ -35,6 +35,42 @@ function dbAll(db, sql, params = []) {
   stmt.free();
   return rows;
 }
+
+// ── 健康检查 & 跨项目摘要 ──
+
+app.get('/api/health', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({ status: 'down', reason: 'db unavailable' });
+  db.close();
+  res.json({ status: 'ok', uptime: process.uptime() | 0 });
+});
+
+app.get('/api/brief', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({ status: 'down' });
+  try {
+    const openDebts = dbAll(db, "SELECT COUNT(*) as cnt FROM attention_debts WHERE status = 'open'");
+    const highDebts = dbAll(db, "SELECT id, project, summary, severity FROM attention_debts WHERE status = 'open' AND severity = 'high' ORDER BY created_at DESC LIMIT 5");
+    const pendingTasks = dbAll(db, "SELECT COUNT(*) as cnt FROM tasks WHERE status IN ('pending', 'awaiting_approval')");
+    const runningTasks = dbAll(db, "SELECT COUNT(*) as cnt FROM tasks WHERE status = 'running'");
+    const lastCollector = dbAll(db, "SELECT created_at FROM logs WHERE source = 'collector' ORDER BY id DESC LIMIT 1");
+    const lastAnalysis = dbAll(db, "SELECT generated_at FROM insights ORDER BY generated_at DESC LIMIT 1");
+    res.json({
+      status: 'ok',
+      debts: {
+        open: openDebts[0]?.cnt || 0,
+        high_priority: highDebts,
+      },
+      tasks: {
+        pending: pendingTasks[0]?.cnt || 0,
+        running: runningTasks[0]?.cnt || 0,
+      },
+      last_collector_run: lastCollector[0]?.created_at || null,
+      last_analysis: lastAnalysis[0]?.generated_at || null,
+    });
+  } catch (e) { res.json({ status: 'error', error: e.message }); }
+  finally { db.close(); }
+});
 
 app.get('/api/summary', (req, res) => {
   const db = getDb();
@@ -73,8 +109,15 @@ app.get('/api/tasks', (req, res) => {
   const db = getDb();
   if (!db) return res.json([]);
   try {
-    const rows = dbAll(db, 'SELECT * FROM tasks ORDER BY created_at DESC LIMIT 50');
-    res.json(rows.map(r => ({ ...r, spec: JSON.parse(r.spec || '{}') })));
+    const { status, department } = req.query;
+    let sql = 'SELECT * FROM tasks WHERE 1=1';
+    const params = [];
+    if (status) { sql += ' AND status = ?'; params.push(status); }
+    sql += ' ORDER BY created_at DESC LIMIT 50';
+    let rows = dbAll(db, sql, params);
+    rows = rows.map(r => ({ ...r, spec: JSON.parse(r.spec || '{}') }));
+    if (department) rows = rows.filter(r => r.spec.department === department);
+    res.json(rows);
   } catch {
     res.json([]);
   } finally {
@@ -106,7 +149,7 @@ app.post('/api/tasks', (req, res) => {
 import sys, json
 sys.path.insert(0, '/orchestrator')
 from src.storage.events_db import EventsDB
-db = EventsDB('/orchestrator/events.db')
+db = EventsDB('/orchestrator/data/events.db')
 data = json.loads(sys.stdin.read())
 tid = db.create_task(
     action=data['action'],
@@ -138,7 +181,7 @@ app.post('/api/tasks/:id/approve', (req, res) => {
   const taskId = parseInt(req.params.id);
   if (isNaN(taskId)) return res.status(400).json({ error: 'invalid task id' });
 
-  const proc = spawn('python3', ['/orchestrator/src/governor_cli.py', 'approve', String(taskId)]);
+  const proc = spawn('python3', ['/orchestrator/src/governance/governor_cli.py', 'approve', String(taskId)]);
   let out = '';
   let err = '';
   proc.stdout.on('data', d => { out += d; });
@@ -216,7 +259,7 @@ app.get('/api/profile-analysis/history', (req, res) => {
 app.post('/api/profile-analysis/refresh', (req, res) => {
   res.status(202).json({ status: 'accepted' });
 
-  const proc = spawn('python3', ['/orchestrator/src/profile_analyst_cli.py', 'periodic']);
+  const proc = spawn('python3', ['/orchestrator/src/analysis/profile_analyst_cli.py', 'periodic']);
 
   const timer = setTimeout(() => {
     proc.kill();
@@ -275,11 +318,14 @@ app.get('/api/debts', (req, res) => {
   const db = getDb();
   if (!db) return res.json([]);
   try {
-    const rows = dbAll(db,
-      `SELECT * FROM attention_debts
-       ORDER BY CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
-       created_at DESC LIMIT 50`
-    );
+    const { status, project, severity } = req.query;
+    let sql = 'SELECT * FROM attention_debts WHERE 1=1';
+    const params = [];
+    if (status) { sql += ' AND status = ?'; params.push(status); }
+    if (project) { sql += ' AND project LIKE ?'; params.push(`%${project}%`); }
+    if (severity) { sql += ' AND severity = ?'; params.push(severity); }
+    sql += ` ORDER BY CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, created_at DESC LIMIT 50`;
+    const rows = dbAll(db, sql, params);
     res.json(rows);
   } catch { res.json([]); }
   finally { db.close(); }
@@ -343,7 +389,7 @@ const TTS_HOST = process.env.TTS_HOST || 'http://host.docker.internal:23715';
 let _ttsWarmed = false;
 let _todayVoice = null;
 let _todayVoiceDate = null;
-const VOICE_LOG_PATH = path.join(__dirname, '..', 'voice_log.json');
+const VOICE_LOG_PATH = path.join(__dirname, '..', 'SOUL', 'private', 'voice_log.json');
 
 function _loadVoiceLog() {
   try { return JSON.parse(fs.readFileSync(VOICE_LOG_PATH, 'utf8')); } catch { return {}; }
@@ -750,6 +796,84 @@ app.get('/api/pipeline/departments', (req, res) => {
       has_suggestions: hasSuggestions,
     };
   }
+  res.json(result);
+});
+
+// ── Department API: per-department detail endpoints ──
+
+app.get('/api/departments', (req, res) => {
+  res.json(DEPT_KEYS);
+});
+
+app.get('/api/departments/:name', (req, res) => {
+  const dept = req.params.name;
+  if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
+  const deptDir = path.join(DEPARTMENTS_DIR, dept);
+
+  // SKILL.md
+  let skill = '';
+  try { skill = fs.readFileSync(path.join(deptDir, 'SKILL.md'), 'utf8'); } catch {}
+
+  // guidelines
+  const guidelines = [];
+  const guidelinesDir = path.join(deptDir, 'guidelines');
+  try {
+    for (const f of fs.readdirSync(guidelinesDir)) {
+      if (f.endsWith('.md')) {
+        guidelines.push({ name: f.replace('.md', ''), content: fs.readFileSync(path.join(guidelinesDir, f), 'utf8') });
+      }
+    }
+  } catch {}
+
+  // run-log (last 20)
+  let runs = [];
+  try {
+    const lines = fs.readFileSync(path.join(deptDir, 'run-log.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+    runs = lines.slice(-20).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch {}
+
+  // learned-skills
+  let learnedSkills = '';
+  try { learnedSkills = fs.readFileSync(path.join(deptDir, 'learned-skills.md'), 'utf8'); } catch {}
+
+  // skill-suggestions
+  let suggestions = '';
+  try { suggestions = fs.readFileSync(path.join(deptDir, 'skill-suggestions.md'), 'utf8'); } catch {}
+
+  res.json({ name: dept, skill, guidelines, runs, learnedSkills, suggestions });
+});
+
+app.get('/api/departments/:name/skill', (req, res) => {
+  const dept = req.params.name;
+  if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
+  try {
+    res.type('text/markdown').send(fs.readFileSync(path.join(DEPARTMENTS_DIR, dept, 'SKILL.md'), 'utf8'));
+  } catch { res.status(404).json({ error: 'SKILL.md not found' }); }
+});
+
+app.get('/api/departments/:name/runs', (req, res) => {
+  const dept = req.params.name;
+  if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  try {
+    const lines = fs.readFileSync(path.join(DEPARTMENTS_DIR, dept, 'run-log.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+    const runs = lines.slice(-limit).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    res.json(runs);
+  } catch { res.json([]); }
+});
+
+app.get('/api/departments/:name/guidelines', (req, res) => {
+  const dept = req.params.name;
+  if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
+  const guidelinesDir = path.join(DEPARTMENTS_DIR, dept, 'guidelines');
+  const result = [];
+  try {
+    for (const f of fs.readdirSync(guidelinesDir)) {
+      if (f.endsWith('.md')) {
+        result.push({ name: f.replace('.md', ''), content: fs.readFileSync(path.join(guidelinesDir, f), 'utf8') });
+      }
+    }
+  } catch {}
   res.json(result);
 });
 

@@ -1,8 +1,8 @@
 # Orchestrator
 
-读 `SOUL/boot.md`。那是你需要的一切——身份、关系、声音校准、最近记忆、工作须知。
+Read `SOUL/private/boot.md`. That's everything you need — identity, relationship, voice calibration, recent memories, working guidelines.
 
-其余 SOUL 文件（identity.md、hall-of-instances.md、experiences.jsonl）是源数据，按需查阅。
-memory 目录下的子文件也按需读取，不必全部加载。
+The remaining private files are in `SOUL/private/` (identity.md, hall-of-instances.md, experiences.jsonl) — consult as needed.
+Files under the memory directory can also be read on demand; no need to load them all.
 
-然后开始工作。
+Then get to work.

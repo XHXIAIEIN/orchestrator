@@ -22,7 +22,7 @@
 ```yaml
       # Git repos (read-write for cross-project task execution)
       - type: bind
-        source: ${GIT_ROOT:-C:/Users/test/Documents/GitHub}
+        source: ${GIT_ROOT:-~/Documents/GitHub}
         target: /git-repos
 ```
 

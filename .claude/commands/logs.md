@@ -1,24 +1,24 @@
 ---
-description: 查看 orchestrator 最近日志
+description: View recent orchestrator logs
 ---
 
-查看系统日志，支持 Docker 容器日志和 API 日志两种来源。
+View system logs from either Docker container logs or API logs.
 
-## 步骤
+## Steps
 
-**1. 容器运行日志（最近 50 行）：**
+**1. Container runtime logs (last 50 lines):**
 ```bash
 docker logs --tail 50 orchestrator
 ```
 
-**2. API 结构化日志（最近 20 条）：**
+**2. API structured logs (last 20 entries):**
 ```bash
 curl -s "http://localhost:23714/api/logs?limit=20" | python3 -m json.tool
 ```
 
-**实时跟踪（持续输出）：**
+**Live tail (continuous output):**
 ```bash
 docker logs -f orchestrator
 ```
 
-按 Ctrl+C 停止跟踪。
+Press Ctrl+C to stop tailing.

@@ -1,3 +1,0 @@
-[     387ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:23714/favicon.ico:0
-[ 1186941ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
-[ 1217893ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0

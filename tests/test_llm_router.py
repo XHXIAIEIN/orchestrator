@@ -3,7 +3,7 @@ import os
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
-from src.llm_router import LLMRouter, ROUTES
+from src.core.llm_router import LLMRouter, ROUTES
 
 def test_ollama_generate_success():
     """Ollama 正常返回时，generate() 应返回模型输出文本。"""

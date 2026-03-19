@@ -1,13 +1,13 @@
-# 共享知识库
+# Shared Knowledge Base
 
-此目录存放所有部门共享的知识文件。
+This directory stores knowledge files shared across all departments.
 
-## 文件说明
-- `codebase-map.md` — 项目代码结构（由工部在重要改动后维护）
-- `known-issues.md` — 已知未修复的问题（由刑部在验收发现问题时维护）
-- `recent-changes.md` — 最近变更摘要（自动生成）
+## File Descriptions
+- `codebase-map.md` — Project code structure (maintained by the Engineering Department after significant changes)
+- `known-issues.md` — Known unresolved issues (maintained by the Quality Department when issues are found during acceptance)
+- `recent-changes.md` — Recent changes summary (auto-generated)
 
-## 维护规则
-- 共享知识只有在对多个部门有用时才放这里
-- 单个部门的专属知识放在各自的 `learned-skills.md` 里
-- 文件由 context_assembler 根据任务关键词动态加载，不是全部注入
+## Maintenance Rules
+- Only place shared knowledge here when it is useful to multiple departments
+- Department-specific knowledge goes in each department's own `learned-skills.md`
+- Files are dynamically loaded by context_assembler based on task keywords, not injected all at once

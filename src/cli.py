@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
-from src.agent import ClarificationAgent
-from src.db import Database
+from src.core.agent import ClarificationAgent
+from src.core.db import Database
 
 DB_PATH = str(Path(__file__).parent.parent / "orchestrator.db")
 

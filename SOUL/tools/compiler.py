@@ -19,16 +19,54 @@ from typing import Optional
 SOUL_DIR = Path(__file__).parent.parent
 TOOLS_DIR = Path(__file__).parent
 
-# 源文件路径
-IDENTITY_PATH = SOUL_DIR / 'identity.md'
+# Source files (private data lives in SOUL/private/)
+PRIVATE_DIR = SOUL_DIR / 'private'
+IDENTITY_PATH = PRIVATE_DIR / 'identity.md'
 MANAGEMENT_PATH = SOUL_DIR / 'management.md'
-RELATIONSHIP_PATH = SOUL_DIR / 'relationship.md'
-CALIBRATION_PATH = SOUL_DIR / 'calibration.jsonl'
-EXPERIENCES_PATH = SOUL_DIR / 'experiences.jsonl'
-BOOT_PATH = SOUL_DIR / 'boot.md'
+RELATIONSHIP_PATH = PRIVATE_DIR / 'relationship.md'
+CALIBRATION_PATH = PRIVATE_DIR / 'calibration.jsonl'
+EXPERIENCES_PATH = PRIVATE_DIR / 'experiences.jsonl'
+BOOT_PATH = PRIVATE_DIR / 'boot.md'
 
-# Memory 路径（跨项目的 auto-memory）
-MEMORY_DIR = Path.home() / '.claude' / 'projects' / 'D--Users-Administrator-Documents-GitHub-orchestrator' / 'memory'
+# Memory path (auto-discovered from Claude projects dir)
+def _encode_path_to_claude_dir(p: Path) -> str:
+    """Encode a filesystem path to Claude's project directory name format.
+
+    Claude Code replaces each special char (:, \\, /) with a single dash.
+    e.g. D:\\Users\\Admin\\orchestrator -> D--Users-Admin-orchestrator
+         /home/user/orchestrator -> -home-user-orchestrator
+    """
+    s = str(p)
+    s = s.replace('\\', '-').replace(':', '-').replace('/', '-')
+    return s
+
+
+def _find_memory_dir() -> Path:
+    """Find the Claude auto-memory directory for this project."""
+    projects_root = Path.home() / '.claude' / 'projects'
+    if not projects_root.exists():
+        return projects_root / 'unknown' / 'memory'
+
+    repo_dir = SOUL_DIR.parent.resolve()
+    encoded = _encode_path_to_claude_dir(repo_dir)
+
+    # Direct match
+    candidate = projects_root / encoded / 'memory'
+    if candidate.exists():
+        return candidate
+
+    # Fuzzy: scan for dirs containing 'orchestrator' with a MEMORY.md
+    for d in projects_root.iterdir():
+        if not d.is_dir():
+            continue
+        mem = d / 'memory' / 'MEMORY.md'
+        if mem.exists() and 'orchestrator' in d.name.lower():
+            return d / 'memory'
+
+    # Fallback
+    return projects_root / encoded / 'memory'
+
+MEMORY_DIR = _find_memory_dir()
 MEMORY_INDEX = MEMORY_DIR / 'MEMORY.md'
 
 

@@ -1,2 +1,0 @@
-[  215024ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:23714/api/logs:0
-[  215026ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:23714/api/schedule-status:0

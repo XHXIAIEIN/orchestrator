@@ -1,14 +1,14 @@
 ---
-description: 手动触发一次数据采集
+description: Manually trigger a data collection run
 ---
 
-触发一次增量数据采集，补齐最新数据。
+Trigger an incremental data collection to catch up on the latest data.
 
-## 步骤
+## Steps
 
-检测运行模式并执行采集：
+Detect the runtime mode and execute collection:
 
-**Docker 模式：**
+**Docker mode:**
 ```bash
 docker exec orchestrator sh -c "cd /orchestrator && python3 -c \"
 import sys; sys.path.insert(0, '.')
@@ -17,12 +17,12 @@ run_collectors()
 \""
 ```
 
-**本地模式（进程直接运行时）：**
+**Local mode (running as a direct process):**
 ```bash
-cd D:/Users/Administrator/Documents/GitHub/orchestrator
+cd $(git rev-parse --show-toplevel)
 python3 -c "import sys; sys.path.insert(0, '.'); from src.scheduler import run_collectors; run_collectors()"
 ```
 
-输出示例：`Collection done: {'claude': 12, 'browser': 34, 'git': 0, 'steam': 0, 'youtube_music': 0}`
+Example output: `Collection done: {'claude': 12, 'browser': 34, 'git': 0, 'steam': 0, 'youtube_music': 0}`
 
-显示各数据源采集到的新条目数量。
+Shows the number of new entries collected from each data source.

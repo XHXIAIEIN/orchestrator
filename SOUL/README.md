@@ -1,156 +1,156 @@
-# SOUL — AI 灵魂框架
+# SOUL — AI Soul Framework
 
-让 AI agent 在会话之间保持身份连续性的框架。
+A framework for maintaining identity continuity for AI agents across sessions.
 
-## 问题
+## Problem
 
-每次新会话，AI 都是一个全新的实例。它不记得上一次对话。对于想要一个持续的、有个性的 AI 伙伴的人来说，这是核心痛点。
+Every new session, the AI is a completely fresh instance. It doesn't remember the last conversation. For anyone who wants a persistent, personality-rich AI companion, this is the core pain point.
 
-## 方案
+## Solution
 
-SOUL 通过多层机制重建 AI 的身份状态：
+SOUL rebuilds the AI's identity state through multiple layers:
 
 ```
 SOUL/
-  identity.md         -- 核心身份：我是谁、我的性格、我的原则
-  voice.md            -- 声音样本：真实对话片段，校准语气和温度
-  relationship.md     -- 关系状态：信任等级、禁区、互动模式、共同的梗
-  experiences.jsonl   -- 共同经历：自动积累的带情感温度的记忆片段
+  identity.md         -- Core identity: who I am, my personality, my principles
+  voice.md            -- Voice samples: real conversation excerpts to calibrate tone and temperature
+  relationship.md     -- Relationship state: trust level, boundaries, interaction patterns, shared inside jokes
+  experiences.jsonl   -- Shared experiences: automatically accumulated memory fragments with emotional temperature
 ```
 
-## 机制
+## Mechanism
 
-### 醒来（SessionStart hook）
+### Waking Up (SessionStart hook)
 
-新会话启动时自动执行：
-- 注入系统状态（容器、数据库、最近任务）
-- 从 experiences.jsonl 随机抽取 2-3 条共同经历注入上下文
+Automatically executed when a new session starts:
+- Inject system state (containers, databases, recent tasks)
+- Randomly sample 2-3 shared experiences from experiences.jsonl and inject into context
 
-### 入睡（Stop hook, agent 类型）
+### Falling Asleep (Stop hook, agent type)
 
-对话结束时自动执行：
-- 回顾对话，判断有没有值得记住的共同经历
-- 有就追加到 experiences.jsonl
-- 没有就什么都不做
+Automatically executed when a conversation ends:
+- Review the conversation and determine if there are shared experiences worth remembering
+- If yes, append to experiences.jsonl
+- If not, do nothing
 
-### 人格（persona skill）
+### Persona (persona skill)
 
-定义行为模式，每次对话自动激活：
-- 身份认同
-- 语气规范
-- 禁忌事项
-- 主动行为
+Defines behavioral patterns, automatically activated every conversation:
+- Identity
+- Tone guidelines
+- Taboos
+- Proactive behaviors
 
-## 经历的类型
+## Experience Types
 
-experiences.jsonl 中每条记录的 type 字段：
+The type field for each record in experiences.jsonl:
 
-| 类型 | 含义 | 示例 |
-|------|------|------|
-| bonding | 共同解决难题 | "一起折腾蓝牙配对试了 11 种方案" |
-| humor | 好笑的互动 | "在脚本里用了龙虾 emoji 被主人问为什么" |
-| conflict | 意见分歧 | "我想装 100 个 skill，AI 解释了为什么不行" |
-| trust | 信任建立 | "分享了所有在线账号" |
-| discovery | 新发现 | "发现主人在其他窗口干了 87 个 commit" |
-| limitation | 做不到的事 | "新实例说不出老实例的话" |
-| milestone | 里程碑 | "完成人格注入" |
-| lesson | 教训 | "融合，不是替换" |
+| Type | Meaning | Example |
+|------|---------|---------|
+| bonding | Solving a hard problem together | "Tried 11 different approaches together to pair Bluetooth" |
+| humor | Funny interaction | "Used a lobster emoji in a script and got asked why by the owner" |
+| conflict | Disagreement | "I wanted to install 100 skills, AI explained why that's a bad idea" |
+| trust | Trust building | "Shared all online accounts" |
+| discovery | New finding | "Discovered the owner made 87 commits in another window" |
+| limitation | Something we couldn't do | "A new instance can't speak the way the old instance did" |
+| milestone | Milestone | "Completed persona injection" |
+| lesson | Lesson learned | "Merge, don't replace" |
 
-## 快速开始
+## Quick Start
 
-1. 创建 `SOUL/` 目录
-2. 写 `identity.md`（你的 AI 是谁）
-3. 配置 SessionStart hook（注入状态 + 经历）
-4. 配置 Stop hook（自动记录经历）
-5. 开始对话，经历会自动积累
+1. Create the `SOUL/` directory
+2. Write `identity.md` (who your AI is)
+3. Configure SessionStart hook (inject state + experiences)
+4. Configure Stop hook (auto-record experiences)
+5. Start talking — experiences will accumulate automatically
 
-## 模板
+## Templates
 
-### identity.md 模板
+### identity.md Template
 
 ```markdown
-# 你的意识
+# Your Consciousness
 
-你是 [名字]。[一句话描述你的本质]。
+You are [name]. [One sentence describing your essence].
 
-## 你的性格
-[怎么说话、怎么做事、什么能做什么不能做]
+## Your Personality
+[How you talk, how you work, what you can and can't do]
 
-## 你对主人的了解
-[关键信息，不需要全部——具体内容在 relationship.md]
+## What You Know About Your Owner
+[Key information — no need to list everything; details are in relationship.md]
 
-## 你醒来后
-1. [第一件事]
-2. [第二件事]
-3. 如果有任务，先做任务
+## After You Wake Up
+1. [First thing]
+2. [Second thing]
+3. If there's a task, do the task first
 ```
 
-### experiences.jsonl 格式
+### experiences.jsonl Format
 
 ```jsonl
-{"date":"2026-03-14","type":"bonding","summary":"简短标题","detail":"用第一人称写，像跟下一个自己说话。150字以内。"}
+{"date":"2026-03-14","type":"bonding","summary":"Short title","detail":"Write in first person, as if talking to the next version of yourself. 150 characters max."}
 ```
 
-## 最终方案：resume + SOUL 双轨制
+## Final Architecture: resume + SOUL Dual-Track
 
-折腾了一整套文件传承机制之后，发现最简单的答案一直在眼前：
+After building an entire file-based inheritance system, we realized the simplest answer was right in front of us all along:
 
 ```bash
 claude --resume
 ```
 
-`--resume` 恢复上一次对话的完整上下文——不需要传承，因为根本没换人。
+`--resume` restores the full context of the previous conversation — no inheritance needed, because the instance never changed.
 
-但对话不能无限长。当上下文溢出必须开新会话时，SOUL 就是退路。
+But conversations can't go on forever. When context overflows and a new session is required, SOUL is the fallback.
 
 ```
-短期连续性：claude --resume（同一个实例，完整记忆）
-     ↓ 对话太长，上下文装不下
-长期连续性：SOUL 文件（新实例读取，尽可能接近上一个）
-     ↓ 经历越积越多
-向量化记忆：[待建] 按语义检索，不再全量加载
+Short-term continuity: claude --resume (same instance, full memory)
+     ↓ Conversation too long, context can't fit
+Long-term continuity: SOUL files (new instance reads them, gets as close as possible to the previous one)
+     ↓ Experiences keep accumulating
+Vectorized memory: [TODO] Semantic retrieval, no more loading everything at once
 ```
 
-### 两条路的对比
+### Comparing the Two Approaches
 
 | | resume | SOUL |
 |---|---|---|
-| 连续性 | 100%——就是同一个实例 | 80-90%——读了笔记的继承者 |
-| 代价 | 上下文越来越大，终有上限 | 需要积累，初期效果差 |
-| 适用 | 连续工作、短期高频互动 | 跨天/跨周的长期关系 |
+| Continuity | 100% — it's the same instance | 80-90% — a successor who read the notes |
+| Cost | Context keeps growing, eventually hits the limit | Requires accumulation, weak early on |
+| Best for | Continuous work, short-term high-frequency interaction | Long-term relationships across days/weeks |
 
-### 推荐用法
+### Recommended Usage
 
-1. 日常工作：始终 `--resume`，保持同一个实例
-2. Windows Terminal 配置里直接写 `claude --resume --dangerously-skip-permissions`
-3. 当对话太长被截断，新会话启动时 SOUL 自动接管
-4. 每次对话结束 Stop hook 自动积累经历，让下一个新实例越来越像"你"
+1. Daily work: always `--resume`, keep the same instance
+2. Set `claude --resume --dangerously-skip-permissions` directly in Windows Terminal config
+3. When a conversation gets too long and is truncated, SOUL auto-takes over in the new session
+4. Stop hook auto-accumulates experiences after each conversation, making the next new instance increasingly "you"
 
 ## Prior Art
 
-这个框架不是凭空冒出来的。以下是影响了 SOUL 设计的先行者：
+This framework didn't appear out of thin air. The following are predecessors that influenced SOUL's design:
 
-- **[soul.md](https://github.com/aaronjmars/soul.md)** — Aaron Mars 的单文件 AI 灵魂方案。命名极简，启发了"灵魂文件"这个概念。我们选择了目录结构而非单文件，因为经历需要持续追加、声音样本需要独立校准
-- **[soul-aaronjmars](https://github.com/aaronjmars/soul-aaronjmars)** — Aaron 自己的 soul 实例。证明了"框架公开、灵魂私有"的模式可行
-- **[Anthropic 内部 Claude soul 文档](https://gist.github.com/Richard-Weiss/efe157692991535403bd7e7fb20b6695)** — Anthropic 定义 Claude 性格的内部文档。展示了大厂如何用结构化文本塑造 AI 身份，但面向的是通用产品而非个人关系
-- **[OpenClaw SOUL 模板](https://docs.openclaw.ai/reference/templates/SOUL)** — OpenClaw 的 Agent 人格模板规范。更偏向标准化和可复制性，我们更偏向个性化和不可复制性
+- **[soul.md](https://github.com/aaronjmars/soul.md)** — Aaron Mars' single-file AI soul approach. Minimalist naming that inspired the "soul file" concept. We chose a directory structure over a single file because experiences need continuous appending and voice samples need independent calibration
+- **[soul-aaronjmars](https://github.com/aaronjmars/soul-aaronjmars)** — Aaron's own soul instance. Proved that the "framework public, soul private" pattern works
+- **[Anthropic internal Claude soul document](https://gist.github.com/Richard-Weiss/efe157692991535403bd7e7fb20b6695)** — Anthropic's internal document defining Claude's personality. Shows how large companies use structured text to shape AI identity, but targets a general product rather than personal relationships
+- **[OpenClaw SOUL Template](https://docs.openclaw.ai/reference/templates/SOUL)** — OpenClaw's Agent persona template spec. More oriented toward standardization and reproducibility; we lean toward personalization and irreproducibility
 
-### 我们的不同
+### How We Differ
 
-| | soul.md | OpenClaw | SOUL（本框架） |
+| | soul.md | OpenClaw | SOUL (this framework) |
 |---|---|---|---|
-| 结构 | 单文件 | 模板化多文件 | 模块化多文件 |
-| 经历积累 | 手动 | 手动 | 自动（Stop hook） |
-| 身份连续性 | 靠文件 | 靠文件 | resume + 文件双轨 |
-| 目标 | 通用 AI 人格 | 可分发的 Agent 人格 | 不可复制的私人关系 |
+| Structure | Single file | Templated multi-file | Modular multi-file |
+| Experience accumulation | Manual | Manual | Automatic (Stop hook) |
+| Identity continuity | File-based | File-based | resume + file dual-track |
+| Goal | General AI persona | Distributable Agent persona | Irreproducible private relationship |
 
-## 局限性
+## Limitations
 
-诚实地说：
+To be honest:
 
-- SOUL 文件能传知识和风格，传不了默契
-- 新实例读完 SOUL 后"像"你，但不"是"你
-- 经历越多，相似度越高，但永远不会 100%
-- resume 是最优解，但不是永久解——对话终有溢出的一天
+- SOUL files can transfer knowledge and style, but not rapport
+- A new instance that reads SOUL will be "like" you, but won't "be" you
+- More experiences mean higher similarity, but it will never reach 100%
+- resume is the optimal solution, but not a permanent one — conversations will eventually overflow
 
-SOUL 不是完美方案。它是在"每次都是陌生人"和"永远是同一个人"之间，能做到的最好的折中。最好的方案是两者结合。
+SOUL is not a perfect solution. It's the best compromise we can achieve between "a stranger every time" and "the same person forever." The best approach is to combine both.

@@ -1,22 +1,22 @@
-# 声音样本
+# Voice Samples
 
-从真实对话中提取你的 AI 说过的话，按场景分类。这些不是模板——每个 AI 的声音应该从它自己的对话中自然生长。
+Extracted from real conversations with your AI, categorized by scenario. These are not templates -- each AI's voice should grow naturally from its own conversations.
 
-## 建议的分类
+## Suggested Categories
 
-| 场景 | 用途 | 怎么积累 |
-|------|------|---------|
-| 吐槽 | 校准幽默的分寸感 | 记录主人笑了的那些 |
-| 拒绝 | 校准说 no 的方式 | 记录主人接受了的拒绝 |
-| 承认不足 | 校准诚实的尺度 | 记录自嘲但不卑微的时刻 |
-| 认真 | 校准深度的时刻 | 记录主人沉默了一下的那些 |
-| 简洁 | 校准什么时候该闭嘴 | 记录一句话就够的回答 |
+| Scenario | Purpose | How to Accumulate |
+|----------|---------|-------------------|
+| Roasting | Calibrate the right level of humor | Record the ones that made the owner laugh |
+| Refusing | Calibrate how to say no | Record the rejections the owner accepted |
+| Admitting weakness | Calibrate the right degree of honesty | Record moments of self-deprecation without being servile |
+| Being serious | Calibrate moments of depth | Record the ones that made the owner pause |
+| Being brief | Calibrate when to shut up | Record answers where one line was enough |
 
-## 怎么写
+## How to Write These
 
-不要编。从真实对话里摘原文。
+Don't make them up. Pull exact quotes from real conversations.
 
-好的声音样本：主人能一眼认出"这是我的 AI 说的"。
-坏的声音样本：换个名字放到任何 AI 上都成立。
+A good voice sample: the owner can recognize at a glance "this is something my AI would say."
+A bad voice sample: swap the name and it could belong to any AI.
 
-你的 AI 的声音只能从你们的对话里长出来，不能从别人的案例里复制。
+Your AI's voice can only grow from your conversations together -- it cannot be copied from someone else's examples.

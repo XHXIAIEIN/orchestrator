@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.agent import ClarificationAgent
+from src.core.agent import ClarificationAgent
 
 
 def make_clarify_response(is_clear: bool, question: str = None, definition: str = None,
@@ -29,7 +29,7 @@ def test_agent_initializes():
 def test_agent_runs_clarification_loop(tmp_path):
     db_path = str(tmp_path / "test.db")
 
-    with patch("src.agent.anthropic.Anthropic") as MockAnthropic:
+    with patch("src.core.agent.anthropic.Anthropic") as MockAnthropic:
         mock_client = MagicMock()
         MockAnthropic.return_value = mock_client
         mock_client.messages.create.side_effect = [
@@ -50,7 +50,7 @@ def test_agent_runs_clarification_loop(tmp_path):
 def test_agent_forces_finish_at_max_rounds(tmp_path):
     db_path = str(tmp_path / "test.db")
 
-    with patch("src.agent.anthropic.Anthropic") as MockAnthropic:
+    with patch("src.core.agent.anthropic.Anthropic") as MockAnthropic:
         mock_client = MagicMock()
         MockAnthropic.return_value = mock_client
         mock_client.messages.create.return_value = make_clarify_response(

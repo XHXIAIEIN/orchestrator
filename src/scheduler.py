@@ -11,22 +11,22 @@ from src.collectors.qqmusic_collector import QQMusicCollector
 from src.collectors.codebase_collector import CodebaseCollector
 from src.collectors.vscode_collector import VSCodeCollector
 from src.collectors.network_collector import NetworkCollector
-from src.analyst import DailyAnalyst
-from src.insights import InsightEngine
-from src.governor import Governor
-from src.profile_analyst import ProfileAnalyst
-from src.health import HealthCheck
-from src.debt_scanner import DebtScanner
-from src.debt_resolver import resolve_debts, check_resolved_debts
-from src.performance import PerformanceReport
-from src.voice_picker import refresh_voice_pool
-from src.skill_evolver import run_evolution
+from src.analysis.analyst import DailyAnalyst
+from src.analysis.insights import InsightEngine
+from src.governance.governor import Governor
+from src.analysis.profile_analyst import ProfileAnalyst
+from src.core.health import HealthCheck
+from src.governance.debt_scanner import DebtScanner
+from src.governance.debt_resolver import resolve_debts, check_resolved_debts
+from src.analysis.performance import PerformanceReport
+from src.voice.voice_picker import refresh_voice_pool
+from src.governance.skill_evolver import run_evolution
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent.parent
-DB_PATH = str(BASE_DIR / "events.db")
+DB_PATH = str(BASE_DIR / "data" / "events.db")
 
 
 def run_collectors():

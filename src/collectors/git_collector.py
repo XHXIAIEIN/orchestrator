@@ -37,8 +37,8 @@ class GitCollector:
                 search_paths = [
                     str(home / "Desktop"),
                     str(home / "Documents"),
+                    str(home / "Documents" / "GitHub"),
                     str(home / "Projects"),
-                    "D:/Users/Administrator/Documents/GitHub",
                 ]
         self.search_paths = search_paths
 

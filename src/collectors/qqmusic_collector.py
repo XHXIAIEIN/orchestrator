@@ -15,17 +15,18 @@ from src.storage.events_db import EventsDB
 class QQMusicCollector:
     def __init__(self, db: EventsDB, qqmusic_path: str = None):
         self.db = db
+        home = Path.home()
         if qqmusic_path:
             self.data_path = Path(qqmusic_path)
         else:
             self.data_path = Path(os.environ.get(
                 "QQMUSIC_DATA_PATH",
-                "C:/Users/test/AppData/Roaming/Tencent/QQMusic",
+                str(home / "AppData" / "Roaming" / "Tencent" / "QQMusic"),
             ))
         # Common QQ Music cache locations
         self.cache_dirs = [
             Path("D:/Program Files/Tencent/QQMusic"),
-            Path("C:/Users/test/Music/QQMusic"),
+            home / "Music" / "QQMusic",
             self.data_path,
         ]
 

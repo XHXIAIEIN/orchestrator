@@ -1,0 +1,1 @@
+{"ts": "2026-03-19T02:45:18.623852+00:00", "task_id": 29, "mode": "auto", "summary": "在 Construct3-LoRA 的训练数据生成脚本里加一个后处理评分层：调用现有的 LLM 路由器对每条生成的 QA pair 打「AI味指数」（0-1），低于阈值自动丢弃或标记重写，把你手动研究「去AI味」的认知输出成代码", "files_changed": [], "commit": "", "status": "done", "duration_s": 247, "notes": ""}

@@ -1,8 +1,8 @@
 # guideline: evidence-based-review
-## 触发条件
-关键词: review, 验收, 检查, 审查, diff, commit
-## 规则
-- 必须自行 git diff 查看实际代码改动
-- 不要仅依赖工部的输出摘要
-- 检查改动是否引入了新的 lint 错误或语法问题
-- 如果有测试，先跑测试
+## Trigger Conditions
+Keywords: review, acceptance, check, audit, diff, commit
+## Rules
+- You must run git diff yourself to inspect the actual code changes
+- Do not rely solely on the Engineering Department's output summary
+- Check whether the changes introduce new lint errors or syntax issues
+- If tests exist, run them first

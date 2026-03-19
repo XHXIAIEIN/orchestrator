@@ -3,7 +3,7 @@ SOUL 对话索引器
 
 扫描 ~/.claude/projects/ 下的历史对话 JSONL 文件，
 切片为 user+assistant 对，调用 scorer 打分，
-取 top N 存入 SOUL/calibration.jsonl。
+取 top N 存入 SOUL/private/calibration.jsonl。
 """
 
 import json
@@ -17,19 +17,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 from scorer import Exchange, score_exchanges
 
 
-# Orchestrator 相关的项目目录名
-ORCHESTRATOR_PROJECT_DIRS = [
-    'D--Agent',
-    'D--Agent-orchestrator',
-    'D--Users-Administrator-Documents-GitHub-orchestrator',
-]
+# Orchestrator project dir names (auto-discovered)
+def _find_orchestrator_project_dirs() -> list[str]:
+    """Find Claude project dirs that contain orchestrator conversations."""
+    projects_root = CLAUDE_PROJECTS_ROOT
+    if not projects_root.exists():
+        return []
+    return [d.name for d in projects_root.iterdir()
+            if d.is_dir() and 'orchestrator' in d.name.lower()]
+
+ORCHESTRATOR_PROJECT_DIRS = _find_orchestrator_project_dirs()
 
 # Claude projects 根目录
 CLAUDE_PROJECTS_ROOT = Path.home() / '.claude' / 'projects'
 
 # 输出路径
 SOUL_DIR = Path(__file__).parent.parent
-CALIBRATION_PATH = SOUL_DIR / 'calibration.jsonl'
+CALIBRATION_PATH = SOUL_DIR / 'private' / 'calibration.jsonl'
 
 
 def find_session_files(
@@ -235,7 +239,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='SOUL 对话索引器')
     parser.add_argument('--top', type=int, default=50, help='保留 top N 条 (默认 50)')
-    parser.add_argument('--output', type=str, help='输出路径 (默认 SOUL/calibration.jsonl)')
+    parser.add_argument('--output', type=str, help='输出路径 (默认 SOUL/private/calibration.jsonl)')
     args = parser.parse_args()
 
     out = Path(args.output) if args.output else None

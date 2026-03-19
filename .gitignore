@@ -1,19 +1,16 @@
 .env
-# SOUL: 框架公开，内容私有
-SOUL/identity.md
-SOUL/voice.md
-SOUL/relationship.md
-SOUL/experiences.jsonl
-SOUL/boot.md
-SOUL/calibration.jsonl
+# SOUL: 框架公开，私人数据在 SOUL/private/
+SOUL/private/
 .claude/settings.local.json
 .claude/skills/persona/
 .claude/hooks/
+.claude/worktrees/
 .superpowers/
 __pycache__/
 *.pyc
 *.db
 *.exe
 .pytest_cache/
+.playwright-mcp/
 dashboard/node_modules/
 node_modules/

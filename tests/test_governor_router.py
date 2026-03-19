@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from src.governor import Governor
+from src.governance.governor import Governor
 
 def test_scrutinize_uses_router():
     """scrutinize() 应通过 LLMRouter 而不是直接调 subprocess。"""
@@ -19,7 +19,7 @@ def test_scrutinize_uses_router():
         }
     }
 
-    with patch("src.governor.get_router") as mock_get_router:
+    with patch("src.governance.governor.get_router") as mock_get_router:
         mock_router = MagicMock()
         mock_router.generate.return_value = "VERDICT: APPROVE\nREASON: looks good"
         mock_get_router.return_value = mock_router
@@ -36,7 +36,7 @@ def test_scrutinize_reject():
     gov = Governor(db=mock_db)
     task = {"action": "delete everything", "reason": "yolo", "spec": {"project": "orchestrator", "cwd": "/orchestrator", "summary": "bad", "problem": "", "observation": "", "expected": ""}}
 
-    with patch("src.governor.get_router") as mock_get_router:
+    with patch("src.governance.governor.get_router") as mock_get_router:
         mock_router = MagicMock()
         mock_router.generate.return_value = "VERDICT: REJECT\nREASON: too dangerous"
         mock_get_router.return_value = mock_router
