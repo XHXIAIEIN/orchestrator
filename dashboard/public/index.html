@@ -101,7 +101,7 @@ nav {
 section { padding: 48px 0; border-bottom: 1px solid var(--border); }
 section:last-of-type { border-bottom: none; }
 .section-head {
-  display: flex; justify-content: space-between; align-items: baseline;
+  display: flex; align-items: baseline; gap: 12px;
   margin-bottom: 24px;
 }
 .section-label { font-size: .68rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text); font-weight: 500; }
@@ -120,22 +120,42 @@ section:last-of-type { border-bottom: none; }
 .tbl-row:last-child { border-bottom: none; }
 
 /* ── Governance ── */
-.gov-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.gov-col {
-  padding: 24px 0;
-}
-.gov-col:not(:last-child) { border-right: 1px solid #f0f0ec; padding-right: 20px; }
-.gov-col:not(:first-child) { padding-left: 20px; }
-.gov-dept-label { font-size: .58rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-dim); }
-.gov-dept-name { font-family: var(--serif); font-size: 1.4rem; color: var(--text); margin: 6px 0 18px; }
-.gov-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: .78rem; color: var(--text-mid); border-bottom: 1px solid #f0f0ec; }
-.gov-row:last-child { border-bottom: none; }
-.gov-val { color: var(--text); font-weight: 500; }
-.gov-bar-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: .72rem; }
-.gov-bar-name { min-width: 28px; color: var(--text-mid); }
-.gov-bar { flex: 1; height: 4px; background: #f0f0ec; border-radius: 2px; overflow: hidden; }
-.gov-bar-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width .4s ease; }
-.gov-note { font-size: .68rem; color: var(--text-dim); margin-top: 14px; }
+.gov-stats { display: flex; gap: 24px; margin-bottom: 24px; flex-wrap: wrap; }
+.gov-stat { display: flex; align-items: baseline; gap: 6px; }
+.gov-stat-num { font-size: 1.8rem; font-weight: 400; font-family: var(--serif); color: var(--text); line-height: 1; }
+.gov-stat-label { font-size: .65rem; color: var(--text-dim); letter-spacing: .5px; }
+.gov-stat-num.green { color: var(--green); }
+.gov-stat-num.red { color: var(--red); }
+.gov-stat-num.blue { color: #1a56db; }
+
+.gov-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+@media (max-width: 860px) { .gov-sections { grid-template-columns: 1fr; } }
+
+.gov-sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+
+/* 六部进度 */
+.dept-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.dept-name { font-size: .75rem; color: var(--text-mid); min-width: 24px; }
+.dept-bar { flex: 1; height: 4px; background: #f0f0ec; border-radius: 2px; overflow: hidden; position: relative; }
+.dept-bar-done { height: 100%; background: var(--green); border-radius: 2px; position: absolute; left: 0; top: 0; transition: width .4s; }
+.dept-bar-fail { height: 100%; background: var(--red); border-radius: 2px; position: absolute; top: 0; transition: width .4s, left .4s; }
+.dept-stat { font-size: .6rem; color: var(--text-dim); min-width: 40px; text-align: right; }
+
+/* 最近任务列表 */
+.gov-task-list { display: flex; flex-direction: column; }
+.gov-task-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f4f4f0; font-size: .78rem; }
+.gov-task-item:last-child { border-bottom: none; }
+.gov-task-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+.gov-task-dot.done { background: var(--green); }
+.gov-task-dot.failed { background: var(--red); }
+.gov-task-dot.running { background: #1a56db; animation: pulse 1.5s infinite; }
+.gov-task-dot.pending { background: var(--text-dim); }
+.gov-task-dot.awaiting { background: var(--amber); }
+.gov-task-dot.rejected { background: var(--red); opacity: .5; }
+.gov-task-body { flex: 1; min-width: 0; }
+.gov-task-action { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gov-task-meta { font-size: .62rem; color: var(--text-dim); margin-top: 2px; display: flex; gap: 8px; }
+.gov-task-time { font-size: .65rem; color: var(--text-dim); flex-shrink: 0; }
 
 /* ── Activity ── */
 .activity-grid { display: grid; grid-template-columns: 1fr 260px; gap: 32px; }
@@ -180,12 +200,12 @@ section:last-of-type { border-bottom: none; }
 /* ── Insights ── */
 .insight-daily {
   font-family: var(--serif); font-size: .95rem; line-height: 1.9;
-  color: var(--text); max-width: 680px; margin-bottom: 24px;
+  color: var(--text); margin-bottom: 24px;
 }
 .insight-daily .tags { font-family: var(--mono); font-size: .7rem; color: var(--accent); margin-top: 8px; letter-spacing: .3px; }
 .insight-overview {
   font-family: var(--serif); font-size: .9rem; line-height: 2;
-  color: var(--text-mid); max-width: 680px;
+  color: var(--text-mid);
   padding: 0; margin-bottom: 32px;
 }
 .sub-label { font-size: .62rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text); font-weight: 500; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
@@ -356,21 +376,15 @@ section:last-of-type { border-bottom: none; }
       <span class="section-label">三省六部</span>
       <span class="section-meta" id="gov-meta"></span>
     </div>
-    <div class="gov-grid" id="gov-grid">
-      <div class="gov-col">
-        <div class="gov-dept-label">中书省</div>
-        <div class="gov-dept-name">决策</div>
-        <div id="gov-zhongshu"></div>
+    <div id="gov-stats" class="gov-stats"></div>
+    <div class="gov-sections">
+      <div>
+        <div class="gov-sub-label">六部执行</div>
+        <div id="gov-depts"></div>
       </div>
-      <div class="gov-col">
-        <div class="gov-dept-label">门下省</div>
-        <div class="gov-dept-name">审查</div>
-        <div id="gov-menxia"></div>
-      </div>
-      <div class="gov-col">
-        <div class="gov-dept-label">尚书省</div>
-        <div class="gov-dept-name">执行</div>
-        <div id="gov-shangshu"></div>
+      <div>
+        <div class="gov-sub-label">最近任务</div>
+        <div id="gov-recent" class="gov-task-list"></div>
       </div>
     </div>
   </section>
@@ -469,6 +483,7 @@ section:last-of-type { border-bottom: none; }
 <script>
 const $=s=>document.getElementById(s);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function relTime(ts){if(!ts)return'--';const d=Date.now()-new Date(ts).getTime();if(d<0)return'now';const s=Math.floor(d/1000);if(s<60)return s+'s ago';const m=Math.floor(s/60);if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago'}
 let _events=[],_tasks=[],_stats={};
 
 /* ── Roast ── */
@@ -496,34 +511,62 @@ function generateRoast(stats,events,tasks){
 
 /* ── Governance ── */
 function renderGovernance(tasks){
-  const auto=tasks.filter(t=>t.source==='auto').length;
-  const manual=tasks.length-auto;
-  const recent=tasks[0];
-  $('gov-zhongshu').innerHTML=
-    `<div class='gov-row'><span>Auto</span><span class='gov-val'>${auto}</span></div>`+
-    `<div class='gov-row'><span>Manual</span><span class='gov-val'>${manual}</span></div>`+
-    `<div class='gov-row'><span>Total</span><span class='gov-val'>${tasks.length}</span></div>`+
-    (recent?`<div class='gov-note'>Latest: ${esc(recent.action||'')}</div>`:'');
+  const d=tasks.filter(t=>t.status==='done').length;
+  const f=tasks.filter(t=>t.status==='failed').length;
+  const r=tasks.filter(t=>t.status==='running').length;
   const scrutinized=tasks.filter(t=>t.scrutiny_note);
   const approved=scrutinized.filter(t=>(t.scrutiny_note||'').includes('准奏'));
-  const rejected=tasks.filter(t=>t.status==='scrutiny_failed');
-  const bypassed=tasks.filter(t=>(t.scrutiny_note||'').includes('默认放行'));
-  $('gov-menxia').innerHTML=
-    `<div class='gov-row'><span>Reviewed</span><span class='gov-val'>${scrutinized.length}</span></div>`+
-    `<div class='gov-row'><span>Approved</span><span class='gov-val' style='color:var(--green)'>${approved.length}</span></div>`+
-    `<div class='gov-row'><span>Rejected</span><span class='gov-val' style='color:var(--red)'>${rejected.length}</span></div>`+
-    `<div class='gov-row'><span>Bypassed</span><span class='gov-val' style='color:var(--amber)'>${bypassed.length}</span></div>`+
-    `<div class='gov-note'>Pass rate: ${scrutinized.length?Math.round(approved.length/scrutinized.length*100):'--'}%</div>`;
+  const passRate=scrutinized.length?Math.round(approved.length/scrutinized.length*100):'--';
+
+  // Top stats row
+  $('gov-stats').innerHTML=
+    `<div class='gov-stat'><span class='gov-stat-num'>${tasks.length}</span><span class='gov-stat-label'>任务</span></div>`+
+    `<div class='gov-stat'><span class='gov-stat-num green'>${d}</span><span class='gov-stat-label'>完成</span></div>`+
+    `<div class='gov-stat'><span class='gov-stat-num red'>${f}</span><span class='gov-stat-label'>失败</span></div>`+
+    `<div class='gov-stat'><span class='gov-stat-num blue'>${r}</span><span class='gov-stat-label'>进行中</span></div>`+
+    `<div class='gov-stat'><span class='gov-stat-num'>${passRate}%</span><span class='gov-stat-label'>审查通过率</span></div>`;
+  $('gov-meta').textContent=`${tasks.length} tasks`;
+
+  // Department bars with done + failed stacked
   const depts={engineering:{n:'工部',d:0,f:0},operations:{n:'户部',d:0,f:0},protocol:{n:'礼部',d:0,f:0},security:{n:'兵部',d:0,f:0},quality:{n:'刑部',d:0,f:0},personnel:{n:'吏部',d:0,f:0}};
   tasks.forEach(t=>{const k=(t.spec?.department)||'engineering';if(!depts[k])depts[k]={n:k,d:0,f:0};if(t.status==='done')depts[k].d++;if(t.status==='failed')depts[k].f++});
-  const d=tasks.filter(t=>t.status==='done').length,f=tasks.filter(t=>t.status==='failed').length,r=tasks.filter(t=>t.status==='running').length;
-  let h=`<div class='gov-row'><span>Done</span><span class='gov-val' style='color:var(--green)'>${d}</span></div>`+
-    `<div class='gov-row'><span>Failed</span><span class='gov-val' style='color:var(--red)'>${f}</span></div>`+
-    `<div class='gov-row'><span>Running</span><span class='gov-val'>${r}</span></div><div style='margin-top:14px'>`;
-  for(const[,dept]of Object.entries(depts)){const t=dept.d+dept.f;const p=t?Math.round(dept.d/t*100):0;
-    h+=`<div class='gov-bar-row'><span class='gov-bar-name'>${dept.n}</span><div class='gov-bar'><div class='gov-bar-fill' style='width:${p}%'></div></div><span style='font-size:.6rem;color:var(--text-dim)'>${dept.d}/${t}</span></div>`}
-  h+='</div>';$('gov-shangshu').innerHTML=h;
-  $('gov-meta').textContent=`${tasks.length} tasks | ${d} done | ${f} failed`;
+  const maxTotal=Math.max(1,...Object.values(depts).map(x=>x.d+x.f));
+  $('gov-depts').innerHTML=Object.entries(depts).map(([,dept])=>{
+    const total=dept.d+dept.f;
+    const doneW=Math.round(dept.d/maxTotal*100);
+    const failW=Math.round(dept.f/maxTotal*100);
+    const rate=total?Math.round(dept.d/total*100):0;
+    return `<div class='dept-row'>
+      <span class='dept-name'>${dept.n}</span>
+      <div class='dept-bar'>
+        <div class='dept-bar-done' style='width:${doneW}%'></div>
+        <div class='dept-bar-fail' style='width:${failW}%;left:${doneW}%'></div>
+      </div>
+      <span class='dept-stat'>${dept.d}/${total} ${rate}%</span>
+    </div>`;
+  }).join('');
+
+  // Recent tasks list (last 8)
+  const recent=tasks.slice(0,8);
+  $('gov-recent').innerHTML=recent.map(t=>{
+    const s=t.status||'pending';
+    const dotCls=s==='done'?'done':s==='failed'?'failed':s==='running'?'running':s==='awaiting_approval'?'awaiting':s==='scrutiny_failed'?'rejected':'pending';
+    const dept=(t.spec?.department)?({engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'}[t.spec.department]||t.spec.department):'';
+    const mode=t.spec?.cognitive_mode||'';
+    const time=t.created_at?relTime(t.created_at):'';
+    return `<div class='gov-task-item'>
+      <div class='gov-task-dot ${dotCls}'></div>
+      <div class='gov-task-body'>
+        <div class='gov-task-action' title='${esc(t.action||'')}'>${esc((t.action||'').slice(0,60))}</div>
+        <div class='gov-task-meta'>
+          ${dept?`<span>${dept}</span>`:''}
+          ${mode?`<span>${mode}</span>`:''}
+          <span>#${t.id}</span>
+        </div>
+      </div>
+      <span class='gov-task-time'>${time}</span>
+    </div>`;
+  }).join('')||'<div style="font-size:.75rem;color:var(--text-dim)">暂无任务</div>';
 }
 
 /* ── Heatmap ── */
