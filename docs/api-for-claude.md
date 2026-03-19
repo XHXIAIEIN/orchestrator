@@ -70,6 +70,47 @@ curl -s -X POST http://localhost:23714/api/scenarios/full_audit/run -H 'Content-
 | `deep_scan` | protocol + security + personnel | Debt scan + security + metrics |
 | `full_pipeline` | protocol + security + quality + personnel | All read-only departments at once |
 
+## Agent Observability
+
+```bash
+# All running agents with real-time status (what they're doing right now)
+curl -s http://localhost:23714/api/agents/live
+
+# Full execution trace for a specific task (all turns, tools, decisions, errors)
+curl -s http://localhost:23714/api/agents/42/trace
+
+# Event history for a task
+curl -s http://localhost:23714/api/agent-events/42
+
+# SSE real-time stream (all agent events across all tasks)
+curl -s http://localhost:23714/api/agent-events-stream
+```
+
+`/api/agents/live` response:
+```json
+{
+  "agents": [{
+    "task_id": 42,
+    "department": "engineering",
+    "project": "orchestrator",
+    "action": "fix scheduler import",
+    "cognitive_mode": "react",
+    "elapsed_s": 45,
+    "current_activity": {
+      "turn": 3,
+      "tools": ["Edit"],
+      "thinking_preview": "found the issue on line 29..."
+    },
+    "recent_events": [...]
+  }],
+  "running_count": 2,
+  "pending_count": 1,
+  "max_concurrent": 3
+}
+```
+
+`/api/agents/:id/trace` — full execution replay: turns, tools used, decisions made, errors hit, cost.
+
 ## Experiences
 
 ```bash

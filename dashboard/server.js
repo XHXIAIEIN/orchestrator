@@ -905,6 +905,153 @@ app.get('/api/pipeline/departments', (req, res) => {
   res.json(result);
 });
 
+// ── Agent Live Status: aggregated real-time view for external consumers ──
+
+app.get('/api/agents/live', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({ agents: [], idle: true });
+  try {
+    // Running tasks = active agents
+    const running = dbAll(db, "SELECT * FROM tasks WHERE status = 'running' ORDER BY started_at ASC");
+    const agents = running.map(t => {
+      let spec = {};
+      try { spec = JSON.parse(t.spec || '{}'); } catch {}
+
+      // Get latest agent events for this task
+      let events = [];
+      try {
+        events = dbAll(db,
+          "SELECT event_type, data, created_at FROM agent_events WHERE task_id = ? ORDER BY id DESC LIMIT 5",
+          [t.id]
+        ).reverse();
+      } catch {}
+
+      // Parse latest turn info
+      const lastTurn = events.filter(e => e.event_type === 'agent_turn').pop();
+      let currentActivity = null;
+      if (lastTurn) {
+        try {
+          const d = JSON.parse(lastTurn.data || '{}');
+          const tools = d.tools || [];
+          const thinking = d.thinking || [];
+          currentActivity = {
+            turn: d.turn,
+            tools: tools.map(t => t.tool),
+            thinking_preview: thinking[0] ? thinking[0].slice(0, 100) : null,
+            text_preview: (d.text || [])[0]?.slice(0, 100) || null,
+          };
+        } catch {}
+      }
+
+      // Elapsed time
+      let elapsed_s = 0;
+      if (t.started_at) {
+        elapsed_s = Math.floor((Date.now() - new Date(t.started_at).getTime()) / 1000);
+      }
+
+      return {
+        task_id: t.id,
+        department: spec.department || null,
+        project: spec.project || null,
+        cwd: spec.cwd || null,
+        action: t.action,
+        cognitive_mode: spec.cognitive_mode || null,
+        started_at: t.started_at,
+        elapsed_s,
+        current_activity: currentActivity,
+        recent_events: events.map(e => ({
+          type: e.event_type,
+          data: JSON.parse(e.data || '{}'),
+          at: e.created_at,
+        })),
+      };
+    });
+
+    // Pending/queued
+    const pending = dbAll(db, "SELECT COUNT(*) as cnt FROM tasks WHERE status IN ('pending', 'awaiting_approval')");
+    const pendingCount = pending[0]?.cnt || 0;
+
+    res.json({
+      agents,
+      idle: agents.length === 0,
+      running_count: agents.length,
+      pending_count: pendingCount,
+      max_concurrent: 3,
+    });
+  } catch (e) { res.json({ agents: [], idle: true, error: e.message }); }
+  finally { db.close(); }
+});
+
+app.get('/api/agents/:taskId/trace', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json({ task: null, events: [] });
+  try {
+    const taskId = parseInt(req.params.taskId);
+
+    // Task info
+    const tasks = dbAll(db, 'SELECT * FROM tasks WHERE id = ?', [taskId]);
+    if (!tasks.length) return res.status(404).json({ error: 'task not found' });
+    const t = tasks[0];
+    let spec = {};
+    try { spec = JSON.parse(t.spec || '{}'); } catch {}
+
+    // All events
+    const events = dbAll(db,
+      'SELECT id, event_type, data, created_at FROM agent_events WHERE task_id = ? ORDER BY id ASC',
+      [taskId]
+    ).map(e => ({ ...e, data: JSON.parse(e.data || '{}') }));
+
+    // Build trace summary
+    const turns = events.filter(e => e.event_type === 'agent_turn').length;
+    const tools_used = [];
+    const errors = [];
+    const decisions = [];
+    for (const e of events) {
+      if (e.event_type === 'agent_turn') {
+        for (const tool of (e.data.tools || [])) {
+          tools_used.push(tool.tool);
+        }
+        if (e.data.error) errors.push({ turn: e.data.turn, error: e.data.error });
+        if (e.data.thinking) {
+          for (const thought of e.data.thinking) {
+            decisions.push({ turn: e.data.turn, thought: thought.slice(0, 200) });
+          }
+        }
+      }
+      if (e.event_type === 'agent_result' && e.data.is_error) {
+        errors.push({ turn: 'final', error: e.data.stop_reason || 'unknown' });
+      }
+    }
+
+    const result = events.find(e => e.event_type === 'agent_result');
+
+    res.json({
+      task: {
+        id: t.id,
+        action: t.action,
+        status: t.status,
+        department: spec.department,
+        project: spec.project,
+        cognitive_mode: spec.cognitive_mode,
+        started_at: t.started_at,
+        finished_at: t.finished_at,
+        output: t.output,
+      },
+      trace: {
+        total_turns: turns,
+        tools_used: [...new Set(tools_used)],
+        tool_call_count: tools_used.length,
+        errors,
+        decisions: decisions.slice(-10),
+        duration_ms: result?.data?.duration_ms || null,
+        cost_usd: result?.data?.cost_usd || null,
+      },
+      events,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+  finally { db.close(); }
+});
+
 // ── Department API: per-department detail endpoints ──
 
 app.get('/api/departments', (req, res) => {
