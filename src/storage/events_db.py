@@ -110,6 +110,18 @@ class EventsDB:
                     UNIQUE(session_id, summary)
                 );
                 CREATE INDEX IF NOT EXISTS idx_debts_status ON attention_debts(status);
+
+                CREATE TABLE IF NOT EXISTS experiences (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    detail TEXT NOT NULL,
+                    instance TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(date, summary)
+                );
+                CREATE INDEX IF NOT EXISTS idx_experiences_date ON experiences(date);
             """)
             # Migrations: add columns to existing databases
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
@@ -377,3 +389,37 @@ class EventsDB:
                 (since,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Experiences ──
+
+    def add_experience(self, date: str, type: str, summary: str, detail: str, instance: str = None) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO experiences (date, type, summary, detail, instance, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (date, type, summary, detail, instance, now)
+            )
+            return cursor.lastrowid
+
+    def get_recent_experiences(self, n: int = 10) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT date, type, summary, detail, instance FROM experiences "
+                "ORDER BY date DESC, id DESC LIMIT ?",
+                (n,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_experiences_by_type(self, type: str, n: int = 20) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT date, type, summary, detail, instance FROM experiences "
+                "WHERE type = ? ORDER BY date DESC LIMIT ?",
+                (type, n)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_experiences(self) -> int:
+        with self._connect() as conn:
+            return conn.execute("SELECT COUNT(*) FROM experiences").fetchone()[0]

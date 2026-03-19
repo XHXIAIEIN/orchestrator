@@ -331,6 +331,23 @@ app.get('/api/debts', (req, res) => {
   finally { db.close(); }
 });
 
+app.get('/api/experiences', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  try {
+    const { type } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    let sql = 'SELECT date, type, summary, detail, instance FROM experiences';
+    const params = [];
+    if (type) { sql += ' WHERE type = ?'; params.push(type); }
+    sql += ' ORDER BY date DESC, id DESC LIMIT ?';
+    params.push(limit);
+    const rows = dbAll(db, sql, params);
+    res.json(rows);
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
 app.get('/api/stats/categories', (req, res) => {
   const db = getDb();
   if (!db) return res.json([]);

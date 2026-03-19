@@ -202,8 +202,24 @@ def format_calibration_section(samples: list[dict]) -> str:
 def recent_experiences(
     n: int = 5,
     path: Optional[Path] = None,
+    db_path: Optional[Path] = None,
 ) -> list[dict]:
-    """读取最近 N 条经历"""
+    """Read recent N experiences. Prefers DB, falls back to jsonl file."""
+    # Try DB first
+    dp = db_path or (SOUL_DIR.parent / 'data' / 'events.db')
+    if dp.exists():
+        try:
+            import sys
+            sys.path.insert(0, str(SOUL_DIR.parent))
+            from src.storage.events_db import EventsDB
+            db = EventsDB(str(dp))
+            entries = db.get_recent_experiences(n)
+            if entries:
+                return entries
+        except Exception:
+            pass
+
+    # Fallback to jsonl
     p = path or EXPERIENCES_PATH
     if not p.exists():
         return []
@@ -216,7 +232,6 @@ def recent_experiences(
             except json.JSONDecodeError:
                 continue
 
-    # 最后 N 条
     return entries[-n:]
 
 
