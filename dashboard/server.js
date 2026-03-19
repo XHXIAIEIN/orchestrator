@@ -17,7 +17,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // Swagger UI at /docs
-app.get('/docs', (req, res) => {
+app.get('/api-docs', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Orchestrator API</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
 </head><body>
