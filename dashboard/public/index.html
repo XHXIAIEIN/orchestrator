@@ -128,34 +128,52 @@ section:last-of-type { border-bottom: none; }
 .gov-stat-num.red { color: var(--red); }
 .gov-stat-num.blue { color: #1a56db; }
 
-.gov-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-@media (max-width: 860px) { .gov-sections { grid-template-columns: 1fr; } }
+.gov-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+@media (max-width: 860px) { .gov-layout { grid-template-columns: 1fr; } }
+.gov-left { display: flex; flex-direction: column; gap: 0; }
+.gov-right { display: flex; flex-direction: column; }
 
-.gov-sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+.gov-block { padding: 14px 0; border-bottom: 1px solid #f0f0ec; }
+.gov-block:first-child { padding-top: 0; }
+.gov-block:last-child { border-bottom: none; }
+.gov-block-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.gov-block-title { font-family: var(--serif); font-size: .95rem; color: var(--text); }
+.gov-block-count { font-size: .62rem; color: var(--text-dim); }
+
+/* 省内条目 */
+.gov-entry { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: .72rem; }
+.gov-entry-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.gov-entry-dot.approved { background: var(--green); }
+.gov-entry-dot.rejected { background: var(--red); }
+.gov-entry-dot.auto { background: var(--accent); }
+.gov-entry-dot.manual { background: var(--amber); }
+.gov-entry-text { color: var(--text-mid); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gov-entry-tag { font-size: .58rem; color: var(--text-dim); flex-shrink: 0; }
 
 /* 六部进度 */
-.dept-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
-.dept-name { font-size: .75rem; color: var(--text-mid); min-width: 24px; }
-.dept-bar { flex: 1; height: 4px; background: #f0f0ec; border-radius: 2px; overflow: hidden; position: relative; }
+.dept-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.dept-name { font-size: .7rem; color: var(--text-mid); min-width: 24px; }
+.dept-bar { flex: 1; height: 3px; background: #f0f0ec; border-radius: 2px; overflow: hidden; position: relative; }
 .dept-bar-done { height: 100%; background: var(--green); border-radius: 2px; position: absolute; left: 0; top: 0; transition: width .4s; }
 .dept-bar-fail { height: 100%; background: var(--red); border-radius: 2px; position: absolute; top: 0; transition: width .4s, left .4s; }
-.dept-stat { font-size: .6rem; color: var(--text-dim); min-width: 40px; text-align: right; }
+.dept-stat { font-size: .58rem; color: var(--text-dim); min-width: 36px; text-align: right; }
 
-/* 最近任务列表 */
-.gov-task-list { display: flex; flex-direction: column; }
-.gov-task-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f4f4f0; font-size: .78rem; }
+/* 右列：最近任务 */
+.gov-sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
+.gov-task-list { display: flex; flex-direction: column; flex: 1; }
+.gov-task-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f4f4f0; font-size: .75rem; }
 .gov-task-item:last-child { border-bottom: none; }
-.gov-task-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+.gov-task-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
 .gov-task-dot.done { background: var(--green); }
 .gov-task-dot.failed { background: var(--red); }
 .gov-task-dot.running { background: #1a56db; animation: pulse 1.5s infinite; }
 .gov-task-dot.pending { background: var(--text-dim); }
 .gov-task-dot.awaiting { background: var(--amber); }
-.gov-task-dot.rejected { background: var(--red); opacity: .5; }
+.gov-task-dot.scrutiny_failed { background: var(--red); opacity: .5; }
 .gov-task-body { flex: 1; min-width: 0; }
 .gov-task-action { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gov-task-meta { font-size: .62rem; color: var(--text-dim); margin-top: 2px; display: flex; gap: 8px; }
-.gov-task-time { font-size: .65rem; color: var(--text-dim); flex-shrink: 0; }
+.gov-task-meta { font-size: .6rem; color: var(--text-dim); margin-top: 2px; display: flex; gap: 6px; }
+.gov-task-time { font-size: .62rem; color: var(--text-dim); flex-shrink: 0; }
 
 /* ── Activity ── */
 .activity-grid { display: grid; grid-template-columns: 1fr 260px; gap: 32px; }
@@ -377,14 +395,13 @@ section:last-of-type { border-bottom: none; }
       <span class="section-meta" id="gov-meta"></span>
     </div>
     <div id="gov-stats" class="gov-stats"></div>
-    <div class="gov-sections">
-      <div>
-        <div class="gov-sub-label">六部执行</div>
-        <div id="gov-depts"></div>
-        <div class="gov-sub-label" style="margin-top:20px">门下省审查</div>
-        <div id="gov-scrutiny"></div>
+    <div class="gov-layout">
+      <div class="gov-left">
+        <div class="gov-block" id="gov-zhongshu"></div>
+        <div class="gov-block" id="gov-menxia"></div>
+        <div class="gov-block" id="gov-shangshu"></div>
       </div>
-      <div>
+      <div class="gov-right">
         <div class="gov-sub-label">最近任务</div>
         <div id="gov-recent" class="gov-task-list"></div>
       </div>
@@ -513,65 +530,80 @@ function generateRoast(stats,events,tasks){
 
 /* ── Governance ── */
 function renderGovernance(tasks){
+  const deptMap={engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'};
   const d=tasks.filter(t=>t.status==='done').length;
   const f=tasks.filter(t=>t.status==='failed').length;
   const r=tasks.filter(t=>t.status==='running').length;
   const scrutinized=tasks.filter(t=>t.scrutiny_note);
-  const approved=scrutinized.filter(t=>(t.scrutiny_note||'').includes('准奏'));
-  const passRate=scrutinized.length?Math.round(approved.length/scrutinized.length*100):'--';
+  const approvedList=scrutinized.filter(t=>(t.scrutiny_note||'').includes('准奏'));
+  const passRate=scrutinized.length?Math.round(approvedList.length/scrutinized.length*100):'--';
 
-  // Top stats row
+  // Stats bar
   $('gov-stats').innerHTML=
     `<div class='gov-stat'><span class='gov-stat-num'>${tasks.length}</span><span class='gov-stat-label'>任务</span></div>`+
     `<div class='gov-stat'><span class='gov-stat-num green'>${d}</span><span class='gov-stat-label'>完成</span></div>`+
     `<div class='gov-stat'><span class='gov-stat-num red'>${f}</span><span class='gov-stat-label'>失败</span></div>`+
     `<div class='gov-stat'><span class='gov-stat-num blue'>${r}</span><span class='gov-stat-label'>进行中</span></div>`+
-    `<div class='gov-stat'><span class='gov-stat-num'>${passRate}%</span><span class='gov-stat-label'>审查通过率</span></div>`;
+    `<div class='gov-stat'><span class='gov-stat-num'>${passRate}%</span><span class='gov-stat-label'>通过率</span></div>`;
   $('gov-meta').textContent=`${tasks.length} tasks`;
 
-  // Department bars with done + failed stacked
+  // ── 中书省：决策（最近 5 条创建的任务，区分 auto/manual）
+  const recentCreated=tasks.slice(0,5);
+  $('gov-zhongshu').innerHTML=`<div class='gov-block-head'><span class='gov-block-title'>中书省</span><span class='gov-block-count'>决策 ${tasks.length}</span></div>`+
+    recentCreated.map(t=>{
+      const isAuto=t.source==='auto';
+      const dept=deptMap[(t.spec?.department)]||'';
+      return `<div class='gov-entry'>
+        <div class='gov-entry-dot ${isAuto?"auto":"manual"}'></div>
+        <span class='gov-entry-text' title='${esc(t.action||'')}'>${esc((t.action||'').slice(0,50))}</span>
+        <span class='gov-entry-tag'>${dept} ${isAuto?'自动':'手动'}</span>
+      </div>`;
+    }).join('');
+
+  // ── 门下省：审查（最近 5 条有 scrutiny_note 的）
+  const reviewed=scrutinized.slice(0,5);
+  $('gov-menxia').innerHTML=`<div class='gov-block-head'><span class='gov-block-title'>门下省</span><span class='gov-block-count'>审查 ${scrutinized.length} | 通过 ${approvedList.length}</span></div>`+
+    (reviewed.length?reviewed.map(t=>{
+      const ok=(t.scrutiny_note||'').includes('准奏');
+      const note=(t.scrutiny_note||'').replace(/准奏[：:]/,'').slice(0,40);
+      return `<div class='gov-entry'>
+        <div class='gov-entry-dot ${ok?"approved":"rejected"}'></div>
+        <span class='gov-entry-text' title='${esc(t.action||'')}'>#${t.id} ${esc((t.action||'').slice(0,40))}</span>
+        <span class='gov-entry-tag'>${ok?'准奏':'驳回'}</span>
+      </div>`;
+    }).join(''):'<div style="font-size:.72rem;color:var(--text-dim)">暂无审查</div>');
+
+  // ── 尚书省：六部执行进度
   const depts={engineering:{n:'工部',d:0,f:0},operations:{n:'户部',d:0,f:0},protocol:{n:'礼部',d:0,f:0},security:{n:'兵部',d:0,f:0},quality:{n:'刑部',d:0,f:0},personnel:{n:'吏部',d:0,f:0}};
   tasks.forEach(t=>{const k=(t.spec?.department)||'engineering';if(!depts[k])depts[k]={n:k,d:0,f:0};if(t.status==='done')depts[k].d++;if(t.status==='failed')depts[k].f++});
   const maxTotal=Math.max(1,...Object.values(depts).map(x=>x.d+x.f));
-  $('gov-depts').innerHTML=Object.entries(depts).map(([,dept])=>{
-    const total=dept.d+dept.f;
-    const doneW=Math.round(dept.d/maxTotal*100);
-    const failW=Math.round(dept.f/maxTotal*100);
-    const rate=total?Math.round(dept.d/total*100):0;
-    return `<div class='dept-row'>
-      <span class='dept-name'>${dept.n}</span>
-      <div class='dept-bar'>
-        <div class='dept-bar-done' style='width:${doneW}%'></div>
-        <div class='dept-bar-fail' style='width:${failW}%;left:${doneW}%'></div>
-      </div>
-      <span class='dept-stat'>${dept.d}/${total} ${rate}%</span>
-    </div>`;
-  }).join('');
+  $('gov-shangshu').innerHTML=`<div class='gov-block-head'><span class='gov-block-title'>尚书省</span><span class='gov-block-count'>六部</span></div>`+
+    Object.entries(depts).map(([,dept])=>{
+      const total=dept.d+dept.f;
+      const doneW=Math.round(dept.d/maxTotal*100);
+      const failW=Math.round(dept.f/maxTotal*100);
+      return `<div class='dept-row'>
+        <span class='dept-name'>${dept.n}</span>
+        <div class='dept-bar'>
+          <div class='dept-bar-done' style='width:${doneW}%'></div>
+          <div class='dept-bar-fail' style='width:${failW}%;left:${doneW}%'></div>
+        </div>
+        <span class='dept-stat'>${dept.d}/${total}</span>
+      </div>`;
+    }).join('');
 
-  // Scrutiny log (recent reviews)
-  const reviewed=tasks.filter(t=>t.scrutiny_note).slice(0,5);
-  $('gov-scrutiny').innerHTML=reviewed.length?reviewed.map(t=>{
-    const approved=(t.scrutiny_note||'').includes('准奏');
-    const note=(t.scrutiny_note||'').replace('准奏：','').replace('准奏:','').slice(0,50);
-    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.72rem;border-bottom:1px solid #f4f4f0">
-      <span style="color:${approved?'var(--green)':'var(--red)'};font-weight:500">${approved?'准奏':'驳回'}</span>
-      <span style="color:var(--text-mid);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.action||'')}">#${t.id} ${esc((t.action||'').slice(0,40))}</span>
-      <span style="color:var(--text-dim);font-size:.62rem;flex-shrink:0">${note}</span>
-    </div>`;
-  }).join(''):'<div style="font-size:.72rem;color:var(--text-dim)">暂无审查记录</div>';
-
-  // Recent tasks list (last 8)
-  const recent=tasks.slice(0,8);
-  $('gov-recent').innerHTML=recent.map(t=>{
+  // ── 右列：最近任务
+  const recentAll=tasks.slice(0,12);
+  $('gov-recent').innerHTML=recentAll.map(t=>{
     const s=t.status||'pending';
-    const dotCls=s==='done'?'done':s==='failed'?'failed':s==='running'?'running':s==='awaiting_approval'?'awaiting':s==='scrutiny_failed'?'rejected':'pending';
-    const dept=(t.spec?.department)?({engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'}[t.spec.department]||t.spec.department):'';
+    const dotCls=s==='done'?'done':s==='failed'?'failed':s==='running'?'running':s==='awaiting_approval'?'awaiting':s;
+    const dept=deptMap[(t.spec?.department)]||'';
     const mode=t.spec?.cognitive_mode||'';
     const time=t.created_at?relTime(t.created_at):'';
     return `<div class='gov-task-item'>
       <div class='gov-task-dot ${dotCls}'></div>
       <div class='gov-task-body'>
-        <div class='gov-task-action' title='${esc(t.action||'')}'>${esc((t.action||'').slice(0,60))}</div>
+        <div class='gov-task-action' title='${esc(t.action||'')}'>${esc((t.action||'').slice(0,55))}</div>
         <div class='gov-task-meta'>
           ${dept?`<span>${dept}</span>`:''}
           ${mode?`<span>${mode}</span>`:''}
@@ -580,7 +612,7 @@ function renderGovernance(tasks){
       </div>
       <span class='gov-task-time'>${time}</span>
     </div>`;
-  }).join('')||'<div style="font-size:.75rem;color:var(--text-dim)">暂无任务</div>';
+  }).join('')||'<div style="font-size:.72rem;color:var(--text-dim)">暂无任务</div>';
 }
 
 /* ── Heatmap ── */
