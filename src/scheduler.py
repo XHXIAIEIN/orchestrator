@@ -29,21 +29,88 @@ BASE_DIR = Path(__file__).parent.parent
 DB_PATH = str(BASE_DIR / "data" / "events.db")
 
 
+BUILTIN_COLLECTORS = {
+    "claude":         lambda db, cfg: ClaudeCollector(db=db, **({"claude_home": cfg["path"]} if cfg.get("path") else {})),
+    "browser":        lambda db, cfg: BrowserCollector(db=db),
+    "git":            lambda db, cfg: GitCollector(db=db, search_paths=cfg.get("paths")),
+    "steam":          lambda db, cfg: SteamCollector(db=db),
+    "youtube_music":  lambda db, cfg: YouTubeMusicCollector(db=db),
+    "qqmusic":        lambda db, cfg: QQMusicCollector(db=db, qqmusic_path=cfg.get("path")),
+    "codebase":       lambda db, cfg: CodebaseCollector(db=db),
+    "vscode":         lambda db, cfg: VSCodeCollector(db=db),
+    "network":        lambda db, cfg: NetworkCollector(db=db),
+}
+
+
+def _load_collector_config():
+    """Load collectors.yml if it exists, otherwise enable all built-in collectors."""
+    config_path = BASE_DIR / "collectors.yml"
+    if not config_path.exists():
+        # No config file — enable all built-in collectors with defaults
+        return {name: {"enabled": True} for name in BUILTIN_COLLECTORS}
+
+    try:
+        import yaml
+    except ImportError:
+        # PyYAML not installed — parse simple YAML manually or fall back
+        log.warning("PyYAML not installed, using all default collectors. Install with: pip install pyyaml")
+        return {name: {"enabled": True} for name in BUILTIN_COLLECTORS}
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+
+    collectors_cfg = raw.get("collectors", {})
+    result = {}
+
+    # Built-in collectors
+    for name in BUILTIN_COLLECTORS:
+        cfg = collectors_cfg.get(name, {})
+        if isinstance(cfg, bool):
+            cfg = {"enabled": cfg}
+        if cfg.get("enabled", False):
+            result[name] = cfg
+
+    # Custom collectors
+    for custom in collectors_cfg.get("custom", []) or []:
+        if not custom.get("name") or not custom.get("script"):
+            continue
+        result[f"custom:{custom['name']}"] = custom
+
+    return result
+
+
+def _load_custom_collector(db, custom_cfg):
+    """Dynamically load a custom collector from a Python file."""
+    import importlib.util
+    script = str(BASE_DIR / custom_cfg["script"])
+    class_name = custom_cfg.get("class", "Collector")
+    spec = importlib.util.spec_from_file_location(f"custom_{custom_cfg['name']}", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cls = getattr(mod, class_name)
+    config = custom_cfg.get("config", {})
+    return cls(db=db, **config)
+
+
 def run_collectors():
     db = EventsDB(DB_PATH)
     db.write_log("开始采集数据", "INFO", "collector")
+    collector_config = _load_collector_config()
     results = {}
-    for name, collector in [
-        ("claude", ClaudeCollector(db=db)),
-        ("browser", BrowserCollector(db=db)),
-        ("git", GitCollector(db=db)),
-        ("steam", SteamCollector(db=db)),
-        ("youtube_music", YouTubeMusicCollector(db=db)),
-        ("qqmusic", QQMusicCollector(db=db)),
-        ("orchestrator_codebase", CodebaseCollector(db=db)),
-        ("vscode", VSCodeCollector(db=db)),
-        ("network", NetworkCollector(db=db)),
-    ]:
+
+    for name, cfg in collector_config.items():
+        try:
+            if name.startswith("custom:"):
+                collector = _load_custom_collector(db, cfg)
+            else:
+                factory = BUILTIN_COLLECTORS.get(name)
+                if not factory:
+                    continue
+                collector = factory(db, cfg)
+        except Exception as e:
+            log.error(f"Collector [{name}] init failed: {e}")
+            results[name] = -1
+            continue
         try:
             count = collector.collect()
             results[name] = count

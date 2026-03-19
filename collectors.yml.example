@@ -1,0 +1,70 @@
+# Orchestrator Collectors Configuration
+# Copy to collectors.yml and customize.
+# Remove or comment out collectors you don't need.
+# Paths are auto-detected if left empty.
+
+collectors:
+
+  # Claude Code session history
+  claude:
+    enabled: true
+    # path: ~/.claude  (auto-detected)
+
+  # Chrome browser history
+  browser:
+    enabled: true
+    # path: (auto-detected from OS default)
+
+  # Git repositories — scans for recent commits
+  git:
+    enabled: true
+    paths:
+      - ~/Documents/GitHub
+      - ~/Projects
+      # Add your own repo directories here
+
+  # VS Code editor activity
+  vscode:
+    enabled: true
+    # path: (auto-detected from OS default)
+
+  # Local network services (port scan)
+  network:
+    enabled: true
+
+  # Project self-scan (orchestrator's own git history)
+  codebase:
+    enabled: true
+
+  # ── Optional: platform-specific ──
+
+  # Steam game playtime
+  steam:
+    enabled: false
+    # path: D:/Steam  or  ~/.steam
+
+  # QQ Music play history
+  qqmusic:
+    enabled: false
+    # path: (auto-detected from OS default)
+
+  # YouTube Music (browser-based, needs Chrome history)
+  youtube_music:
+    enabled: false
+
+  # ── Custom collectors ──
+  # You can add your own collectors here.
+  # Each entry needs: name, script (Python file path), and optional path.
+  #
+  # custom:
+  #   - name: notion
+  #     script: my_collectors/notion_collector.py
+  #     class: NotionCollector
+  #     config:
+  #       api_key: ${NOTION_API_KEY}
+  #
+  #   - name: spotify
+  #     script: my_collectors/spotify_collector.py
+  #     class: SpotifyCollector
+  #     config:
+  #       path: ~/.config/spotify
