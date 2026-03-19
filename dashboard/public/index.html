@@ -381,6 +381,8 @@ section:last-of-type { border-bottom: none; }
       <div>
         <div class="gov-sub-label">六部执行</div>
         <div id="gov-depts"></div>
+        <div class="gov-sub-label" style="margin-top:20px">门下省审查</div>
+        <div id="gov-scrutiny"></div>
       </div>
       <div>
         <div class="gov-sub-label">最近任务</div>
@@ -545,6 +547,18 @@ function renderGovernance(tasks){
       <span class='dept-stat'>${dept.d}/${total} ${rate}%</span>
     </div>`;
   }).join('');
+
+  // Scrutiny log (recent reviews)
+  const reviewed=tasks.filter(t=>t.scrutiny_note).slice(0,5);
+  $('gov-scrutiny').innerHTML=reviewed.length?reviewed.map(t=>{
+    const approved=(t.scrutiny_note||'').includes('准奏');
+    const note=(t.scrutiny_note||'').replace('准奏：','').replace('准奏:','').slice(0,50);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.72rem;border-bottom:1px solid #f4f4f0">
+      <span style="color:${approved?'var(--green)':'var(--red)'};font-weight:500">${approved?'准奏':'驳回'}</span>
+      <span style="color:var(--text-mid);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.action||'')}">#${t.id} ${esc((t.action||'').slice(0,40))}</span>
+      <span style="color:var(--text-dim);font-size:.62rem;flex-shrink:0">${note}</span>
+    </div>`;
+  }).join(''):'<div style="font-size:.72rem;color:var(--text-dim)">暂无审查记录</div>';
 
   // Recent tasks list (last 8)
   const recent=tasks.slice(0,8);
