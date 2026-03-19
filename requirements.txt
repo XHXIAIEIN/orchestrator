@@ -1,7 +1,12 @@
+# Core (required)
 anthropic>=0.40.0
 claude-agent-sdk>=0.1.0
 anyio>=4.0.0
 python-dotenv>=1.0.0
-pytest>=8.0.0
-chromadb
 apscheduler
+
+# Dev
+pytest>=8.0.0
+
+# Optional: vector search (only used by src/storage/vector_db.py)
+# numpy

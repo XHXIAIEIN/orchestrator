@@ -183,12 +183,41 @@ Governor 支持三种派单模式：
 
 隔离规则：同部门 + 同项目串行，同部门 + 不同项目可并行，不同部门始终可并行。
 
-## 技术栈
+## 技术栈与依赖
 
-- **后端**: Python 3.14, Claude Agent SDK, APScheduler, SQLite
-- **前端**: Express.js, WebSocket, SSE, 原生 HTML/CSS/JS
-- **部署**: Docker Compose
-- **AI**: Claude Sonnet/Haiku (六部执行), Ollama (本地路由)
+### 必须
+
+| 组件 | 用途 | 说明 |
+|------|------|------|
+| Python 3.10+ | 后端调度、分析、治理 | 标准库 + 少量依赖 |
+| Anthropic API | 六部 Agent 执行 | 需要 API key |
+| Claude Agent SDK | Governor 派单 | `pip install claude-agent-sdk` |
+| SQLite | 所有数据存储 | Python 内置，零配置 |
+| Node.js 18+ | Dashboard 服务 | Express + sql.js |
+
+### 可选（没有也能跑）
+
+| 组件 | 用途 | 没有会怎样 |
+|------|------|-----------|
+| Docker | 容器化部署 | 可以直接 `python -m src.scheduler` + `node server.js` |
+| Ollama | 本地 LLM 路由（门下省审查、债务扫描） | 自动 fallback 到 Claude API，多消耗一些 token |
+| Fish Speech TTS | 语音播报 | 语音按钮不可用，其他功能不受影响 |
+| numpy | 向量搜索 (VectorDB) | VectorDB 未被核心逻辑调用，不装不影响 |
+
+### 采集器依赖
+
+每个采集器独立，缺少对应数据源只会跳过该采集器，不影响系统运行：
+
+| 采集器 | 数据源 | 需要 |
+|--------|--------|------|
+| Claude | Claude Code 会话 | `~/.claude` 目录 |
+| Browser | Chrome 浏览历史 | Chrome User Data 目录 |
+| Git | Git 仓库提交 | 任意 git 仓库目录 |
+| Steam | Steam 游戏时间 | Steam 安装目录 |
+| QQ Music | QQ 音乐播放记录 | QQ Music 数据目录 |
+| VS Code | 编辑器活动 | VS Code User Data |
+| Network | 本地网络服务检测 | 无额外依赖 |
+| Codebase | 项目自身 git 历史 | 无额外依赖 |
 
 ## 设计参考
 
