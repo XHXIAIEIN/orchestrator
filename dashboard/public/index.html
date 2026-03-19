@@ -102,7 +102,7 @@ section { padding: 48px 0; border-bottom: 1px solid var(--border); }
 section:last-of-type { border-bottom: none; }
 .section-head {
   display: flex; justify-content: space-between; align-items: baseline;
-  margin-bottom: 24px; padding-bottom: 10px; border-bottom: 2px solid var(--text);
+  margin-bottom: 24px;
 }
 .section-label { font-size: .68rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text); font-weight: 500; }
 .section-meta { font-size: .65rem; color: var(--text-dim); }
@@ -122,11 +122,10 @@ section:last-of-type { border-bottom: none; }
 /* ── Governance ── */
 .gov-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .gov-col {
-  padding: 24px; background: var(--surface);
-  border-radius: var(--radius); box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border); transition: box-shadow .2s;
+  padding: 24px 0;
 }
-.gov-col:hover { box-shadow: var(--shadow-md); }
+.gov-col:not(:last-child) { border-right: 1px solid #f0f0ec; padding-right: 20px; }
+.gov-col:not(:first-child) { padding-left: 20px; }
 .gov-dept-label { font-size: .58rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-dim); }
 .gov-dept-name { font-family: var(--serif); font-size: 1.4rem; color: var(--text); margin: 6px 0 18px; }
 .gov-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: .78rem; color: var(--text-mid); border-bottom: 1px solid #f0f0ec; }
@@ -136,7 +135,7 @@ section:last-of-type { border-bottom: none; }
 .gov-bar-name { min-width: 28px; color: var(--text-mid); }
 .gov-bar { flex: 1; height: 4px; background: #f0f0ec; border-radius: 2px; overflow: hidden; }
 .gov-bar-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width .4s ease; }
-.gov-note { font-size: .68rem; color: var(--text-dim); margin-top: 14px; padding-top: 10px; border-top: 1px solid #f0f0ec; }
+.gov-note { font-size: .68rem; color: var(--text-dim); margin-top: 14px; }
 
 /* ── Activity ── */
 .activity-grid { display: grid; grid-template-columns: 1fr 260px; gap: 32px; }
@@ -187,9 +186,7 @@ section:last-of-type { border-bottom: none; }
 .insight-overview {
   font-family: var(--serif); font-size: .9rem; line-height: 2;
   color: var(--text-mid); max-width: 680px;
-  padding: 18px 24px; margin-bottom: 32px;
-  background: var(--surface); border-radius: var(--radius);
-  box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+  padding: 0; margin-bottom: 32px;
 }
 .sub-label { font-size: .62rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text); font-weight: 500; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .insight-columns { display: grid; grid-template-columns: 1fr 280px; gap: 48px; }
@@ -213,17 +210,12 @@ section:last-of-type { border-bottom: none; }
 
 /* ── Debts ── */
 .debt-item {
-  padding: 14px 16px; margin-bottom: 8px;
-  background: var(--surface); border-radius: var(--radius);
-  box-shadow: var(--shadow-sm); border: 1px solid var(--border);
-  border-left: 3px solid var(--text-dim);
-  transition: box-shadow .2s;
+  padding: 12px 0; border-bottom: 1px solid #f0f0ec;
 }
-.debt-item:hover { box-shadow: var(--shadow-md); }
-.debt-item:last-child { margin-bottom: 0; }
-.debt-item.debt-border-high { border-left-color: var(--red); }
-.debt-item.debt-border-medium { border-left-color: var(--amber); }
-.debt-item.debt-border-low { border-left-color: var(--green); }
+.debt-item:last-child { border-bottom: none; }
+.debt-item.debt-border-high .debt-severity { background: #fde8e8; color: var(--red); }
+.debt-item.debt-border-medium .debt-severity { background: #fef3e0; color: var(--amber); }
+.debt-item.debt-border-low .debt-severity { background: #f0f0ec; color: var(--text-dim); }
 .debt-head { display: flex; align-items: center; gap: 8px; }
 .debt-severity { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px; text-transform: uppercase; }
 .debt-sev-high { background: #fde8e8; color: var(--red); }
@@ -344,18 +336,18 @@ section:last-of-type { border-bottom: none; }
 
   <!-- Hero -->
   <div class="hero">
-    <h1 class="hero-title">Daily Report <sup id="roast-date"></sup></h1>
+    <h1 class="hero-title">管家日报 <sup id="roast-date"></sup></h1>
     <div class="roast" id="roast">Observing...</div>
     <div class="roast-footer">
       <span class="roast-sig">-- Orchestrator</span>
-      <button class="voice-btn" id="voice-btn" onclick="speakRoast()" title="Speak">
+      <button class="voice-btn" id="voice-btn" onclick="speakRoast()" title="让 SOUL 说出来">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       </button>
       <span class="voice-status" id="voice-status"></span>
     </div>
     <audio id="voice-audio" style="display:none"></audio>
     <div id="roast-history" class="roast-history collapsed"></div>
-    <button class="roast-history-toggle" id="roast-history-btn" onclick="toggleRoastHistory()" style="display:none">Past Entries</button>
+    <button class="roast-history-toggle" id="roast-history-btn" onclick="toggleRoastHistory()" style="display:none">往期语录</button>
   </div>
 
   <!-- 三省六部 -->
@@ -386,7 +378,7 @@ section:last-of-type { border-bottom: none; }
   <!-- Insights -->
   <section>
     <div class="section-head">
-      <span class="section-label">Insights</span>
+      <span class="section-label">/ 洞察</span>
       <span class="section-meta" id="event-count"></span>
     </div>
     <div id="daily-summary" class="insight-daily"></div>
@@ -394,15 +386,15 @@ section:last-of-type { border-bottom: none; }
 
     <div class="insight-columns">
       <div class="insight-main">
-        <div class="sub-label">Patterns</div>
+        <div class="sub-label">行为模式</div>
         <div id="insights-patterns"></div>
-        <div class="sub-label" style="margin-top:32px">Recommendations</div>
+        <div class="sub-label" style="margin-top:32px">建议</div>
         <div id="insights-recs"></div>
       </div>
       <div class="insight-side">
-        <div class="sub-label">Time Distribution</div>
+        <div class="sub-label">时间分布</div>
         <div class="cat-toggle">
-          <button class="cat-btn active" onclick="loadCats(1,this)">Today</button>
+          <button class="cat-btn active" onclick="loadCats(1,this)">今日</button>
           <button class="cat-btn" onclick="loadCats(7,this)">7d</button>
           <button class="cat-btn" onclick="loadCats(30,this)">30d</button>
         </div>
@@ -414,7 +406,7 @@ section:last-of-type { border-bottom: none; }
   <!-- Attention Debts -->
   <section>
     <div class="section-head">
-      <span class="section-label">Attention Debts</span>
+      <span class="section-label">/ 注意力债务</span>
       <span class="section-meta" id="debt-count"></span>
     </div>
     <div id="debt-list"></div>
@@ -423,15 +415,15 @@ section:last-of-type { border-bottom: none; }
   <!-- Activity -->
   <section>
     <div class="section-head">
-      <span class="section-label">Activity</span>
-      <span class="section-meta"><button class="logs-btn" onclick="document.getElementById('activity-detail').classList.toggle('collapsed')">Toggle Details</button></span>
+      <span class="section-label">/ 活动</span>
+      <span class="section-meta"><button class="logs-btn" onclick="document.getElementById('activity-detail').classList.toggle('collapsed')">展开/收起</button></span>
     </div>
     <div class="heatmap" id="heatmap"></div>
     <div class="hm-labels"><span id="hm-start"></span><span id="hm-end"></span></div>
     <div id="activity-detail" class="collapsed" style="margin-top:16px">
       <div class="ev-search">
-        <input id="ev-search" placeholder="Search..." oninput="filterEvents()">
-        <select id="ev-filter" onchange="filterEvents()"><option value="">All</option></select>
+        <input id="ev-search" placeholder="搜索..." oninput="filterEvents()">
+        <select id="ev-filter" onchange="filterEvents()"><option value="">全部</option></select>
       </div>
       <div id="events"></div>
     </div>
@@ -440,11 +432,11 @@ section:last-of-type { border-bottom: none; }
   <!-- Tasks -->
   <section>
     <div class="section-head">
-      <span class="section-label">Tasks</span>
+      <span class="section-label">/ 任务</span>
     </div>
     <div class="task-stats" id="task-stats"></div>
     <div class="tbl-header" style="grid-template-columns:80px 1fr 100px">
-      <span>ID</span><span>Action</span><span style="text-align:right">Status</span>
+      <span>ID</span><span>操作</span><span style="text-align:right">状态</span>
     </div>
     <div id="task-list"></div>
   </section>
@@ -452,10 +444,10 @@ section:last-of-type { border-bottom: none; }
   <!-- Logs -->
   <section>
     <div class="section-head">
-      <span class="section-label">Logs</span>
+      <span class="section-label">/ 日志</span>
       <div class="logs-controls">
-        <button class="logs-btn" onclick="toggleLogs()">Collapse</button>
-        <button class="logs-btn" onclick="clearLogs()">Clear</button>
+        <button class="logs-btn" onclick="toggleLogs()">收起</button>
+        <button class="logs-btn" onclick="clearLogs()">清空</button>
       </div>
     </div>
     <div class="logs-body" id="logs"></div>
@@ -553,7 +545,7 @@ function showTip(el,ev){const t=$('tooltip');t.textContent=`${el.dataset.day} | 
 function hideTip(){$('tooltip').style.display='none'}
 
 /* ── Events ── */
-function buildSourceOptions(){const sel=$('ev-filter');const cur=sel.value;const srcs=[...new Set(_events.map(e=>e.source))].sort();sel.innerHTML="<option value=''>All</option>"+srcs.map(s=>`<option value='${esc(s)}'>${esc(s)}</option>`).join('');sel.value=cur}
+function buildSourceOptions(){const sel=$('ev-filter');const cur=sel.value;const srcs=[...new Set(_events.map(e=>e.source))].sort();sel.innerHTML="<option value=''>全部</option>"+srcs.map(s=>`<option value='${esc(s)}'>${esc(s)}</option>`).join('');sel.value=cur}
 function filterEvents(){
   const q=($('ev-search').value||'').toLowerCase();const src=$('ev-filter').value;
   const list=_events.filter(e=>{if(src&&e.source!==src)return false;if(q&&!(e.title||'').toLowerCase().includes(q))return false;return true}).slice(0,40);
@@ -775,7 +767,7 @@ function toggleRoastHistory(){
   const el=$('roast-history');
   const btn=$('roast-history-btn');
   el.classList.toggle('collapsed');
-  btn.textContent=el.classList.contains('collapsed')?'Past Entries':'Collapse';
+  btn.textContent=el.classList.contains('collapsed')?'往期语录':'收起';
 }
 
 // ── SOUL Voice ──
