@@ -334,7 +334,7 @@ class Governor:
         self.db = db or EventsDB(db_path)
 
     def scrutinize(self, task_id: int, task: dict) -> tuple[bool, str]:
-        """门下省审查：用 Haiku 快速判断任务是否值得执行。返回 (approved, reason)。"""
+        """门下省审查。LOW/MEDIUM 单模型审查，HIGH 双模型交叉验证。"""
         spec = task.get("spec", {})
         project_name = spec.get("project", "orchestrator")
         task_cwd = spec.get("cwd", "")
@@ -356,13 +356,56 @@ class Governor:
             cognitive_mode=cognitive_mode,
             blast_radius=blast_radius,
         )
+
+        is_high_risk = blast_radius.startswith("HIGH")
+
         try:
-            text = get_router().generate(prompt, task_type="scrutiny")
-            approved = "VERDICT: APPROVE" in text
-            reason_line = next((l for l in text.splitlines() if l.startswith("REASON:")), "")
-            reason = reason_line.replace("REASON:", "").strip() or text[:80]
-            log.info(f"Governor: scrutiny task #{task_id} → {'APPROVE' if approved else 'REJECT'}: {reason}")
-            return approved, reason
+            # First opinion (primary model via router)
+            text1 = get_router().generate(prompt, task_type="scrutiny")
+            approved1 = "VERDICT: APPROVE" in text1
+            reason1 = next((l for l in text1.splitlines() if l.startswith("REASON:")), "")
+            reason1 = reason1.replace("REASON:", "").strip() or text1[:80]
+
+            if not is_high_risk:
+                # LOW/MEDIUM: single model, same as before
+                log.info(f"Governor: scrutiny #{task_id} → {'APPROVE' if approved1 else 'REJECT'}: {reason1}")
+                return approved1, reason1
+
+            # HIGH risk: get second opinion from a different model
+            log.info(f"Governor: HIGH risk task #{task_id}, requesting second opinion")
+            try:
+                # Try the other backend: if primary was Ollama, use Claude; if Claude, use Ollama
+                router = get_router()
+                from src.core.config import get_anthropic_client
+                client = get_anthropic_client()
+                resp = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=256,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text2 = resp.content[0].text if resp.content else ""
+                approved2 = "VERDICT: APPROVE" in text2
+                reason2 = next((l for l in text2.splitlines() if l.startswith("REASON:")), "")
+                reason2 = reason2.replace("REASON:", "").strip() or text2[:80]
+            except Exception as e2:
+                # Second model unavailable — fall back to single opinion
+                log.warning(f"Governor: second opinion failed ({e2}), using first opinion only")
+                return approved1, reason1
+
+            # Cross-validate
+            if approved1 and approved2:
+                log.info(f"Governor: scrutiny #{task_id} HIGH → APPROVE (both models agree)")
+                return True, f"双审通过：{reason1}"
+            elif not approved1 and not approved2:
+                log.info(f"Governor: scrutiny #{task_id} HIGH → REJECT (both models agree)")
+                return False, f"双审驳回：{reason1} / {reason2}"
+            else:
+                # Disagreement — escalate: don't auto-execute
+                dissent = f"模型分歧 [M1:{'通过' if approved1 else '驳回'}={reason1}] [M2:{'通过' if approved2 else '驳回'}={reason2}]"
+                log.warning(f"Governor: scrutiny #{task_id} HIGH → DISAGREEMENT, blocking: {dissent}")
+                self.db.write_log(f"门下省分歧：#{task_id} {dissent}", "WARNING", "governor")
+                return False, f"需人工决定：{dissent}"
+
         except Exception as e:
             log.warning(f"Governor: scrutiny failed ({e}), defaulting to APPROVE")
             return True, f"审查异常，默认放行：{e}"
@@ -832,37 +875,57 @@ class Governor:
 
     @staticmethod
     def _extract_artifact(task: dict) -> dict:
-        """从完成的任务中提取结构化 artifact。"""
+        """Extract structured handoff artifact from completed task.
+
+        Three-part structure (inspired by SPINE Swarm):
+        - done: what was accomplished
+        - found: what was discovered during execution
+        - remaining: what's left unfinished or needs follow-up
+        """
         try:
             output = task.get("output") or ""
 
-            # 提取 commit hash（从 output 中找 7-40 位 hex 前面带 commit 关键词的）
+            # Extract commit hash
             commit_match = re.search(r'(?:commit|committed|提交)[:\s]*([0-9a-f]{7,40})', output, re.IGNORECASE)
             commit = commit_match.group(1) if commit_match else ""
 
-            # 提取改动文件（从 output 中找文件路径模式）
-            file_patterns = re.findall(r'(?:src|departments|SOUL|dashboard|scripts|tests)/[\w/.-]+\.\w+', output)
-            files_changed = list(set(file_patterns))[:10]  # 去重，最多10个
+            # Extract changed files
+            file_patterns = re.findall(r'(?:src|departments|SOUL|dashboard|tests|data|docs|bin)/[\w/.-]+\.\w+', output)
+            files_changed = list(set(file_patterns))[:10]
 
-            # 提取 DONE 行作为 summary
+            # Extract DONE line as summary
             done_match = re.search(r'DONE:\s*(.+)', output)
             summary = done_match.group(1).strip() if done_match else task.get("action", "")[:100]
 
+            # Extract TODO/remaining items from output
+            remaining = re.findall(r'(?:TODO|FIXME|remaining|still need|未完成)[:\s]*(.+)', output, re.IGNORECASE)
+            remaining = [r.strip()[:100] for r in remaining[:5]]
+
+            # Extract observations/findings
+            found = []
+            for pattern in [r'(?:found|discovered|noticed|发现)[:\s]*(.+)',
+                           r'(?:note|warning|注意)[:\s]*(.+)']:
+                found.extend(re.findall(pattern, output, re.IGNORECASE))
+            found = [f.strip()[:100] for f in found[:5]]
+
             return {
                 "task_id": task.get("id", 0),
-                "summary": summary,
+                "status": task.get("status", ""),
+                "done": summary,
+                "found": found,
+                "remaining": remaining,
                 "files_changed": files_changed,
                 "commit": commit,
-                "status": task.get("status", ""),
             }
         except Exception:
-            # fallback: 返回最小可用 artifact
             return {
                 "task_id": task.get("id", 0),
-                "summary": task.get("action", "")[:100],
+                "status": task.get("status", ""),
+                "done": task.get("action", "")[:100],
+                "found": [],
+                "remaining": [],
                 "files_changed": [],
                 "commit": "",
-                "status": task.get("status", ""),
             }
 
     def _dispatch_quality_review(self, parent_id: int, parent_task: dict, task_cwd: str, project_name: str):
