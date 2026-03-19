@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -28,7 +29,6 @@ class GitCollector:
         self.db = db
         self.days_back = days_back
         if search_paths is None:
-            import os
             env_root = os.environ.get("GIT_REPOS_ROOT")
             if env_root:
                 search_paths = [env_root]

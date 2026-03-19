@@ -173,11 +173,10 @@ SOUL/
 
 ## 并行调度
 
-Governor 支持三种派单模式：
+Governor 支持两种派单模式：
 
 | 方法 | 用途 |
 |------|------|
-| `run()` | 单任务（兼容旧逻辑） |
 | `run_batch()` | 自动批量：从 recommendations 挑多个任务，按部门+项目去重并行 |
 | `run_parallel_scenario()` | 手动触发预定义场景 |
 

@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from apscheduler.schedulers.blocking import BlockingScheduler
 from src.storage.events_db import EventsDB
@@ -21,6 +22,7 @@ from src.governance.debt_resolver import resolve_debts, check_resolved_debts
 from src.analysis.performance import PerformanceReport
 from src.voice.voice_picker import refresh_voice_pool
 from src.governance.skill_evolver import run_evolution
+from src.analysis.burst_detector import record_bursts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -41,7 +43,6 @@ def _is_collector_enabled(name):
 
 def _build_collectors(db):
     """Build enabled collector instances from env config."""
-    import os
     git_paths_env = os.environ.get("GIT_PATHS")
     git_paths = [p.strip() for p in git_paths_env.split(",")] if git_paths_env else None
 
@@ -87,6 +88,14 @@ def run_collectors():
     fail = [k for k, v in results.items() if v < 0]
     msg = f"采集完成：{', '.join(ok)} 各 {[results[k] for k in ok]} 条" + (f"；失败：{', '.join(fail)}" if fail else "")
     db.write_log(msg, "INFO", "collector")
+
+    # 每次采集后检测 burst session
+    try:
+        burst_count = record_bursts(db, lookback_hours=2)
+        if burst_count:
+            db.write_log(f"Burst detector: recorded {burst_count} burst session(s)", "WARN", "burst_detector")
+    except Exception as e:
+        log.error(f"Burst detector failed: {e}")
 
     # 每次采集后跑自检
     try:
@@ -167,8 +176,8 @@ def start():
             job = scheduler.get_job("collectors")
             if job and job.next_run_time:
                 EventsDB(DB_PATH).set_scheduler_status("next_collectors", job.next_run_time.isoformat())
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"Failed to update next_collectors status: {e}")
 
     def _analysis():
         run_analysis()
@@ -176,8 +185,8 @@ def start():
             job = scheduler.get_job("analysis")
             if job and job.next_run_time:
                 EventsDB(DB_PATH).set_scheduler_status("next_analysis", job.next_run_time.isoformat())
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"Failed to update next_analysis status: {e}")
 
     def _profile_periodic():
         db = EventsDB(DB_PATH)

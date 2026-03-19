@@ -1,5 +1,4 @@
 import json
-import anthropic
 from src.core.config import get_anthropic_client
 from src.core.db import Database
 from src.core.tools import SYSTEM_TOOLS, TOOL_HANDLERS, CLARIFY_TOOL  # noqa: F401

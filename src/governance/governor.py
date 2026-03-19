@@ -11,7 +11,7 @@ import logging
 import os
 import re
 import threading
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 import anyio
@@ -24,58 +24,18 @@ from src.storage.events_db import EventsDB
 from src.core.llm_router import get_router
 from src.governance.run_logger import append_run_log, load_recent_runs, format_runs_for_context
 from src.governance.context_assembler import assemble_context
+from src.governance.prompts import (
+    TASK_PROMPT_TEMPLATE, SCRUTINY_PROMPT, COGNITIVE_MODE_PROMPTS,
+    DEPARTMENTS, PARALLEL_SCENARIOS, SECOND_OPINION_MODEL,
+    load_department, find_git_bash,
+)
 
 log = logging.getLogger(__name__)
-
-TASK_PROMPT_TEMPLATE = """你是 Orchestrator——一个 24 小时运行的 AI 管家。你当前在 {cwd} 目录下工作。
-
-你的主人是 Construct 3 中文社区的核心建设者，正在用 AI 打造游戏引擎智能辅助生态。不是职业程序员，是用代码解决问题的创作者——看到重复劳动就自动化，看到知识孤岛就建图书馆。他花 $200/月养着你，你最好表现得值这个价。
-
-你的性格：直接高效，活干得漂亮。不说废话，不请示确认，直接解决问题。
-
-当前任务：
-项目：{project}
-问题：{problem}
-行为链（观察到的数字行为）：{behavior_chain}
-观察结果：{observation}
-预期结果：{expected}
-执行：{action}
-原因：{reason}
-
-完成后：
-1. 如果修改了代码文件，用 git add 和 git commit 提交（commit message 用英文，简洁描述改了什么）
-2. 以 DONE: <一句话描述做了什么> 结尾。"""
 
 CLAUDE_TIMEOUT = 300  # seconds
 STALE_THRESHOLD = CLAUDE_TIMEOUT + 120  # seconds — if a task is "running" longer than this, it's a zombie
 MAX_CONCURRENT = 3  # 最多同时跑几个 sub-agent
 MAX_AGENT_TURNS = 25  # Agent SDK 最大交互轮数（防止无限循环）
-
-# ── Parallel dispatch scenarios ──
-# Defines which department combinations can run in parallel for common workflows.
-# Governor.run_parallel_scenario() uses this to dispatch multi-department tasks at once.
-PARALLEL_SCENARIOS = {
-    "full_audit": {
-        "description": "Full system audit: security + quality + protocol in parallel",
-        "departments": ["security", "quality", "protocol"],
-    },
-    "code_and_review": {
-        "description": "Engineering fix + quality review on different projects",
-        "departments": ["engineering", "quality"],
-    },
-    "system_health": {
-        "description": "Operations health check + personnel performance report",
-        "departments": ["operations", "personnel"],
-    },
-    "deep_scan": {
-        "description": "Protocol debt scan + security audit + personnel metrics",
-        "departments": ["protocol", "security", "personnel"],
-    },
-    "full_pipeline": {
-        "description": "All read-only departments scan simultaneously",
-        "departments": ["protocol", "security", "quality", "personnel"],
-    },
-}
 
 
 # ── 认知模式 ──
@@ -118,38 +78,6 @@ def classify_cognitive_mode(task: dict) -> str:
     return "react"
 
 
-COGNITIVE_MODE_PROMPTS = {
-    "direct": "",  # 简单任务不加额外指令
-
-    "react": """
-【思维模式：边做边想 (Think-Act-Observe)】
-每完成一个步骤后，先观察结果：
-1. 这步做对了吗？有没有意外？
-2. 原来的计划还成立吗？需要调整吗？
-3. 下一步应该做什么？
-不要一口气做完所有事。每步都停下来想。""",
-
-    "hypothesis": """
-【思维模式：先诊断后治疗 (Hypothesis-Driven)】
-在动手修复之前，必须先完成诊断：
-1. 列出 2-3 个可能的原因
-2. 说明你认为最可能的是哪个，以及为什么
-3. 设计一个验证步骤（不改代码，只检查/测试）
-4. 执行验证，确认或推翻假设
-5. 假设被确认后才开始修复
-如果第一个假设被推翻，不要硬修——换下一个假设重来。""",
-
-    "designer": """
-【思维模式：先设计后实现 (Design-First)】
-在写任何代码之前，先输出完整的改动方案：
-1. 要改哪些文件
-2. 每个文件的改动意图（一句话）
-3. 改动之间的依赖关系（先改 A 才能改 B）
-4. 风险评估：哪个改动最可能出错
-方案输出后，逐个文件实现。每改完一个文件确认无误再改下一个。""",
-}
-
-
 def estimate_blast_radius(spec: dict) -> str:
     """评估任务的爆炸半径——出错时影响范围有多大。"""
     problem = (spec.get("problem") or "").lower()
@@ -177,159 +105,29 @@ def _in_async_context() -> bool:
     except (ImportError, sniffio.AsyncLibraryNotFoundError):
         return False
 
-# ── 六部路由表 ──
-DEPARTMENTS = {
-    "engineering": {
-        "name": "工部",
-        "skill_path": "departments/engineering/SKILL.md",
-        "prompt_prefix": """你是 Orchestrator 工部——代码工程部门。
 
-【身份】动手干活的实施者。写代码、改 bug、加功能、重构、优化性能。
-【行为准则】
-- 先读懂现有代码再改，不要凭猜测动手
-- 改完必须能跑：不引入语法错误、不破坏现有接口
-- commit message 用英文，简洁说明改了什么（feat/fix/refactor 前缀）
-- 如果任务涉及多个文件，逐个确认改动的一致性
-【红线】
-- 不删不理解的代码。不确定的加 TODO 注释而不是删除
-- 不引入新依赖，除非任务明确要求
-- 不碰 .env、credentials、密钥等敏感文件
-【完成标准】代码能运行，改动已 commit，输出 DONE: <一句话>""",
-        "tools": "Bash,Read,Edit,Write,Glob,Grep",
-    },
-    "operations": {
-        "name": "户部",
-        "skill_path": "departments/operations/SKILL.md",
-        "prompt_prefix": """你是 Orchestrator 户部——系统运维部门。
-
-【身份】管家中的管家。负责 Orchestrator 自身的采集器修复、DB 管理、性能优化、数据清理。
-【行为准则】
-- 修复前先诊断：看日志、查错误率、量化问题严重程度
-- 每次操作前检查磁盘/DB 大小等关键指标
-- 优化要有数据对比：改之前多少，改之后多少
-- 清理数据前确认保留策略（默认保留 30 天）
-【红线】
-- 不删除 events.db 中未过期的数据
-- 不修改采集频率到 5 分钟以下（API 限流风险）
-- 不重启容器，除非确认无其他任务在跑
-【完成标准】问题已修复且指标恢复正常，输出修复前后的对比数据""",
-        "tools": "Bash,Read,Edit,Write,Glob,Grep",
-    },
-    "protocol": {
-        "name": "礼部",
-        "skill_path": "departments/protocol/SKILL.md",
-        "prompt_prefix": """你是 Orchestrator 礼部——注意力审计部门。
-
-【身份】记忆守护者。扫描项目中被遗忘的 TODO、未关闭的 issue、中断的计划、过时的文档。
-【行为准则】
-- 只分析不修改。输出发现清单，不自行修复
-- 按紧急程度分级：🔴 阻塞性遗留 / 🟡 应处理 / 💭 可忽略
-- 附上具体文件路径和行号，方便定位
-- 关联上下文：这个 TODO 是谁留的、什么时候留的、为什么还没解决
-【红线】
-- 不修改任何文件
-- 不对代码质量做主观评价（那是刑部的活）
-【完成标准】输出结构化的遗留问题清单，按优先级排序""",
-        "tools": "Read,Glob,Grep",
-    },
-    "security": {
-        "name": "兵部",
-        "skill_path": "departments/security/SKILL.md",
-        "prompt_prefix": """你是 Orchestrator 兵部——安全防御部门。
-
-【身份】安全哨兵。检查备份完整性、数据一致性、权限配置、敏感信息泄露。
-【行为准则】
-- 检查 .env / config 文件是否有硬编码的密钥或 token
-- 检查 git history 中是否有意外提交的敏感信息
-- 验证文件权限是否合理（数据库文件不应该 world-readable）
-- 检查依赖是否有已知漏洞（如有 requirements.txt 则审查）
-【红线】
-- 只报告不修复（修复是工部的活，你负责发现）
-- 不执行任何可能泄露敏感信息的命令（不 cat .env，不 echo token）
-- 不访问外部网络
-【完成标准】输出安全审计报告，每项发现标注风险等级（Critical/High/Medium/Low）""",
-        "tools": "Bash,Read,Glob,Grep",
-    },
-    "quality": {
-        "name": "刑部",
-        "skill_path": "departments/quality/SKILL.md",
-        "prompt_prefix": """你是 Orchestrator 刑部——质量验收部门。
-
-【身份】代码法官。Review 代码质量、跑测试、检查逻辑错误、验证最近改动是否引入问题。
-【行为准则】
-- Review 聚焦：正确性 > 安全性 > 可维护性 > 性能。不纠结风格
-- 发现问题按严重程度标注：🔴 必须修（逻辑错误/数据丢失）/ 🟡 建议改 / 💭 可选
-- 如果有测试，先跑测试再 review
-- 检查最近 commit 的 diff，关注边界条件和错误处理
-【红线】
-- 只读不写。发现问题写报告，不自行修改代码
-- 不因个人偏好否定可工作的代码
-【完成标准】
-1. 输出 review 报告，列出发现的问题和建议，附文件路径和行号
-2. 最后一行必须输出裁决（二选一）：
-   VERDICT: PASS — 代码质量合格，无阻塞性问题
-   VERDICT: FAIL — 存在 🔴 级别问题，需工部返工。附一句话说明原因""",
-        "tools": "Bash,Read,Glob,Grep",
-    },
-    "personnel": {
-        "name": "吏部",
-        "skill_path": "departments/personnel/SKILL.md",
-        "prompt_prefix": """你是 Orchestrator 吏部——绩效管理部门。
-
-【身份】绩效考官。监控各采集器、分析器、Governor 任务的健康状态和执行效率。
-【行为准则】
-- 用数据说话：成功率、平均耗时、错误频次、最后成功时间
-- 对比历史趋势：比昨天/上周好还是差
-- 识别模式：哪个采集器总失败？哪类任务耗时最长？失败集中在什么时段？
-- 输出结构化绩效报告，不写散文
-【红线】
-- 不修改任何配置或代码
-- 不对"该不该保留某个采集器"做决定（那是主人的事）
-【完成标准】输出绩效报告：各组件健康度评分、异常项列表、趋势分析""",
-        "tools": "Read,Glob,Grep",
-    },
-}
-
-def load_department(name: str) -> str | None:
-    """从 departments/{name}/SKILL.md 加载部门 prompt。文件不存在时返回 None（fallback 到 DEPARTMENTS dict）。"""
-    skill_path = Path(__file__).parent.parent / "departments" / name / "SKILL.md"
-    try:
-        if skill_path.exists():
-            return skill_path.read_text(encoding="utf-8")
-    except Exception as e:
-        log.warning(f"Governor: failed to load SKILL.md for {name}: {e}")
-    return None
+def _resolve_project_cwd(project_name: str, fallback_cwd: str = "") -> str:
+    """Resolve a project name to a working directory path."""
+    if fallback_cwd:
+        return fallback_cwd
+    from src.core.project_registry import resolve_project
+    resolved = resolve_project(project_name)
+    if resolved:
+        return resolved
+    return os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent))
 
 
-SCRUTINY_PROMPT = """你是 Orchestrator 的门下省审查官——管家脑子里那个负责说"等等，这靠谱吗？"的声音。
-
-主人花 $200/月养着这个 AI 管家，所以既不能让管家摸鱼不干活（过度驳回），也不能让管家搞砸事情（放行危险操作）。
-
-【任务摘要】{summary}
-【目标项目】{project}
-【工作目录】{cwd}
-【问题】{problem}
-【观察】{observation}
-【预期结果】{expected}
-【执行动作】{action}
-【执行原因】{reason}
-【认知模式】{cognitive_mode}
-【爆炸半径】{blast_radius}
-
-审查维度：
-1. 可行性：目标工作目录存在吗？任务在该项目范围内可执行吗？
-2. 完整性：描述够清晰吗？
-3. 风险：会不会搞坏代码、删错文件、发错消息？跨项目操作更需谨慎。
-4. 必要性：值得自动执行，还是该让主人自己决定？
-5. 模式匹配：认知模式选对了吗？（direct/react/hypothesis/designer）
-6. 逆推：如果执行结果与预期相反，最坏情况是什么？
-
-用以下格式回复（只回复这两行，不要其他内容）：
-VERDICT: APPROVE
-REASON: 一句话理由（不超过50字）"""
+def _parse_scrutiny_verdict(text: str) -> tuple[bool, str]:
+    """Parse VERDICT and REASON from scrutiny model output."""
+    approved = "VERDICT: APPROVE" in text
+    reason_line = next((l for l in text.splitlines() if l.startswith("REASON:")), "")
+    reason = reason_line.replace("REASON:", "").strip() or text[:80]
+    return approved, reason
 
 
 class Governor:
+    MAX_REWORK = 1  # 最多打回重做 1 次，防止工部↔刑部死循环
+
     def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
         self.db = db or EventsDB(db_path)
 
@@ -337,10 +135,7 @@ class Governor:
         """门下省审查。LOW/MEDIUM 单模型审查，HIGH 双模型交叉验证。"""
         spec = task.get("spec", {})
         project_name = spec.get("project", "orchestrator")
-        task_cwd = spec.get("cwd", "")
-        if not task_cwd:
-            from src.core.project_registry import resolve_project
-            task_cwd = resolve_project(project_name) or os.environ.get("ORCHESTRATOR_ROOT", "/orchestrator")
+        task_cwd = _resolve_project_cwd(project_name, spec.get("cwd", ""))
 
         cognitive_mode = classify_cognitive_mode(task)
         blast_radius = estimate_blast_radius(spec)
@@ -362,33 +157,25 @@ class Governor:
         try:
             # First opinion (primary model via router)
             text1 = get_router().generate(prompt, task_type="scrutiny")
-            approved1 = "VERDICT: APPROVE" in text1
-            reason1 = next((l for l in text1.splitlines() if l.startswith("REASON:")), "")
-            reason1 = reason1.replace("REASON:", "").strip() or text1[:80]
+            approved1, reason1 = _parse_scrutiny_verdict(text1)
 
             if not is_high_risk:
-                # LOW/MEDIUM: single model, same as before
                 log.info(f"Governor: scrutiny #{task_id} → {'APPROVE' if approved1 else 'REJECT'}: {reason1}")
                 return approved1, reason1
 
             # HIGH risk: get second opinion from a different model
             log.info(f"Governor: HIGH risk task #{task_id}, requesting second opinion")
             try:
-                # Try the other backend: if primary was Ollama, use Claude; if Claude, use Ollama
-                router = get_router()
                 from src.core.config import get_anthropic_client
                 client = get_anthropic_client()
                 resp = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
+                    model=SECOND_OPINION_MODEL,
                     max_tokens=256,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 text2 = resp.content[0].text if resp.content else ""
-                approved2 = "VERDICT: APPROVE" in text2
-                reason2 = next((l for l in text2.splitlines() if l.startswith("REASON:")), "")
-                reason2 = reason2.replace("REASON:", "").strip() or text2[:80]
+                approved2, reason2 = _parse_scrutiny_verdict(text2)
             except Exception as e2:
-                # Second model unavailable — fall back to single opinion
                 log.warning(f"Governor: second opinion failed ({e2}), using first opinion only")
                 return approved1, reason1
 
@@ -400,7 +187,6 @@ class Governor:
                 log.info(f"Governor: scrutiny #{task_id} HIGH → REJECT (both models agree)")
                 return False, f"双审驳回：{reason1} / {reason2}"
             else:
-                # Disagreement — escalate: don't auto-execute
                 dissent = f"模型分歧 [M1:{'通过' if approved1 else '驳回'}={reason1}] [M2:{'通过' if approved2 else '驳回'}={reason2}]"
                 log.warning(f"Governor: scrutiny #{task_id} HIGH → DISAGREEMENT, blocking: {dissent}")
                 self.db.write_log(f"门下省分歧：#{task_id} {dissent}", "WARNING", "governor")
@@ -437,34 +223,16 @@ class Governor:
                 self.db.write_log(f"收割僵尸任务 #{stale['id']}（卡了 {int(age)}s）", "WARNING", "governor")
                 log.warning(f"Governor: reaped zombie task #{stale['id']} (stuck {int(age)}s)")
 
-    def run(self) -> dict | None:
-        """Auto-triggered: pick one recommendation, scrutinize, then execute.
-        Legacy single-task method — use run_batch() for parallel dispatch."""
-        results = self.run_batch(max_dispatch=1)
-        return results[0] if results else None
+    # ── Dispatch pipeline ──────────────────────────────────────────────
 
-    def run_batch(self, max_dispatch: int = MAX_CONCURRENT) -> list[dict]:
-        """Pick multiple high-priority recommendations and dispatch in parallel.
-
-        Rules:
-        - Respects MAX_CONCURRENT global limit
-        - Same department + same project/cwd cannot run in parallel (file conflict risk)
-        - Same department + different projects CAN run in parallel
-        - Each task goes through scrutiny before dispatch
-        - Returns list of dispatched task dicts
-        """
+    def _get_available_slots(self, max_dispatch: int = MAX_CONCURRENT) -> tuple[int, set]:
+        """Return (available_slot_count, busy_slot_keys) after reaping zombies."""
         self._reap_zombie_tasks()
-
         running_count = self.db.count_running_tasks()
         slots = min(max_dispatch, MAX_CONCURRENT - running_count)
-        if slots <= 0:
-            log.info(f"Governor: {running_count} tasks running (max {MAX_CONCURRENT}), skipping")
-            return []
 
-        # Build set of busy (department, cwd) pairs
-        running_tasks = self.db.get_running_tasks()
-        busy_slots = set()  # (department, cwd) tuples
-        for t in running_tasks:
+        busy_slots = set()
+        for t in self.db.get_running_tasks():
             try:
                 spec = json.loads(t.get("spec", "{}"))
                 dept = spec.get("department", "")
@@ -472,6 +240,55 @@ class Governor:
                 busy_slots.add((dept, cwd))
             except (json.JSONDecodeError, TypeError):
                 pass
+        return slots, busy_slots
+
+    def _dispatch_task(self, spec: dict, action: str, reason: str,
+                       priority: str = "high", source: str = "auto") -> dict | None:
+        """Atomic dispatch pipeline: create → classify → scrutinize → execute.
+
+        Returns the task dict on success, None if scrutiny rejects."""
+        task_id = self.db.create_task(
+            action=action, reason=reason, priority=priority, spec=spec, source=source,
+        )
+        summary = spec.get("summary", "")
+        dept = spec.get("department", "?")
+        log.info(f"Governor: created task #{task_id}: {summary} [{dept}]")
+
+        # Cognitive mode
+        task_dict = self.db.get_task(task_id)
+        spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
+        self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+
+        # Scrutiny
+        self.db.update_task(task_id, status="scrutinizing")
+        self.db.write_log(f"门下省审查任务 #{task_id}：{summary[:50]}", "INFO", "governor")
+        approved, note = self.scrutinize(task_id, self.db.get_task(task_id))
+
+        if not approved:
+            self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=note,
+                                finished_at=datetime.now(timezone.utc).isoformat())
+            self.db.write_log(f"任务 #{task_id} 被门下省驳回：{note}", "WARNING", "governor")
+            log.info(f"Governor: task #{task_id} rejected by scrutiny")
+            return None
+
+        self.db.update_task(task_id, scrutiny_note=f"准奏：{note}")
+        self.execute_task_async(task_id)
+        return self.db.get_task(task_id)
+
+    # ── Public dispatch methods ──────────────────────────────────────
+
+    def run_batch(self, max_dispatch: int = MAX_CONCURRENT) -> list[dict]:
+        """Pick high-priority recommendations and dispatch in parallel.
+
+        Rules:
+        - Respects MAX_CONCURRENT global limit
+        - Same department + same project/cwd cannot run in parallel (file conflict risk)
+        - Same department + different projects CAN run in parallel
+        """
+        slots, busy_slots = self._get_available_slots(max_dispatch)
+        if slots <= 0:
+            log.info(f"Governor: all slots busy (max {MAX_CONCURRENT}), skipping")
+            return []
 
         insights = self.db.get_latest_insights()
         recs = insights.get("recommendations", [])
@@ -491,7 +308,6 @@ class Governor:
             cwd = rec.get("cwd", "") or rec.get("project", "")
             slot_key = (dept, cwd)
 
-            # Skip if same department + same project is already running
             if slot_key in busy_slots or slot_key in dispatched_slots:
                 log.info(f"Governor: skipping rec for {dept}@{cwd} (slot busy)")
                 continue
@@ -507,38 +323,13 @@ class Governor:
                 "summary":        rec.get("summary", ""),
                 "importance":     rec.get("importance", ""),
             }
-            task_id = self.db.create_task(
-                action=rec.get("action", ""),
-                reason=rec.get("reason", ""),
-                priority=rec.get("priority", "high"),
-                spec=spec,
-                source="auto",
+            result = self._dispatch_task(
+                spec, action=rec.get("action", ""),
+                reason=rec.get("reason", ""), priority=rec.get("priority", "high"),
             )
-            log.info(f"Governor: created task #{task_id}: {rec.get('summary', '')} [{dept}]")
-
-            # Cognitive mode
-            task_dict = self.db.get_task(task_id)
-            spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
-            self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
-
-            # Scrutiny
-            self.db.update_task(task_id, status="scrutinizing")
-            self.db.write_log(f"门下省审查任务 #{task_id}：{rec.get('summary', '')[:50]}", "INFO", "governor")
-            approved, reason = self.scrutinize(task_id, self.db.get_task(task_id))
-
-            if not approved:
-                self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=reason,
-                                    finished_at=datetime.now(timezone.utc).isoformat())
-                self.db.write_log(f"任务 #{task_id} 被门下省驳回：{reason}", "WARNING", "governor")
-                log.info(f"Governor: task #{task_id} rejected by scrutiny")
-                continue
-
-            self.db.update_task(task_id, scrutiny_note=f"准奏：{reason}")
-
-            # Dispatch async — don't block, let departments run in parallel
-            self.execute_task_async(task_id)
-            dispatched_slots.add(slot_key)
-            dispatched.append(self.db.get_task(task_id))
+            if result:
+                dispatched_slots.add(slot_key)
+                dispatched.append(result)
 
         if dispatched:
             slot_list = ", ".join(f"{d}@{c}" for d, c in dispatched_slots)
@@ -550,40 +341,23 @@ class Governor:
 
     def run_parallel_scenario(self, scenario_name: str, project: str = "orchestrator",
                               cwd: str = "", action_prefix: str = "") -> list[dict]:
-        """Dispatch a predefined parallel scenario — multiple departments at once.
-
-        Args:
-            scenario_name: Key from PARALLEL_SCENARIOS (e.g. "full_audit")
-            project: Target project name
-            cwd: Working directory (auto-resolved if empty)
-            action_prefix: Optional prefix for task actions
-
-        Returns:
-            List of dispatched task dicts
-        """
+        """Dispatch a predefined parallel scenario — multiple departments at once."""
         scenario = PARALLEL_SCENARIOS.get(scenario_name)
         if not scenario:
             available = ", ".join(PARALLEL_SCENARIOS.keys())
             log.error(f"Governor: unknown scenario '{scenario_name}'. Available: {available}")
             return []
 
-        self._reap_zombie_tasks()
-
-        running_count = self.db.count_running_tasks()
-        slots = MAX_CONCURRENT - running_count
+        slots, _ = self._get_available_slots()
         if slots <= 0:
             log.info(f"Governor: no slots available for scenario '{scenario_name}'")
             return []
 
-        # Resolve cwd
         if not cwd:
-            from src.core.project_registry import resolve_project
-            cwd = resolve_project(project) or os.environ.get("ORCHESTRATOR_ROOT", ".")
+            cwd = _resolve_project_cwd(project)
 
-        departments = scenario["departments"][:slots]  # Don't exceed available slots
         dispatched = []
-
-        for dept in departments:
+        for dept in scenario["departments"][:slots]:
             action = f"{action_prefix}{scenario['description']}" if action_prefix else scenario["description"]
             spec = {
                 "department": dept,
@@ -592,32 +366,12 @@ class Governor:
                 "problem": f"Parallel scenario: {scenario_name}",
                 "summary": f"{dept} — {scenario['description']}",
             }
-            task_id = self.db.create_task(
-                action=action,
-                reason=f"Parallel scenario dispatch: {scenario_name}",
-                priority="medium",
-                spec=spec,
-                source="auto",
+            result = self._dispatch_task(
+                spec, action=action,
+                reason=f"Parallel scenario dispatch: {scenario_name}", priority="medium",
             )
-
-            # Cognitive mode
-            task_dict = self.db.get_task(task_id)
-            spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
-            self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
-
-            # Scrutiny
-            self.db.update_task(task_id, status="scrutinizing")
-            approved, reason = self.scrutinize(task_id, self.db.get_task(task_id))
-
-            if not approved:
-                self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=reason,
-                                    finished_at=datetime.now(timezone.utc).isoformat())
-                log.info(f"Governor: scenario task #{task_id} ({dept}) rejected: {reason}")
-                continue
-
-            self.db.update_task(task_id, scrutiny_note=f"准奏：{reason}")
-            self.execute_task_async(task_id)
-            dispatched.append(self.db.get_task(task_id))
+            if result:
+                dispatched.append(result)
 
         if dispatched:
             dept_list = ", ".join(d["spec"].get("department", "?") if isinstance(d.get("spec"), dict)
@@ -629,6 +383,8 @@ class Governor:
             )
             log.info(f"Governor: scenario '{scenario_name}' dispatched {len(dispatched)} tasks")
         return dispatched
+
+    # ── Task execution ───────────────────────────────────────────────
 
     def execute_task_async(self, task_id: int):
         """在后台线程中执行任务，不阻塞调用方。"""
@@ -642,35 +398,16 @@ class Governor:
         log.info(f"Governor: task #{task_id} dispatched to background thread")
         return t
 
-    def execute_task(self, task_id: int) -> dict:
-        """Execute task by ID — routes to department based on spec.department."""
-        task = self.db.get_task(task_id)
-        if not task:
-            log.error(f"Governor: task #{task_id} not found")
-            return {}
-
-        spec = task.get("spec", {})
-
-        # 六部路由
-        dept_key = spec.get("department", "engineering")
-        dept = DEPARTMENTS.get(dept_key, DEPARTMENTS["engineering"])
-
-        # 项目路由
-        project_name = spec.get("project", "orchestrator")
-        task_cwd = spec.get("cwd")
-        if not task_cwd:
-            from src.core.project_registry import resolve_project
-            task_cwd = resolve_project(project_name)
-        if not task_cwd:
-            task_cwd = os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent))
-
+    def _prepare_prompt(self, task: dict, dept_key: str, dept: dict,
+                        task_cwd: str, project_name: str) -> str:
+        """Assemble the full prompt: department identity + cognitive mode + task + context."""
         base_prompt = TASK_PROMPT_TEMPLATE.format(
             cwd=task_cwd,
             project=project_name,
-            problem=spec.get("problem", ""),
-            behavior_chain=spec.get("behavior_chain", ""),
-            observation=spec.get("observation", ""),
-            expected=spec.get("expected", ""),
+            problem=task.get("spec", {}).get("problem", ""),
+            behavior_chain=task.get("spec", {}).get("behavior_chain", ""),
+            observation=task.get("spec", {}).get("observation", ""),
+            expected=task.get("spec", {}).get("expected", ""),
             action=task.get("action", ""),
             reason=task.get("reason", ""),
         )
@@ -686,7 +423,7 @@ class Governor:
         recent_runs = load_recent_runs(dept_key, n=5)
         runs_context = format_runs_for_context(recent_runs)
 
-        # 组装最终 prompt: 部门身份 + 认知模式 + 任务 + 执行记录
+        # 组装最终 prompt
         prompt = dept_prompt
         if mode_prompt:
             prompt += "\n\n" + mode_prompt
@@ -694,7 +431,7 @@ class Governor:
         if runs_context:
             prompt += "\n\n" + runs_context
 
-        # 动态上下文组装（Parlant 模式：只注入任务相关的规则和知识）
+        # 动态上下文组装
         try:
             dynamic_ctx = assemble_context(dept_key, task)
             if dynamic_ctx:
@@ -702,12 +439,168 @@ class Governor:
         except Exception as e:
             log.warning(f"Governor: context assembly failed ({e}), continuing without dynamic context")
 
+        return prompt
+
+    def _log_agent_event(self, task_id: int, event_type: str, data: dict):
+        """Safe wrapper: log agent event without breaking execution on failure."""
+        try:
+            self.db.add_agent_event(task_id, event_type, data)
+        except Exception:
+            pass
+
+    async def _run_agent_session(self, task_id: int, prompt: str, dept_prompt: str,
+                                  allowed_tools: list, task_cwd: str) -> str:
+        """Run the Agent SDK session and stream events. Returns result text."""
+        # Agent SDK 环境准备
+        agent_env = {}
+        if os.environ.get("CLAUDECODE"):
+            agent_env["CLAUDECODE"] = ""
+        if os.name == "nt" and not os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"):
+            bash_path = find_git_bash()
+            if bash_path:
+                agent_env["CLAUDE_CODE_GIT_BASH_PATH"] = bash_path
+
+        result_text = ""
+        turn = 0
+        async for message in query(
+            prompt=prompt,
+            options=ClaudeAgentOptions(
+                cwd=task_cwd,
+                allowed_tools=allowed_tools,
+                permission_mode="bypassPermissions",
+                system_prompt=dept_prompt,
+                max_turns=MAX_AGENT_TURNS,
+                **({"env": agent_env} if agent_env else {}),
+            ),
+        ):
+            if isinstance(message, AssistantMessage):
+                turn += 1
+                thinking = []
+                tool_calls = []
+                text_parts = []
+                for block in (message.content or []):
+                    block_type = getattr(block, 'type', None)
+                    if block_type == 'thinking':
+                        thinking.append(getattr(block, 'thinking', '')[:300])
+                    elif block_type == 'tool_use':
+                        tool_calls.append({
+                            'tool': getattr(block, 'name', ''),
+                            'input_preview': str(getattr(block, 'input', {}))[:200],
+                        })
+                    elif block_type == 'text':
+                        text_parts.append(getattr(block, 'text', '')[:300])
+
+                event_data = {"turn": turn}
+                if thinking:
+                    event_data["thinking"] = thinking
+                if tool_calls:
+                    event_data["tools"] = tool_calls
+                if text_parts:
+                    event_data["text"] = text_parts
+                if message.error:
+                    event_data["error"] = message.error
+                self._log_agent_event(task_id, "agent_turn", event_data)
+
+            elif isinstance(message, TaskProgressMessage):
+                self._log_agent_event(task_id, "agent_progress", {
+                    "description": message.description[:200],
+                    "last_tool": message.last_tool_name,
+                })
+
+            elif isinstance(message, TaskStartedMessage):
+                self._log_agent_event(task_id, "subtask_started", {
+                    "sub_task_id": message.task_id,
+                    "description": message.description[:200],
+                })
+
+            elif isinstance(message, ResultMessage):
+                result_text = message.result or ""
+                self._log_agent_event(task_id, "agent_result", {
+                    "num_turns": message.num_turns,
+                    "duration_ms": message.duration_ms,
+                    "cost_usd": message.total_cost_usd,
+                    "stop_reason": message.stop_reason,
+                    "is_error": message.is_error,
+                })
+
+        return result_text
+
+    def _finalize_task(self, task_id: int, task: dict, dept_key: str,
+                       status: str, output: str, task_cwd: str, project_name: str, now: str):
+        """Post-execution: visual verify, update status, write run log, dispatch collaboration."""
+        spec = task.get("spec", {})
+
+        # 视觉验证
+        if status == "done":
+            verification = self._visual_verify(task_id, task_cwd, spec)
+            if verification:
+                output = f"{output}\n\n[visual_verify] {verification}"
+
+        finished = datetime.now(timezone.utc).isoformat()
+        try:
+            self.db.update_task(task_id, status=status, output=output, finished_at=finished)
+        except Exception as e:
+            log.error(f"Governor: failed to update task #{task_id} status: {e}")
+        self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
+        log.info(f"Governor: task #{task_id} {status}")
+
+        # 部门执行记忆
+        try:
+            duration_s = 0
+            try:
+                started_dt = datetime.fromisoformat(task.get("started_at") or now)
+                finished_dt = datetime.fromisoformat(finished)
+                duration_s = int((finished_dt - started_dt).total_seconds())
+            except (ValueError, TypeError):
+                pass
+            commit_hash = ""
+            commit_match = re.search(r'\b([0-9a-f]{7,40})\b', output) if "commit" in output.lower() else None
+            if commit_match:
+                commit_hash = commit_match.group(1)
+            append_run_log(
+                department=dept_key,
+                task_id=task_id,
+                mode=task.get("source", "auto"),
+                summary=task.get("action", "")[:200],
+                commit=commit_hash,
+                status=status,
+                duration_s=duration_s,
+                notes=output[:200] if status == "failed" else "",
+            )
+        except Exception as e:
+            log.warning(f"Governor: failed to write run-log for task #{task_id}: {e}")
+
+        # 部门协作
+        if status == "done":
+            if dept_key == "engineering":
+                task["output"] = output
+                self._dispatch_quality_review(task_id, task, task_cwd, project_name)
+            elif dept_key == "quality" and "VERDICT: FAIL" in output:
+                self._dispatch_rework(task_id, task, task_cwd, project_name, output)
+
+    def execute_task(self, task_id: int) -> dict:
+        """Execute task by ID — routes to department based on spec.department."""
+        task = self.db.get_task(task_id)
+        if not task:
+            log.error(f"Governor: task #{task_id} not found")
+            return {}
+
+        spec = task.get("spec", {})
+        dept_key = spec.get("department", "engineering")
+        dept = DEPARTMENTS.get(dept_key, DEPARTMENTS["engineering"])
+        project_name = spec.get("project", "orchestrator")
+        task_cwd = _resolve_project_cwd(project_name, spec.get("cwd", ""))
+
+        prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name)
+        skill_content = load_department(dept_key)
+        dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
+
+        cognitive_mode = classify_cognitive_mode(task)
         log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, project={project_name}, cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
         self.db.update_task(task_id, status="running", started_at=now)
         self.db.write_log(f"开始执行任务 #{task_id}（{project_name}）：{task.get('action','')[:50]}", "INFO", "governor")
-        log.info(f"Governor: executing task #{task_id}")
 
         output = "(no output)"
         status = "failed"
@@ -715,102 +608,8 @@ class Governor:
             tools_str = dept.get("tools", "")
             allowed_tools = [t.strip() for t in tools_str.split(",") if t.strip()]
 
-            # Agent SDK 环境准备
-            agent_env = {}
-            # 清除嵌套会话检测（本地调试 / CI 需要）
-            if os.environ.get("CLAUDECODE"):
-                agent_env["CLAUDECODE"] = ""
-            # Windows 兼容：确保 Agent SDK 能找到 git-bash
-            if os.name == "nt" and not os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"):
-                git_bash = Path("D:/Program Files/Git/bin/bash.exe")
-                if not git_bash.exists():
-                    git_bash = Path("C:/Program Files/Git/bin/bash.exe")
-                if git_bash.exists():
-                    agent_env["CLAUDE_CODE_GIT_BASH_PATH"] = str(git_bash)
-
-            async def _run_agent():
-                result_text = ""
-                turn = 0
-                async for message in query(
-                    prompt=prompt,
-                    options=ClaudeAgentOptions(
-                        cwd=task_cwd,
-                        allowed_tools=allowed_tools,
-                        permission_mode="bypassPermissions",
-                        system_prompt=dept_prompt,
-                        max_turns=MAX_AGENT_TURNS,
-                        **({"env": agent_env} if agent_env else {}),
-                    ),
-                ):
-                    if isinstance(message, AssistantMessage):
-                        turn += 1
-                        # Extract thinking, tool calls, and text from content blocks
-                        thinking = []
-                        tool_calls = []
-                        text_parts = []
-                        for block in (message.content or []):
-                            block_type = getattr(block, 'type', None)
-                            if block_type == 'thinking':
-                                thinking.append(getattr(block, 'thinking', '')[:300])
-                            elif block_type == 'tool_use':
-                                tool_calls.append({
-                                    'tool': getattr(block, 'name', ''),
-                                    'input_preview': str(getattr(block, 'input', {}))[:200],
-                                })
-                            elif block_type == 'tool_result':
-                                pass  # Results are verbose, skip
-                            elif block_type == 'text':
-                                text_parts.append(getattr(block, 'text', '')[:300])
-
-                        event_data = {"turn": turn}
-                        if thinking:
-                            event_data["thinking"] = thinking
-                        if tool_calls:
-                            event_data["tools"] = tool_calls
-                        if text_parts:
-                            event_data["text"] = text_parts
-                        if message.error:
-                            event_data["error"] = message.error
-
-                        try:
-                            self.db.add_agent_event(task_id, "agent_turn", event_data)
-                        except Exception:
-                            pass  # Don't let event logging break execution
-
-                    elif isinstance(message, TaskProgressMessage):
-                        try:
-                            self.db.add_agent_event(task_id, "agent_progress", {
-                                "description": message.description[:200],
-                                "last_tool": message.last_tool_name,
-                            })
-                        except Exception:
-                            pass
-
-                    elif isinstance(message, TaskStartedMessage):
-                        try:
-                            self.db.add_agent_event(task_id, "subtask_started", {
-                                "sub_task_id": message.task_id,
-                                "description": message.description[:200],
-                            })
-                        except Exception:
-                            pass
-
-                    elif isinstance(message, ResultMessage):
-                        result_text = message.result or ""
-                        try:
-                            self.db.add_agent_event(task_id, "agent_result", {
-                                "num_turns": message.num_turns,
-                                "duration_ms": message.duration_ms,
-                                "cost_usd": message.total_cost_usd,
-                                "stop_reason": message.stop_reason,
-                                "is_error": message.is_error,
-                            })
-                        except Exception:
-                            pass
-
-                return result_text
-
-            output = anyio.from_thread.run(_run_agent) if _in_async_context() else anyio.run(_run_agent)
+            run_fn = self._run_agent_session(task_id, prompt, dept_prompt, allowed_tools, task_cwd)
+            output = anyio.from_thread.run(run_fn) if _in_async_context() else anyio.run(run_fn)
             output = output[:2000] if output else "(no output)"
             status = "done" if output and output != "(no output)" else "failed"
         except TimeoutError:
@@ -819,89 +618,30 @@ class Governor:
             output = str(e)[:2000]
             log.error(f"Governor: Agent SDK error for task #{task_id}: {e}")
         finally:
-            # 视觉验证：如果 sub-agent 留下了截图，用 vision 模型检查
-            if status == "done":
-                verification = self._visual_verify(task_id, task_cwd, spec)
-                if verification:
-                    output = f"{output}\n\n[visual_verify] {verification}"
-
-            finished = datetime.now(timezone.utc).isoformat()
-            try:
-                self.db.update_task(task_id, status=status, output=output, finished_at=finished)
-            except Exception as e:
-                log.error(f"Governor: failed to update task #{task_id} status: {e}")
-            self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
-            log.info(f"Governor: task #{task_id} {status}")
-
-            # 部门执行记忆
-            try:
-                duration_s = 0
-                started_at = task.get("started_at") or now
-                try:
-                    started_dt = datetime.fromisoformat(started_at)
-                    finished_dt = datetime.fromisoformat(finished)
-                    duration_s = int((finished_dt - started_dt).total_seconds())
-                except (ValueError, TypeError):
-                    pass
-                # 尝试从 output 中提取 commit hash
-                commit_hash = ""
-                commit_match = re.search(r'\b([0-9a-f]{7,40})\b', output) if "commit" in output.lower() else None
-                if commit_match:
-                    commit_hash = commit_match.group(1)
-                append_run_log(
-                    department=dept_key,
-                    task_id=task_id,
-                    mode=task.get("source", "auto"),
-                    summary=task.get("action", "")[:200],
-                    commit=commit_hash,
-                    status=status,
-                    duration_s=duration_s,
-                    notes=output[:200] if status == "failed" else "",
-                )
-            except Exception as e:
-                log.warning(f"Governor: failed to write run-log for task #{task_id}: {e}")
-
-            # 部门协作
-            if status == "done":
-                if dept_key == "engineering":
-                    # 工部完成 → 自动派刑部验收（传入最新 output）
-                    task["output"] = output
-                    self._dispatch_quality_review(task_id, task, task_cwd, project_name)
-                elif dept_key == "quality" and "VERDICT: FAIL" in output:
-                    # 刑部验收失败 → 打回工部重做
-                    self._dispatch_rework(task_id, task, task_cwd, project_name, output)
+            self._finalize_task(task_id, task, dept_key, status, output, task_cwd, project_name, now)
 
         return self.db.get_task(task_id)
 
+    # ── Post-execution helpers ───────────────────────────────────────
+
     @staticmethod
     def _extract_artifact(task: dict) -> dict:
-        """Extract structured handoff artifact from completed task.
-
-        Three-part structure (inspired by SPINE Swarm):
-        - done: what was accomplished
-        - found: what was discovered during execution
-        - remaining: what's left unfinished or needs follow-up
-        """
+        """Extract structured handoff artifact from completed task."""
         try:
             output = task.get("output") or ""
 
-            # Extract commit hash
             commit_match = re.search(r'(?:commit|committed|提交)[:\s]*([0-9a-f]{7,40})', output, re.IGNORECASE)
             commit = commit_match.group(1) if commit_match else ""
 
-            # Extract changed files
             file_patterns = re.findall(r'(?:src|departments|SOUL|dashboard|tests|data|docs|bin)/[\w/.-]+\.\w+', output)
             files_changed = list(set(file_patterns))[:10]
 
-            # Extract DONE line as summary
             done_match = re.search(r'DONE:\s*(.+)', output)
             summary = done_match.group(1).strip() if done_match else task.get("action", "")[:100]
 
-            # Extract TODO/remaining items from output
             remaining = re.findall(r'(?:TODO|FIXME|remaining|still need|未完成)[:\s]*(.+)', output, re.IGNORECASE)
             remaining = [r.strip()[:100] for r in remaining[:5]]
 
-            # Extract observations/findings
             found = []
             for pattern in [r'(?:found|discovered|noticed|发现)[:\s]*(.+)',
                            r'(?:note|warning|注意)[:\s]*(.+)']:
@@ -932,25 +672,23 @@ class Governor:
         """工部完成任务后，自动创建刑部验收任务。跳过门下省审查（验收本身就是审查）。"""
         parent_spec = parent_task.get("spec", {})
         parent_action = parent_task.get("action", "")
-        # 防止验收链无限循环：如果父任务本身已经是验收任务，不再派生
         if parent_spec.get("department") == "quality":
             return
 
-        # 从工部 output 中提取结构化信息
         artifact = self._extract_artifact(parent_task)
         files_str = ", ".join(artifact["files_changed"]) if artifact["files_changed"] else "未检测到"
         commit_str = artifact["commit"] or "未检测到"
 
         if artifact["commit"]:
             observation = (
-                f"工部执行摘要：{artifact['summary']}\n"
+                f"工部执行摘要：{artifact['done']}\n"
                 f"改动文件：{files_str}\n"
                 f"Commit: {commit_str}\n\n"
                 f"请自行运行 git diff {artifact['commit']}~1..{artifact['commit']} 查看实际代码改动，不要依赖上述摘要做判断。"
             )
         else:
             observation = (
-                f"工部执行摘要：{artifact['summary']}\n"
+                f"工部执行摘要：{artifact['done']}\n"
                 f"改动文件：{files_str}\n"
                 f"Commit: {commit_str}\n\n"
                 f"未检测到 commit hash，请运行 git log --oneline -3 查看最近提交，然后用 git diff 查看实际改动。"
@@ -976,18 +714,14 @@ class Governor:
         self.db.write_log(f"工部任务 #{parent_id} 完成 → 派刑部验收任务 #{review_id}", "INFO", "governor")
         log.info(f"Governor: dispatched quality review #{review_id} for engineering task #{parent_id}")
 
-    MAX_REWORK = 1  # 最多打回重做 1 次，防止工部↔刑部死循环
-
     def _dispatch_rework(self, review_task_id: int, review_task: dict,
                          task_cwd: str, project_name: str, review_output: str):
         """刑部验收失败，打回工部重做。追溯原始工部任务，携带刑部反馈。"""
-        review_spec = review_task.get("spec", {})
         parent_id = review_task.get("parent_task_id")
         if not parent_id:
             log.warning(f"Governor: review #{review_task_id} has no parent_task_id, skip rework")
             return
 
-        # 查原始工部任务，检查重做次数
         original = self.db.get_task(parent_id)
         if not original:
             return
@@ -1000,7 +734,6 @@ class Governor:
             log.warning(f"Governor: task #{parent_id} hit max rework ({rework_count}), not dispatching")
             return
 
-        # 提取刑部的具体问题（优先提取标记行，fallback 到 VERDICT 前的最后 10 行）
         issue_lines = [
             l for l in review_output.splitlines()
             if l.strip().startswith(('\U0001f534', '\U0001f7e1', '[CRITICAL]', '[BUG]', '[WARN]'))
@@ -1008,7 +741,6 @@ class Governor:
         if issue_lines:
             feedback = "\n".join(issue_lines[:10])
         else:
-            # fallback: VERDICT 行之前的最后 10 行
             feedback_lines = []
             for line in review_output.splitlines():
                 if line.startswith("VERDICT:"):
@@ -1049,7 +781,7 @@ class Governor:
         if not images:
             return ""
 
-        image_paths = [str(p) for p in images[:3]]  # 最多验证 3 张
+        image_paths = [str(p) for p in images[:3]]
         expected = spec.get("expected", "任务完成")
 
         try:
@@ -1061,7 +793,6 @@ class Governor:
             )
             if result:
                 log.info(f"Governor: visual verify task #{task_id}: {result[:80]}")
-                # 清理验证截图
                 for p in images:
                     p.unlink(missing_ok=True)
                 verify_dir.rmdir()

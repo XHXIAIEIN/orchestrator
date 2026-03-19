@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +37,6 @@ def _get_text(content) -> str:
 
 class ClaudeCollector:
     def __init__(self, db: EventsDB, claude_home: str = None):
-        import os
         self.db = db
         if claude_home:
             self.claude_home = Path(claude_home)

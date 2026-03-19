@@ -136,7 +136,7 @@ class EventsDB:
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
                 try:
                     conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {typ}")
-                except Exception:
+                except sqlite3.OperationalError:
                     pass  # Column already exists
 
     def get_tables(self) -> list:
