@@ -2,7 +2,7 @@
 
 Prompt loading order (first match wins):
   1. SOUL/private/prompts/{name}.md  — personal overrides (gitignored)
-  2. SOUL/prompts/{name}.md          — public defaults (tracked)
+  2. SOUL/public/prompts/{name}.md    — public defaults (tracked)
 """
 import logging
 import re
@@ -18,7 +18,7 @@ _PROMPT_DIRS = [
 ]
 
 
-def _load_prompt(name: str) -> str:
+def load_prompt(name: str) -> str:
     """Load a prompt template. Private overrides public."""
     for d in _PROMPT_DIRS:
         path = d / f"{name}.md"
@@ -30,9 +30,9 @@ def _load_prompt(name: str) -> str:
     return ""
 
 
-def _load_cognitive_modes() -> dict[str, str]:
+def load_cognitive_modes() -> dict[str, str]:
     """Parse SOUL/private/prompts/cognitive_modes.md into {mode: prompt} dict."""
-    raw = _load_prompt("cognitive_modes")
+    raw = load_prompt("cognitive_modes")
     if not raw:
         return {"direct": "", "react": "", "hypothesis": "", "designer": ""}
     modes = {}
@@ -52,11 +52,11 @@ def _load_cognitive_modes() -> dict[str, str]:
     return modes
 
 
-# ── Prompt templates (loaded from SOUL/private/prompts/) ──
+# ── Prompt templates (loaded from SOUL/) ──
 
-TASK_PROMPT_TEMPLATE = _load_prompt("task")
-SCRUTINY_PROMPT = _load_prompt("scrutiny")
-COGNITIVE_MODE_PROMPTS = _load_cognitive_modes()
+TASK_PROMPT_TEMPLATE = load_prompt("task")
+SCRUTINY_PROMPT = load_prompt("scrutiny")
+COGNITIVE_MODE_PROMPTS = load_cognitive_modes()
 
 # ── Second opinion model ──
 SECOND_OPINION_MODEL = "claude-haiku-4-5-20251001"
