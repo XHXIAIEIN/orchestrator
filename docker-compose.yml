@@ -7,9 +7,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "23714:23714"
+      - "${PORT:-23714}:${PORT:-23714}"
     environment:
-      - PORT=23714
+      - PORT=${PORT:-23714}
       # Tell collectors where to find mounted data
       - CHROME_HISTORY_ROOT=/chrome-data
       - ORCHESTRATOR_CLAUDE_HOME=/claude-home
@@ -23,10 +23,8 @@ services:
       - TERM=xterm-256color
       - COLORTERM=truecolor
       - LANG=en_US.UTF-8
-      # Local LLM via Ollama on host
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      # Fish S2 Pro TTS service (Docker container on host)
-      - TTS_HOST=http://host.docker.internal:23715
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - TTS_HOST=${TTS_HOST:-http://host.docker.internal:23715}
     volumes:
       # Source code — writable so claude edits persist to host
       - .:/orchestrator
