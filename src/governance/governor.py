@@ -376,7 +376,8 @@ class Governor:
 
         Rules:
         - Respects MAX_CONCURRENT global limit
-        - One task per department at a time (no two engineering tasks in parallel)
+        - Same department + same project/cwd cannot run in parallel (file conflict risk)
+        - Same department + different projects CAN run in parallel
         - Each task goes through scrutiny before dispatch
         - Returns list of dispatched task dicts
         """
@@ -388,15 +389,15 @@ class Governor:
             log.info(f"Governor: {running_count} tasks running (max {MAX_CONCURRENT}), skipping")
             return []
 
-        # Find which departments are already busy
+        # Build set of busy (department, cwd) pairs
         running_tasks = self.db.get_running_tasks()
-        busy_departments = set()
+        busy_slots = set()  # (department, cwd) tuples
         for t in running_tasks:
             try:
                 spec = json.loads(t.get("spec", "{}"))
-                dept = spec.get("department")
-                if dept:
-                    busy_departments.add(dept)
+                dept = spec.get("department", "")
+                cwd = spec.get("cwd", "") or spec.get("project", "")
+                busy_slots.add((dept, cwd))
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -408,17 +409,19 @@ class Governor:
             return []
 
         dispatched = []
-        dispatched_departments = set()
+        dispatched_slots = set()
 
         for rec in high:
             if len(dispatched) >= slots:
                 break
 
             dept = rec.get("department", "engineering")
+            cwd = rec.get("cwd", "") or rec.get("project", "")
+            slot_key = (dept, cwd)
 
-            # Skip if this department is already running or already dispatched in this batch
-            if dept in busy_departments or dept in dispatched_departments:
-                log.info(f"Governor: skipping rec for {dept} (department busy)")
+            # Skip if same department + same project is already running
+            if slot_key in busy_slots or slot_key in dispatched_slots:
+                log.info(f"Governor: skipping rec for {dept}@{cwd} (slot busy)")
                 continue
 
             spec = {
@@ -462,13 +465,13 @@ class Governor:
 
             # Dispatch async — don't block, let departments run in parallel
             self.execute_task_async(task_id)
-            dispatched_departments.add(dept)
+            dispatched_slots.add(slot_key)
             dispatched.append(self.db.get_task(task_id))
 
         if dispatched:
-            dept_list = ", ".join(dispatched_departments)
+            slot_list = ", ".join(f"{d}@{c}" for d, c in dispatched_slots)
             self.db.write_log(
-                f"Governor batch: dispatched {len(dispatched)} tasks to [{dept_list}]",
+                f"Governor batch: dispatched {len(dispatched)} tasks to [{slot_list}]",
                 "INFO", "governor"
             )
         return dispatched
