@@ -16,6 +16,10 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// Clean URL routes
+app.get('/pipeline', (req, res) => res.sendFile(path.join(__dirname, 'public', 'preview.html')));
+app.get('/agents', (req, res) => res.sendFile(path.join(__dirname, 'public', 'agents.html')));
+
 // Swagger UI at /docs
 app.get('/api-reference', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Orchestrator API</title>
