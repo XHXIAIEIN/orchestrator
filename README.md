@@ -77,16 +77,50 @@ cd orchestrator
 
 # 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env，填入 API key 和本地路径
+# 编辑 .env：
+#   - ANTHROPIC_API_KEY: 你的 Anthropic API key
+#   - 其余路径根据你的操作系统调整（.env.example 里有 Windows/macOS/Linux 示例）
 
-# 3. 启动 (Docker)
+# 3. 创建数据目录
+mkdir -p data SOUL/private
+
+# 4. 启动 (Docker)
 docker compose up --build -d
 
-# 4. 访问
+# 5. 验证
+curl -s http://localhost:23714/api/health
+# 返回 {"status":"ok"} 表示启动成功
+
+# 6. 访问
 # Dashboard:     http://localhost:23714
 # Pipeline:      http://localhost:23714/pipeline
 # Agents:        http://localhost:23714/agents
 # API Reference: http://localhost:23714/api-reference
+# OpenAPI Spec:  http://localhost:23714/openapi.json
+```
+
+### 不用 Docker
+
+```bash
+# 终端 1: Python 调度器
+pip install -r requirements.txt
+python -m src.scheduler
+
+# 终端 2: Node 仪表盘
+cd dashboard && npm install && node server.js
+```
+
+### 在其他项目中集成
+
+在你的其他项目的 `CLAUDE.md` 里加入：
+
+```markdown
+## Orchestrator
+
+查全局状态：`curl -s http://localhost:23714/api/brief`
+查未解决债务：`curl -s http://localhost:23714/api/debts?status=open`
+Agent 实时状态：`curl -s http://localhost:23714/api/agents/live`
+完整 API：见 http://localhost:23714/api-reference
 ```
 
 ## Dashboard
@@ -155,3 +189,20 @@ Governor 支持三种派单模式：
 - **前端**: Express.js, WebSocket, SSE, 原生 HTML/CSS/JS
 - **部署**: Docker Compose
 - **AI**: Claude Sonnet/Haiku (六部执行), Ollama (本地路由)
+
+## 设计参考
+
+v2 架构研究了 16 个开源项目 + 3 个认知框架，以下是实际影响了设计的项目：
+
+| 项目 | 借鉴了什么 |
+|------|-----------|
+| [Axe](https://github.com/axe-org/axe) | 部门记忆 (run-log)、GC feedback loop、不透明边界（只传 artifact 不传推理） |
+| [gstack](https://github.com/anthropics/claude-code/tree/main/.claude) | CEO 决策模式、编译型 skill 系统、Designer 认知模式、爆炸半径逆推 |
+| [Parlant](https://github.com/parlant-io/parlant) | 动态上下文裁剪（Contextual Matching Engine）—— 条件规则匹配替代全量注入 |
+| [Rowboat](https://github.com/rowboat-ai/rowboat) | 共享 Markdown vault 协作模式（部门间通过文件共享知识） |
+| [Hermes](https://github.com/anthropics/hermes) | 自动 skill 创建 + cron 调度 + subagent 并行执行 |
+| [ReAct](https://arxiv.org/abs/2210.03629) | Think → Act → Observe 循环认知模式 |
+| [DATAGEN](https://arxiv.org/abs/2402.17911) | Hypothesis-Driven Agent（先假设后验证的诊断模式） |
+| [agent-automate-template](https://github.com/XHXIAIEIN/agent-automate-template) | PostToolUse 心跳、多 Worker 并行调度、Session 质量评分、Master Prompt 自治规则 |
+
+详细设计文档：[docs/evolution-v2-design.md](docs/evolution-v2-design.md)
