@@ -190,10 +190,11 @@ Governor 支持三种派单模式：
 | 组件 | 用途 | 说明 |
 |------|------|------|
 | Python 3.10+ | 后端调度、分析、治理 | 标准库 + 少量依赖 |
-| Anthropic API | 六部 Agent 执行 | 需要 API key |
-| Claude Agent SDK | Governor 派单 | `pip install claude-agent-sdk` |
+| Claude Code | 六部 Agent 执行 | Agent SDK 走 Claude Code 认证，不需要单独 API key |
 | SQLite | 所有数据存储 | Python 内置，零配置 |
 | Node.js 18+ | Dashboard 服务 | Express + sql.js |
+
+> **关于 API key**：如果在 Claude Code 环境下运行，Agent SDK 自动使用 Claude Code 的认证，无需 API key。仅在 Docker 容器独立运行时需要在 `.env` 中配置 `ANTHROPIC_API_KEY`。分析/洞察模块如果有 Ollama 可用，也不消耗 API 额度。
 
 ### 可选（没有也能跑）
 
