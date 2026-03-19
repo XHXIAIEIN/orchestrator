@@ -379,6 +379,64 @@ app.get('/api/experiences', (req, res) => {
   finally { db.close(); }
 });
 
+// ── Agent Events: real-time observability ──
+
+app.get('/api/agent-events/:taskId', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    const rows = dbAll(db,
+      'SELECT id, task_id, event_type, data, created_at FROM agent_events WHERE task_id = ? ORDER BY id ASC LIMIT ?',
+      [parseInt(req.params.taskId), limit]
+    );
+    res.json(rows.map(r => ({ ...r, data: JSON.parse(r.data || '{}') })));
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
+// SSE stream: real-time agent events across all running tasks
+app.get('/api/agent-events-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  let lastId = parseInt(req.query.since_id) || 0;
+
+  // Send initial: get last 20 events
+  const initDb = getDb();
+  if (initDb) {
+    try {
+      const rows = dbAll(initDb, 'SELECT id, task_id, event_type, data, created_at FROM agent_events ORDER BY id DESC LIMIT 20');
+      if (rows.length) {
+        lastId = rows[0].id;
+        const parsed = rows.reverse().map(r => ({ ...r, data: JSON.parse(r.data || '{}') }));
+        res.write(`data: ${JSON.stringify({ type: 'backlog', events: parsed })}\n\n`);
+      }
+    } catch {}
+    finally { initDb.close(); }
+  }
+
+  const interval = setInterval(() => {
+    const db = getDb();
+    if (!db) return;
+    try {
+      const rows = dbAll(db, 'SELECT id, task_id, event_type, data, created_at FROM agent_events WHERE id > ? ORDER BY id ASC LIMIT 20', [lastId]);
+      if (rows.length) {
+        lastId = rows[rows.length - 1].id;
+        const parsed = rows.map(r => ({ ...r, data: JSON.parse(r.data || '{}') }));
+        for (const evt of parsed) {
+          res.write(`data: ${JSON.stringify({ type: 'agent_event', event: evt })}\n\n`);
+        }
+      }
+    } catch {}
+    finally { db.close(); }
+  }, 1000);
+
+  req.on('close', () => clearInterval(interval));
+});
+
 app.get('/api/stats/categories', (req, res) => {
   const db = getDb();
   if (!db) return res.json([]);

@@ -122,6 +122,15 @@ class EventsDB:
                     UNIQUE(date, summary)
                 );
                 CREATE INDEX IF NOT EXISTS idx_experiences_date ON experiences(date);
+
+                CREATE TABLE IF NOT EXISTS agent_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    data TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_events_task ON agent_events(task_id);
             """)
             # Migrations: add columns to existing databases
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
@@ -423,3 +432,32 @@ class EventsDB:
     def count_experiences(self) -> int:
         with self._connect() as conn:
             return conn.execute("SELECT COUNT(*) FROM experiences").fetchone()[0]
+
+    # ── Agent Events ──
+
+    def add_agent_event(self, task_id: int, event_type: str, data: dict) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO agent_events (task_id, event_type, data, created_at) VALUES (?, ?, ?, ?)",
+                (task_id, event_type, json.dumps(data, ensure_ascii=False, default=str), now)
+            )
+            return cursor.lastrowid
+
+    def get_agent_events(self, task_id: int, limit: int = 100) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, task_id, event_type, data, created_at FROM agent_events "
+                "WHERE task_id = ? ORDER BY id ASC LIMIT ?",
+                (task_id, limit)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_live_agent_events(self, since_id: int = 0, limit: int = 50) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, task_id, event_type, data, created_at FROM agent_events "
+                "WHERE id > ? ORDER BY id ASC LIMIT ?",
+                (since_id, limit)
+            ).fetchall()
+        return [dict(r) for r in rows]

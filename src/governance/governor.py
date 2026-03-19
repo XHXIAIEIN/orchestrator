@@ -15,7 +15,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import anyio
-from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+from claude_agent_sdk import (
+    query, ClaudeAgentOptions, ResultMessage,
+    AssistantMessage, TaskStartedMessage, TaskProgressMessage,
+)
 
 from src.storage.events_db import EventsDB
 from src.core.llm_router import get_router
@@ -684,6 +687,7 @@ class Governor:
 
             async def _run_agent():
                 result_text = ""
+                turn = 0
                 async for message in query(
                     prompt=prompt,
                     options=ClaudeAgentOptions(
@@ -695,8 +699,72 @@ class Governor:
                         **({"env": agent_env} if agent_env else {}),
                     ),
                 ):
-                    if isinstance(message, ResultMessage):
+                    if isinstance(message, AssistantMessage):
+                        turn += 1
+                        # Extract thinking, tool calls, and text from content blocks
+                        thinking = []
+                        tool_calls = []
+                        text_parts = []
+                        for block in (message.content or []):
+                            block_type = getattr(block, 'type', None)
+                            if block_type == 'thinking':
+                                thinking.append(getattr(block, 'thinking', '')[:300])
+                            elif block_type == 'tool_use':
+                                tool_calls.append({
+                                    'tool': getattr(block, 'name', ''),
+                                    'input_preview': str(getattr(block, 'input', {}))[:200],
+                                })
+                            elif block_type == 'tool_result':
+                                pass  # Results are verbose, skip
+                            elif block_type == 'text':
+                                text_parts.append(getattr(block, 'text', '')[:300])
+
+                        event_data = {"turn": turn}
+                        if thinking:
+                            event_data["thinking"] = thinking
+                        if tool_calls:
+                            event_data["tools"] = tool_calls
+                        if text_parts:
+                            event_data["text"] = text_parts
+                        if message.error:
+                            event_data["error"] = message.error
+
+                        try:
+                            self.db.add_agent_event(task_id, "agent_turn", event_data)
+                        except Exception:
+                            pass  # Don't let event logging break execution
+
+                    elif isinstance(message, TaskProgressMessage):
+                        try:
+                            self.db.add_agent_event(task_id, "agent_progress", {
+                                "description": message.description[:200],
+                                "last_tool": message.last_tool_name,
+                            })
+                        except Exception:
+                            pass
+
+                    elif isinstance(message, TaskStartedMessage):
+                        try:
+                            self.db.add_agent_event(task_id, "subtask_started", {
+                                "sub_task_id": message.task_id,
+                                "description": message.description[:200],
+                            })
+                        except Exception:
+                            pass
+
+                    elif isinstance(message, ResultMessage):
                         result_text = message.result or ""
+                        try:
+                            self.db.add_agent_event(task_id, "agent_result", {
+                                "num_turns": message.num_turns,
+                                "duration_ms": message.duration_ms,
+                                "cost_usd": message.total_cost_usd,
+                                "stop_reason": message.stop_reason,
+                                "is_error": message.is_error,
+                            })
+                        except Exception:
+                            pass
+
                 return result_text
 
             output = anyio.from_thread.run(_run_agent) if _in_async_context() else anyio.run(_run_agent)
