@@ -183,42 +183,40 @@ Governor 支持三种派单模式：
 
 隔离规则：同部门 + 同项目串行，同部门 + 不同项目可并行，不同部门始终可并行。
 
-## 技术栈与依赖
+## 前置要求
 
-### 必须
+只需要三样东西：
 
-| 组件 | 用途 | 说明 |
-|------|------|------|
-| Python 3.10+ | 后端调度、分析、治理 | 标准库 + 少量依赖 |
-| Claude Code | 六部 Agent 执行 | Agent SDK 走 Claude Code 认证，不需要单独 API key |
-| SQLite | 所有数据存储 | Python 内置，零配置 |
-| Node.js 18+ | Dashboard 服务 | Express + sql.js |
+- **Python 3.10+**
+- **Node.js 18+**
+- **Claude Code**（[安装指南](https://docs.anthropic.com/en/docs/claude-code)）
 
-> **关于 API key**：如果在 Claude Code 环境下运行，Agent SDK 自动使用 Claude Code 的认证，无需 API key。仅在 Docker 容器独立运行时需要在 `.env` 中配置 `ANTHROPIC_API_KEY`。分析/洞察模块如果有 Ollama 可用，也不消耗 API 额度。
+数据库用 SQLite（Python 内置），不需要额外安装。Docker 可选。
 
-### 可选（没有也能跑）
+### 可选组件
 
-| 组件 | 用途 | 没有会怎样 |
-|------|------|-----------|
-| Docker | 容器化部署 | 可以直接 `python -m src.scheduler` + `node server.js` |
-| Ollama | 本地 LLM 路由（门下省审查、债务扫描） | 自动 fallback 到 Claude API，多消耗一些 token |
-| Fish Speech TTS | 语音播报 | 语音按钮不可用，其他功能不受影响 |
-| numpy | 向量搜索 (VectorDB) | VectorDB 未被核心逻辑调用，不装不影响 |
+以下组件不是必须的，系统会自动适配：
 
-### 采集器依赖
+| 组件 | 有的话 | 没有的话 |
+|------|--------|---------|
+| **Docker** | 一键 `docker compose up` 启动 | 手动 `python -m src.scheduler` + `node server.js` |
+| **Ollama** | 门下省审查、债务扫描走本地模型，省 token | 自动走 Claude API |
+| **Fish Speech** | Dashboard 管家日报可以语音播放 | 语音按钮不可用，不影响其他功能 |
 
-每个采集器独立，缺少对应数据源只会跳过该采集器，不影响系统运行：
+### 采集器
 
-| 采集器 | 数据源 | 需要 |
-|--------|--------|------|
-| Claude | Claude Code 会话 | `~/.claude` 目录 |
-| Browser | Chrome 浏览历史 | Chrome User Data 目录 |
-| Git | Git 仓库提交 | 任意 git 仓库目录 |
-| Steam | Steam 游戏时间 | Steam 安装目录 |
-| QQ Music | QQ 音乐播放记录 | QQ Music 数据目录 |
-| VS Code | 编辑器活动 | VS Code User Data |
-| Network | 本地网络服务检测 | 无额外依赖 |
-| Codebase | 项目自身 git 历史 | 无额外依赖 |
+8 个采集器各自独立，只采集你机器上有的数据。缺少某个数据源时该采集器自动跳过，不报错：
+
+| 采集器 | 采集什么 |
+|--------|---------|
+| Claude | Claude Code 对话历史 |
+| Browser | Chrome 浏览记录 |
+| Git | 本地 Git 仓库提交 |
+| VS Code | 编辑器使用时间 |
+| Steam | 游戏时长 |
+| QQ Music | 播放记录 |
+| Network | 本地运行的服务（端口扫描） |
+| Codebase | 项目自身的 git 历史 |
 
 ## 设计参考
 
