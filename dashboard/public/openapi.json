@@ -1,0 +1,1563 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Orchestrator API",
+    "version": "2.0.0",
+    "description": "AI butler orchestrator — real-time agent management, department dispatch, and observability"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:23714",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    { "name": "Health", "description": "Health checks and system brief" },
+    { "name": "Tasks", "description": "Task lifecycle management" },
+    { "name": "Debts", "description": "Attention debt tracking" },
+    { "name": "Agents", "description": "Live agent status, traces, and event streams" },
+    { "name": "Departments", "description": "Six-department system (engineering, quality, operations, protocol, security, personnel)" },
+    { "name": "Scenarios", "description": "Pre-defined multi-department dispatch scenarios" },
+    { "name": "Analysis", "description": "Summaries, insights, and profile analysis" },
+    { "name": "Events", "description": "Activity events, heatmaps, and category statistics" },
+    { "name": "Experiences", "description": "SOUL experience log" },
+    { "name": "Pipeline", "description": "Pipeline status, logs, tasks, departments, and scheduler" },
+    { "name": "Voice", "description": "Text-to-speech synthesis" },
+    { "name": "Logs", "description": "Real-time log streaming via SSE" }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getHealth",
+        "summary": "Check system health",
+        "description": "Returns the current health status of the orchestrator and its database connection.",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["ok", "down"] },
+                    "reason": { "type": "string", "description": "Present when status is down" },
+                    "uptime": { "type": "integer", "description": "Server uptime in seconds, present when status is ok" }
+                  },
+                  "required": ["status"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/brief": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getBrief",
+        "summary": "Get a cross-project system brief",
+        "description": "Returns a compact overview of open debts, task counts, last collector run, and last analysis timestamp.",
+        "responses": {
+          "200": {
+            "description": "System brief",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["ok", "down", "error"] },
+                    "debts": {
+                      "type": "object",
+                      "properties": {
+                        "open": { "type": "integer" },
+                        "high_priority": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "integer" },
+                              "project": { "type": "string" },
+                              "summary": { "type": "string" },
+                              "severity": { "type": "string" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "tasks": {
+                      "type": "object",
+                      "properties": {
+                        "pending": { "type": "integer" },
+                        "running": { "type": "integer" }
+                      }
+                    },
+                    "last_collector_run": { "type": "string", "format": "date-time", "nullable": true },
+                    "last_analysis": { "type": "string", "format": "date-time", "nullable": true },
+                    "error": { "type": "string" }
+                  },
+                  "required": ["status"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "tags": ["Tasks"],
+        "operationId": "listTasks",
+        "summary": "List tasks with optional filters",
+        "description": "Returns up to 50 tasks, ordered by creation date descending. Supports filtering by status and department.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by task status",
+            "schema": { "type": "string", "enum": ["pending", "awaiting_approval", "running", "done", "failed"] }
+          },
+          {
+            "name": "department",
+            "in": "query",
+            "description": "Filter by department name (matched against spec.department)",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Task" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Tasks"],
+        "operationId": "createTask",
+        "summary": "Create a new task",
+        "description": "Creates a task with source 'manual' and returns the new task ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                  "action": { "type": "string", "description": "Action description for the task" },
+                  "reason": { "type": "string", "description": "Reason or context for the task", "default": "" },
+                  "priority": { "type": "string", "enum": ["low", "medium", "high"], "default": "medium" },
+                  "spec": {
+                    "type": "object",
+                    "description": "Arbitrary specification object (may include department, project, cwd, cognitive_mode, blast_radius)",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "integer", "description": "Newly created task ID" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}": {
+      "get": {
+        "tags": ["Tasks"],
+        "operationId": "getTask",
+        "summary": "Get a single task by ID",
+        "description": "Returns the full task object including parsed spec.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found or DB unavailable",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/approve": {
+      "post": {
+        "tags": ["Tasks"],
+        "operationId": "approveTask",
+        "summary": "Approve a task awaiting approval",
+        "description": "Transitions a task from awaiting_approval to running via the Governor CLI. Broadcasts a task_update WebSocket event on success.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task approved and updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid task ID or approval error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/debts": {
+      "get": {
+        "tags": ["Debts"],
+        "operationId": "listDebts",
+        "summary": "List attention debts with optional filters",
+        "description": "Returns up to 50 attention debts, ordered by severity (high first) then creation date descending.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by debt status",
+            "schema": { "type": "string", "enum": ["open", "resolved"] }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Filter by project name (partial match)",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Filter by severity level",
+            "schema": { "type": "string", "enum": ["low", "medium", "high"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of attention debts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Debt" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/live": {
+      "get": {
+        "tags": ["Agents"],
+        "operationId": "getAgentsLive",
+        "summary": "Get live agent status",
+        "description": "Returns all currently running agents with their task info, current activity, elapsed time, and recent events.",
+        "responses": {
+          "200": {
+            "description": "Live agent status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "task_id": { "type": "integer" },
+                          "department": { "type": "string", "nullable": true },
+                          "project": { "type": "string", "nullable": true },
+                          "cwd": { "type": "string", "nullable": true },
+                          "action": { "type": "string" },
+                          "cognitive_mode": { "type": "string", "nullable": true },
+                          "started_at": { "type": "string", "format": "date-time", "nullable": true },
+                          "elapsed_s": { "type": "integer" },
+                          "current_activity": {
+                            "type": "object",
+                            "nullable": true,
+                            "properties": {
+                              "turn": { "type": "integer" },
+                              "tools": { "type": "array", "items": { "type": "string" } },
+                              "thinking_preview": { "type": "string", "nullable": true },
+                              "text_preview": { "type": "string", "nullable": true }
+                            }
+                          },
+                          "recent_events": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "type": { "type": "string" },
+                                "data": { "type": "object", "additionalProperties": true },
+                                "at": { "type": "string", "format": "date-time" }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "idle": { "type": "boolean" },
+                    "running_count": { "type": "integer" },
+                    "pending_count": { "type": "integer" },
+                    "max_concurrent": { "type": "integer" },
+                    "error": { "type": "string" }
+                  },
+                  "required": ["agents", "idle"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{taskId}/trace": {
+      "get": {
+        "tags": ["Agents"],
+        "operationId": "getAgentTrace",
+        "summary": "Get full execution trace for a task",
+        "description": "Returns the task details, a trace summary (turns, tools, errors, decisions, cost), and all agent events.",
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent execution trace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "integer" },
+                        "action": { "type": "string" },
+                        "status": { "type": "string" },
+                        "department": { "type": "string", "nullable": true },
+                        "project": { "type": "string", "nullable": true },
+                        "cognitive_mode": { "type": "string", "nullable": true },
+                        "started_at": { "type": "string", "format": "date-time", "nullable": true },
+                        "finished_at": { "type": "string", "format": "date-time", "nullable": true },
+                        "output": { "type": "string", "nullable": true }
+                      }
+                    },
+                    "trace": {
+                      "type": "object",
+                      "properties": {
+                        "total_turns": { "type": "integer" },
+                        "tools_used": { "type": "array", "items": { "type": "string" } },
+                        "tool_call_count": { "type": "integer" },
+                        "errors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "turn": { "type": "string" },
+                              "error": { "type": "string" }
+                            }
+                          }
+                        },
+                        "decisions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "turn": { "type": "integer" },
+                              "thought": { "type": "string" }
+                            }
+                          }
+                        },
+                        "duration_ms": { "type": "number", "nullable": true },
+                        "cost_usd": { "type": "number", "nullable": true }
+                      }
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AgentEvent" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-events/{taskId}": {
+      "get": {
+        "tags": ["Agents"],
+        "operationId": "getAgentEvents",
+        "summary": "Get agent events for a specific task",
+        "description": "Returns agent events for the given task ID, ordered by ID ascending.",
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of events to return (max 500)",
+            "schema": { "type": "integer", "default": 100, "maximum": 500 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of agent events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/AgentEvent" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-events-stream": {
+      "get": {
+        "tags": ["Agents"],
+        "operationId": "streamAgentEvents",
+        "summary": "Stream agent events via SSE",
+        "description": "Server-Sent Events stream that emits real-time agent events across all running tasks. Sends an initial backlog of the last 20 events, then polls every 1 second for new events.",
+        "parameters": [
+          {
+            "name": "since_id",
+            "in": "query",
+            "description": "Only return events with ID greater than this value",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream of agent events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE stream. Each message is JSON with either {type: 'backlog', events: AgentEvent[]} or {type: 'agent_event', event: AgentEvent}"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/departments": {
+      "get": {
+        "tags": ["Departments"],
+        "operationId": "listDepartments",
+        "summary": "List all department names",
+        "description": "Returns an array of department key strings.",
+        "responses": {
+          "200": {
+            "description": "Department name list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "string", "enum": ["engineering", "quality", "operations", "protocol", "security", "personnel"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/departments/{name}": {
+      "get": {
+        "tags": ["Departments"],
+        "operationId": "getDepartment",
+        "summary": "Get full department detail",
+        "description": "Returns the department's SKILL.md content, guidelines, recent run log entries, learned skills, and suggestions.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "enum": ["engineering", "quality", "operations", "protocol", "security", "personnel"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Department detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Department" }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown department",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/departments/{name}/skill": {
+      "get": {
+        "tags": ["Departments"],
+        "operationId": "getDepartmentSkill",
+        "summary": "Get department SKILL.md content",
+        "description": "Returns the raw markdown content of the department's SKILL.md file.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "enum": ["engineering", "quality", "operations", "protocol", "security", "personnel"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SKILL.md content",
+            "content": {
+              "text/markdown": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "404": {
+            "description": "Department or SKILL.md not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/departments/{name}/runs": {
+      "get": {
+        "tags": ["Departments"],
+        "operationId": "getDepartmentRuns",
+        "summary": "Get department run log",
+        "description": "Returns recent run log entries for the department, ordered most recent first.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "enum": ["engineering", "quality", "operations", "protocol", "security", "personnel"] }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of run entries to return (max 100)",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/DepartmentRun" }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown department",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/departments/{name}/guidelines": {
+      "get": {
+        "tags": ["Departments"],
+        "operationId": "getDepartmentGuidelines",
+        "summary": "Get department guidelines",
+        "description": "Returns all guideline markdown files for the department.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "enum": ["engineering", "quality", "operations", "protocol", "security", "personnel"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guideline documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Guideline" }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown department",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scenarios": {
+      "get": {
+        "tags": ["Scenarios"],
+        "operationId": "listScenarios",
+        "summary": "List available dispatch scenarios",
+        "description": "Returns a map of scenario names to their descriptions and involved departments.",
+        "responses": {
+          "200": {
+            "description": "Scenario definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "description": { "type": "string" },
+                      "departments": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                      }
+                    },
+                    "required": ["description", "departments"]
+                  },
+                  "example": {
+                    "full_audit": {
+                      "description": "Full system audit: security + quality + protocol in parallel",
+                      "departments": ["security", "quality", "protocol"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scenarios/{name}/run": {
+      "post": {
+        "tags": ["Scenarios"],
+        "operationId": "runScenario",
+        "summary": "Execute a dispatch scenario",
+        "description": "Runs a named scenario via the Governor, dispatching tasks to all departments in the scenario in parallel.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Scenario name (e.g. full_audit, code_and_review, system_health, deep_scan, full_pipeline)",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project": { "type": "string", "default": "orchestrator", "description": "Target project name" },
+                  "cwd": { "type": "string", "default": "", "description": "Working directory override" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tasks dispatched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dispatched": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "integer" },
+                          "action": { "type": "string" },
+                          "status": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/summary": {
+      "get": {
+        "tags": ["Analysis"],
+        "operationId": "getSummary",
+        "summary": "Get daily summaries and user profile",
+        "description": "Returns the last 7 daily summaries and the latest user profile.",
+        "responses": {
+          "200": {
+            "description": "Summaries and profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "summaries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Daily summary row from the database"
+                      }
+                    },
+                    "profile": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "Parsed user profile JSON"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/insights": {
+      "get": {
+        "tags": ["Analysis"],
+        "operationId": "getInsights",
+        "summary": "Get latest generated insights",
+        "description": "Returns the most recently generated insights data.",
+        "responses": {
+          "200": {
+            "description": "Insights data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Parsed insights JSON (structure depends on the analysis pipeline)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/summaries": {
+      "get": {
+        "tags": ["Analysis"],
+        "operationId": "listSummaries",
+        "summary": "Get recent daily summaries",
+        "description": "Returns the last 7 daily summaries with parsed summary content.",
+        "responses": {
+          "200": {
+            "description": "Daily summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "date": { "type": "string", "format": "date" },
+                      "summary": { "type": "string", "description": "Present when summary is plain text" }
+                    },
+                    "additionalProperties": true,
+                    "description": "Summary object — if the stored summary is JSON, its fields are spread into the object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-analysis": {
+      "get": {
+        "tags": ["Analysis"],
+        "operationId": "getProfileAnalysis",
+        "summary": "Get latest profile analysis",
+        "description": "Returns the most recent profile analysis data.",
+        "responses": {
+          "200": {
+            "description": "Profile analysis data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Parsed profile analysis JSON (may include commentary, daily_note, and other fields)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-analysis/history": {
+      "get": {
+        "tags": ["Analysis"],
+        "operationId": "getProfileAnalysisHistory",
+        "summary": "Get profile analysis history",
+        "description": "Returns the last 30 profile analysis entries with commentary, daily notes, and voice information.",
+        "responses": {
+          "200": {
+            "description": "Profile analysis history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "date": { "type": "string", "format": "date-time" },
+                      "commentary": { "type": "string" },
+                      "daily_note": { "type": "string" },
+                      "voice": { "type": "string", "nullable": true, "description": "Voice reference ID used on that date" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-analysis/refresh": {
+      "post": {
+        "tags": ["Analysis"],
+        "operationId": "refreshProfileAnalysis",
+        "summary": "Trigger a profile analysis refresh",
+        "description": "Accepts the request immediately (202) and runs the profile analyst CLI in the background. Broadcasts profile_analysis_done or profile_analysis_error via WebSocket when complete.",
+        "responses": {
+          "202": {
+            "description": "Accepted — analysis running in background",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["accepted"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": ["Events"],
+        "operationId": "listEvents",
+        "summary": "List recent activity events",
+        "description": "Returns up to 200 events from the specified time window, ordered by occurrence date descending.",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Number of days to look back",
+            "schema": { "type": "integer", "default": 7 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source": { "type": "string" },
+                      "category": { "type": "string" },
+                      "title": { "type": "string" },
+                      "duration_minutes": { "type": "number", "nullable": true },
+                      "score": { "type": "number", "nullable": true },
+                      "tags": { "type": "array", "items": { "type": "string" } },
+                      "occurred_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events/heatmap": {
+      "get": {
+        "tags": ["Events"],
+        "operationId": "getEventsHeatmap",
+        "summary": "Get event count heatmap by day",
+        "description": "Returns daily event counts for building a heatmap visualization.",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Number of days to look back",
+            "schema": { "type": "integer", "default": 60 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily event counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "day": { "type": "string", "format": "date" },
+                      "count": { "type": "integer" }
+                    },
+                    "required": ["day", "count"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "tags": ["Events"],
+        "operationId": "getStats",
+        "summary": "Get event statistics by source",
+        "description": "Returns aggregated event counts and total duration grouped by source.",
+        "responses": {
+          "200": {
+            "description": "Event statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bySource": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "source": { "type": "string" },
+                          "count": { "type": "integer" },
+                          "total_min": { "type": "number", "nullable": true }
+                        }
+                      }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/categories": {
+      "get": {
+        "tags": ["Events"],
+        "operationId": "getStatsCategories",
+        "summary": "Get event statistics by category",
+        "description": "Returns aggregated event duration and count grouped by category within the specified time window.",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Number of days to look back",
+            "schema": { "type": "integer", "default": 7 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Category statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "category": { "type": "string" },
+                      "total_min": { "type": "number" },
+                      "count": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiences": {
+      "get": {
+        "tags": ["Experiences"],
+        "operationId": "listExperiences",
+        "summary": "List SOUL experience entries",
+        "description": "Returns experience entries ordered by date descending. Supports filtering by type.",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Filter by experience type",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of entries to return (max 100)",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of experiences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Experience" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipeline/status": {
+      "get": {
+        "tags": ["Pipeline"],
+        "operationId": "getPipelineStatus",
+        "summary": "Get full pipeline status",
+        "description": "Returns a comprehensive status of all pipeline components: collectors, analysis, governance, departments, and scheduler.",
+        "responses": {
+          "200": {
+            "description": "Pipeline status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "collectors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "status": { "type": "string", "enum": ["ok", "error", "unknown"] },
+                          "last_count": { "type": "integer" },
+                          "last_run": { "type": "string", "format": "date-time", "nullable": true }
+                        }
+                      }
+                    },
+                    "analysis": {
+                      "type": "object",
+                      "properties": {
+                        "last_run": { "type": "string", "format": "date-time", "nullable": true },
+                        "status": { "type": "string" },
+                        "insights_count": { "type": "integer" }
+                      }
+                    },
+                    "governance": {
+                      "type": "object",
+                      "properties": {
+                        "tasks_running": { "type": "integer" },
+                        "tasks_pending": { "type": "integer" },
+                        "tasks_done_today": { "type": "integer" },
+                        "last_task": {
+                          "type": "object",
+                          "nullable": true,
+                          "properties": {
+                            "id": { "type": "integer" },
+                            "action": { "type": "string" },
+                            "status": { "type": "string" },
+                            "department": { "type": "string", "nullable": true },
+                            "cognitive_mode": { "type": "string", "nullable": true }
+                          }
+                        }
+                      }
+                    },
+                    "departments": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "tasks_done": { "type": "integer" },
+                          "tasks_failed": { "type": "integer" },
+                          "last_active": { "type": "string", "format": "date-time", "nullable": true }
+                        }
+                      }
+                    },
+                    "scheduler": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string" },
+                      "description": "Key-value pairs from the scheduler_status table"
+                    },
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipeline/logs": {
+      "get": {
+        "tags": ["Pipeline"],
+        "operationId": "getPipelineLogs",
+        "summary": "Get recent pipeline logs",
+        "description": "Returns the most recent log entries from the logs table.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of log entries to return (max 200)",
+            "schema": { "type": "integer", "default": 20, "maximum": 200 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/LogEntry" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipeline/tasks": {
+      "get": {
+        "tags": ["Pipeline"],
+        "operationId": "getPipelineTasks",
+        "summary": "Get recent pipeline tasks with parsed metadata",
+        "description": "Returns tasks with flattened spec fields (department, cognitive_mode, blast_radius) for pipeline overview.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of tasks to return (max 100)",
+            "schema": { "type": "integer", "default": 30, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline task list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "integer" },
+                      "action": { "type": "string" },
+                      "status": { "type": "string" },
+                      "department": { "type": "string", "nullable": true },
+                      "cognitive_mode": { "type": "string", "nullable": true },
+                      "blast_radius": { "type": "string", "nullable": true },
+                      "created_at": { "type": "string", "format": "date-time" },
+                      "started_at": { "type": "string", "format": "date-time", "nullable": true },
+                      "finished_at": { "type": "string", "format": "date-time", "nullable": true },
+                      "output": { "type": "string", "nullable": true },
+                      "scrutiny_note": { "type": "string", "nullable": true }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipeline/departments": {
+      "get": {
+        "tags": ["Pipeline"],
+        "operationId": "getPipelineDepartments",
+        "summary": "Get department run statistics from file system",
+        "description": "Returns per-department statistics derived from run-log.jsonl files: total runs, recent runs, success rate, and suggestion availability.",
+        "responses": {
+          "200": {
+            "description": "Department statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "total_runs": { "type": "integer" },
+                      "recent_runs": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/DepartmentRun" }
+                      },
+                      "success_rate": { "type": "number", "description": "Ratio of done runs to total runs (0.0 to 1.0)" },
+                      "has_suggestions": { "type": "boolean" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/schedule-status": {
+      "get": {
+        "tags": ["Pipeline"],
+        "operationId": "getScheduleStatus",
+        "summary": "Get scheduler timing status",
+        "description": "Returns next scheduled times for collectors and analysis, and whether a task is currently running.",
+        "responses": {
+          "200": {
+            "description": "Schedule status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "next_collectors": { "type": "string", "format": "date-time", "nullable": true },
+                    "next_analysis": { "type": "string", "format": "date-time", "nullable": true },
+                    "running_task": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts": {
+      "post": {
+        "tags": ["Voice"],
+        "operationId": "synthesizeSpeech",
+        "summary": "Generate text-to-speech audio",
+        "description": "Accepts text and returns immediately. The actual audio is broadcast via WebSocket as a 'soul_voice' event with base64-encoded MP3 data. Supports sentence-level splitting with silence gaps.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                  "text": { "type": "string", "description": "Text to synthesize" },
+                  "reference_id": { "type": "string", "description": "Voice reference ID override. If omitted, uses the daily voice." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "TTS request accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "status": { "type": "string", "enum": ["cached", "generating"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing text parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/health": {
+      "get": {
+        "tags": ["Voice"],
+        "operationId": "getTtsHealth",
+        "summary": "Check TTS service health",
+        "description": "Proxies a health check to the upstream TTS service.",
+        "responses": {
+          "200": {
+            "description": "TTS health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "description": "Health status from TTS service, or 'unavailable' if unreachable" }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "tags": ["Logs"],
+        "operationId": "streamLogs",
+        "summary": "Stream logs via SSE",
+        "description": "Server-Sent Events stream that emits log entries in real time. Sends an initial backlog of the last 50 logs, then polls every 1 second for new entries.",
+        "responses": {
+          "200": {
+            "description": "SSE stream of log entries",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE stream. Each message is JSON with either {type: 'backlog', logs: LogEntry[]} or {type: 'append', logs: LogEntry[]}"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Auto-incremented task ID" },
+          "action": { "type": "string", "description": "Task action description" },
+          "status": { "type": "string", "enum": ["pending", "awaiting_approval", "running", "done", "failed"], "description": "Current task status" },
+          "spec": { "type": "object", "additionalProperties": true, "description": "Task specification (parsed JSON). May include department, project, cwd, cognitive_mode, blast_radius, etc." },
+          "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+          "source": { "type": "string", "description": "Task origin (e.g. manual, debt_resolver, scheduler)" },
+          "output": { "type": "string", "nullable": true, "description": "Task output text after completion" },
+          "scrutiny_note": { "type": "string", "nullable": true, "description": "Governor scrutiny note" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "started_at": { "type": "string", "format": "date-time", "nullable": true },
+          "finished_at": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["id", "action", "status", "created_at"]
+      },
+      "Debt": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Auto-incremented debt ID" },
+          "session_id": { "type": "string", "nullable": true, "description": "Session that created the debt" },
+          "project": { "type": "string", "description": "Project the debt belongs to" },
+          "summary": { "type": "string", "description": "Debt description" },
+          "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+          "status": { "type": "string", "enum": ["open", "resolved"] },
+          "context": { "type": "string", "nullable": true, "description": "Additional context" },
+          "resolved_by": { "type": "string", "nullable": true, "description": "What resolved this debt" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "resolved_at": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["id", "project", "summary", "severity", "status", "created_at"]
+      },
+      "AgentEvent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "description": "Auto-incremented event ID" },
+          "task_id": { "type": "integer", "description": "Associated task ID" },
+          "event_type": { "type": "string", "description": "Event type (e.g. agent_turn, agent_result, agent_start)" },
+          "data": { "type": "object", "additionalProperties": true, "description": "Parsed event payload. For agent_turn: may include turn, tools, thinking, text, error. For agent_result: may include stop_reason, is_error, duration_ms, cost_usd." },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "task_id", "event_type", "data", "created_at"]
+      },
+      "Experience": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "format": "date-time", "description": "When the experience occurred" },
+          "type": { "type": "string", "description": "Experience type category" },
+          "summary": { "type": "string", "description": "Short summary" },
+          "detail": { "type": "string", "nullable": true, "description": "Detailed description" },
+          "instance": { "type": "string", "nullable": true, "description": "Instance identifier" }
+        },
+        "required": ["date", "type", "summary"]
+      },
+      "Department": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "enum": ["engineering", "quality", "operations", "protocol", "security", "personnel"] },
+          "skill": { "type": "string", "description": "Content of SKILL.md" },
+          "guidelines": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Guideline" }
+          },
+          "runs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DepartmentRun" }
+          },
+          "learnedSkills": { "type": "string", "description": "Content of learned-skills.md" },
+          "suggestions": { "type": "string", "description": "Content of skill-suggestions.md" }
+        },
+        "required": ["name"]
+      },
+      "Guideline": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Guideline name (filename without .md extension)" },
+          "content": { "type": "string", "description": "Guideline markdown content" }
+        },
+        "required": ["name", "content"]
+      },
+      "DepartmentRun": {
+        "type": "object",
+        "properties": {
+          "ts": { "type": "string", "format": "date-time", "nullable": true, "description": "Run timestamp" },
+          "task_id": { "type": "integer", "nullable": true },
+          "mode": { "type": "string", "nullable": true, "description": "Cognitive mode used" },
+          "summary": { "type": "string" },
+          "status": { "type": "string", "description": "Run outcome (e.g. done, failed, unknown)" }
+        }
+      },
+      "LogEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "level": { "type": "string", "description": "Log level (e.g. info, warn, error)" },
+          "source": { "type": "string", "description": "Log source (e.g. collector, scheduler, governor)" },
+          "message": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "level", "source", "message", "created_at"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "description": "Error message" }
+        },
+        "required": ["error"]
+      }
+    }
+  }
+}
