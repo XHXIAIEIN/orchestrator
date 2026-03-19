@@ -175,7 +175,7 @@ body{background:var(--bg);color:var(--t1);font-family:system-ui,-apple-system,'S
 
 <!-- Active Agents Strip -->
 <div id="agents-strip">
-  <div class="strip-empty" id="strip-empty">No active agents</div>
+  <div class="strip-empty" id="strip-empty">暂无活跃 Agent</div>
 </div>
 
 <!-- Main content -->
@@ -185,13 +185,13 @@ body{background:var(--bg);color:var(--t1);font-family:system-ui,-apple-system,'S
   <div id="events-panel">
     <div id="events-header">
       <span class="live-dot"></span>
-      <span class="ct">Event Stream</span>
+      <span class="ct">事件流</span>
       <span id="filter-label"></span>
-      <button id="clear-filter">Clear filter</button>
-      <span id="event-count">0 events</span>
+      <button id="clear-filter">清除筛选</button>
+      <span id="event-count">0 事件</span>
     </div>
     <div id="events-scroll">
-      <div class="empty-state" id="events-empty">Waiting for events...</div>
+      <div class="empty-state" id="events-empty">等待事件...</div>
     </div>
   </div>
 
@@ -200,11 +200,11 @@ body{background:var(--bg);color:var(--t1);font-family:system-ui,-apple-system,'S
     <!-- Scenarios -->
     <div class="card">
       <div class="ch">
-        <span class="ct">Scenarios</span>
+        <span class="ct">并行场景</span>
       </div>
       <div class="cb">
         <div class="rl" id="scenarios-list">
-          <div class="empty-state">Loading...</div>
+          <div class="empty-state">加载中...</div>
         </div>
       </div>
     </div>
@@ -212,12 +212,12 @@ body{background:var(--bg);color:var(--t1);font-family:system-ui,-apple-system,'S
     <!-- Recent Completed -->
     <div class="card">
       <div class="ch">
-        <span class="ct">Recent Completed</span>
+        <span class="ct">最近完成</span>
         <span class="badge bd" id="done-count">--</span>
       </div>
       <div class="cb">
         <div class="rl" id="recent-list">
-          <div class="empty-state">Loading...</div>
+          <div class="empty-state">加载中...</div>
         </div>
       </div>
     </div>
@@ -230,7 +230,7 @@ body{background:var(--bg);color:var(--t1);font-family:system-ui,-apple-system,'S
    State
    ══════════════════════════════════════ */
 let activeAgents = [];
-let events = [];
+let 事件 = [];
 let filterTaskId = null;
 let userScrolledUp = false;
 let sseSource = null;
@@ -315,7 +315,7 @@ function statusDot(status) {
   if (!status) return '<span class="status-dot pending"></span>';
   const s = status.toLowerCase();
   if (s === 'completed' || s === 'done' || s === 'success') return '<span class="status-dot success"></span>';
-  if (s === 'running' || s === 'active') return '<span class="status-dot running"></span>';
+  if (s === 'running' || s === 'active') return '<span class="status-dot 运行中"></span>';
   if (s === 'failed' || s === 'error') return '<span class="status-dot error"></span>';
   return '<span class="status-dot pending"></span>';
 }
@@ -356,12 +356,12 @@ async function refreshActiveAgents() {
   const countEl = document.getElementById('agent-count');
 
   if (!activeAgents.length) {
-    strip.innerHTML = '<div class="strip-empty">No active agents</div>';
+    strip.innerHTML = '<div class="strip-empty">暂无活跃 Agent</div>';
     countEl.textContent = '';
     return;
   }
 
-  countEl.textContent = `${activeAgents.length} running`;
+  countEl.textContent = `${activeAgents.length} 运行中`;
 
   strip.innerHTML = activeAgents.map(t => {
     const spec = t.spec || {};
@@ -442,12 +442,12 @@ function connectSSE() {
 }
 
 function addEvent(evt) {
-  events.push(evt);
-  while (events.length > MAX_EVENTS) events.shift();
+  事件.push(evt);
+  while (events.length > MAX_EVENTS) 事件.shift();
   renderEvents();
 }
 
-/* Render events */
+/* Render 事件 */
 function renderEvents() {
   const scroll = document.getElementById('events-scroll');
   const countEl = document.getElementById('event-count');
@@ -455,11 +455,11 @@ function renderEvents() {
   const clearBtn = document.getElementById('clear-filter');
 
   const filtered = filterTaskId
-    ? events.filter(e => e.task_id === filterTaskId)
-    : events;
+    ? 事件.filter(e => e.task_id === filterTaskId)
+    : 事件;
 
   if (filterTaskId) {
-    filterLabel.textContent = `Filter: Task #${filterTaskId}`;
+    filterLabel.textContent = `筛选: 任务 #${filterTaskId}`;
     filterLabel.style.display = 'inline';
     clearBtn.style.display = 'inline';
   } else {
@@ -467,17 +467,17 @@ function renderEvents() {
     clearBtn.style.display = 'none';
   }
 
-  countEl.textContent = `${filtered.length} events`;
+  countEl.textContent = `${filtered.length} 事件`;
 
   if (!filtered.length) {
-    scroll.innerHTML = '<div class="empty-state" id="events-empty">Waiting for events...</div>';
+    scroll.innerHTML = '<div class="empty-state" id="events-empty">等待事件...</div>';
     return;
   }
 
   // Check if user has scrolled up
   const isAtBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60;
 
-  // Group events and render
+  // Group 事件 and render
   let html = '';
   let lastTaskId = null;
 
@@ -585,7 +585,7 @@ function renderResult(data, time, taskLabel) {
   return `<div class="evt evt-result ${isErr ? 'error' : 'success'}">
     <div class="evt-meta">
       <span class="status-dot ${isErr ? 'error' : 'success'}"></span>
-      <span class="badge ${isErr ? 'br' : 'bg'}">${isErr ? 'Failed' : 'Done'}</span>
+      <span class="badge ${isErr ? 'br' : 'bg'}">${isErr ? '失败' : '完成'}</span>
       <span class="evt-task-id">${esc(taskLabel)}</span>
       <span class="evt-time">${esc(time)}</span>
     </div>
@@ -655,7 +655,7 @@ async function loadScenarios() {
 async function runScenario(name, btn) {
   const statusEl = document.getElementById(`sc-status-${name}`);
   btn.disabled = true;
-  statusEl.textContent = 'Dispatching...';
+  statusEl.textContent = '派发中...';
   statusEl.className = 'sc-status dispatching';
 
   try {
@@ -671,13 +671,13 @@ async function runScenario(name, btn) {
       statusEl.className = 'sc-status error';
     } else {
       const count = Array.isArray(data.dispatched) ? data.dispatched.length : 0;
-      statusEl.textContent = `${count} tasks dispatched`;
+      statusEl.textContent = `${count} 个任务已派发`;
       statusEl.className = 'sc-status dispatched';
       // Refresh agents after dispatch
       setTimeout(refreshActiveAgents, 2000);
     }
   } catch (e) {
-    statusEl.textContent = 'Dispatch failed';
+    statusEl.textContent = '派发失败';
     statusEl.className = 'sc-status error';
   }
 
@@ -729,11 +729,11 @@ function updateSystemStatus() {
 
   if (apiOnline) {
     pulse.style.background = 'var(--green)';
-    label.textContent = 'Online';
+    label.textContent = '在线';
     label.className = 'tst';
   } else {
     pulse.style.background = 'var(--red)';
-    label.textContent = 'Offline';
+    label.textContent = '离线';
     label.className = 'tst off';
   }
 }

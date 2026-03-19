@@ -146,7 +146,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
       <div class="flow-dot" title="Governance: Insights to Governor to Depts"><span class="fd fd-govern" id="fi-govern"></span></div>
     </div>
     <div class="ts"></div>
-    <div class="tp" id="sys-pulse"></div><span class="tst" id="sys-status">Connecting...</span>
+    <div class="tp" id="sys-pulse"></div><span class="tst" id="sys-status">连接中...</span>
     <span class="th" id="refresh-timer"></span>
   </div>
 </div>
@@ -158,8 +158,8 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 
 <div class="card">
   <div class="ch">
-    <span class="ct">Data Flow</span>
-    <span class="badge bb" id="flow-badge">Live</span>
+    <span class="ct">数据流</span>
+    <span class="badge bb" id="flow-badge">实时</span>
   </div>
   <div class="cb" style="padding:16px 16px 8px;">
     <svg id="flowsvg" viewBox="0 0 728 550" width="100%" style="display:block;overflow:visible;max-width:728px;">
@@ -424,10 +424,10 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 
 <!-- Logs card below flow chart -->
 <div class="card" style="margin-top:12px;">
-  <div class="ch"><span class="ct">System Logs</span><span class="badge bb" id="log-badge">Live</span></div>
+  <div class="ch"><span class="ct">系统日志</span><span class="badge bb" id="log-badge">实时</span></div>
   <div class="cb">
     <div class="lt" id="logs-list">
-      <div class="empty-state">Loading...</div>
+      <div class="empty-state">加载中...</div>
     </div>
   </div>
 </div>
@@ -439,47 +439,47 @@ body{background:var(--bg);color:var(--t1);font-family:'Segoe UI',system-ui,sans-
 
 <!-- Flow state legend -->
 <div class="card">
-  <div class="ch"><span class="ct">Flow Legend</span></div>
+  <div class="ch"><span class="ct">流状态说明</span></div>
   <div class="cb">
     <div class="rl">
-      <div class="ri"><div class="dot" style="background:#60a5fa;box-shadow:0 0 5px #60a5fa"></div><div style="flex:1"><div class="ll">Collection</div><div class="ls">Source &rarr; Collector &rarr; DB</div></div></div>
-      <div class="ri"><div class="dot da"></div><div style="flex:1"><div class="ll">Analysis</div><div class="ls">DB &rarr; Analyst &rarr; Insights</div></div></div>
-      <div class="ri"><div class="dot" style="background:#818cf8"></div><div style="flex:1"><div class="ll">Governance</div><div class="ls">Insights &rarr; Governor &rarr; Depts</div></div></div>
-      <div class="ri"><div class="dot dg"></div><div style="flex:1"><div class="ll">Execution</div><div class="ls">Scrutiny &rarr; Dept Dispatch</div></div></div>
+      <div class="ri"><div class="dot" style="background:#60a5fa;box-shadow:0 0 5px #60a5fa"></div><div style="flex:1"><div class="ll">采集</div><div class="ls">Source &rarr; Collector &rarr; DB</div></div></div>
+      <div class="ri"><div class="dot da"></div><div style="flex:1"><div class="ll">分析</div><div class="ls">DB &rarr; Analyst &rarr; Insights</div></div></div>
+      <div class="ri"><div class="dot" style="background:#818cf8"></div><div style="flex:1"><div class="ll">治理</div><div class="ls">Insights &rarr; Governor &rarr; Depts</div></div></div>
+      <div class="ri"><div class="dot dg"></div><div style="flex:1"><div class="ll">执行</div><div class="ls">Scrutiny &rarr; Dept Dispatch</div></div></div>
     </div>
     <div style="margin-top:10px;padding:8px 10px;background:var(--inset);border-radius:5px;">
-      <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">Auto-detection</div>
-      <div style="font-size:10px;color:var(--t2);line-height:1.5;">Recent collect logs &rarr; collection active<br>Analysis logs &rarr; analysis active<br>Running tasks &rarr; governance active</div>
+      <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">自动检测</div>
+      <div style="font-size:10px;color:var(--t2);line-height:1.5;">最近采集日志 &rarr; 采集活跃<br>分析日志 &rarr; 分析活跃<br>运行中任务 &rarr; 治理活跃</div>
     </div>
   </div>
 </div>
 
 <!-- Governor Tasks -->
 <div class="card">
-  <div class="ch"><span class="ct">Governor Tasks</span><span class="badge bi" id="task-count">--</span></div>
+  <div class="ch"><span class="ct">任务</span><span class="badge bi" id="task-count">--</span></div>
   <div class="cb">
     <div class="rl" id="tasks-list">
-      <div class="empty-state">Loading...</div>
+      <div class="empty-state">加载中...</div>
     </div>
   </div>
 </div>
 
 <!-- Departments -->
 <div class="card">
-  <div class="ch"><span class="ct">Departments</span></div>
+  <div class="ch"><span class="ct">六部</span></div>
   <div class="cb">
     <div class="rl" id="dept-list">
-      <div class="empty-state">Loading...</div>
+      <div class="empty-state">加载中...</div>
     </div>
   </div>
 </div>
 
 <!-- Schedule -->
 <div class="card">
-  <div class="ch"><span class="ct">Schedule</span></div>
+  <div class="ch"><span class="ct">调度</span></div>
   <div class="cb">
     <div class="rl" id="schedule-info">
-      <div class="empty-state">Loading...</div>
+      <div class="empty-state">加载中...</div>
     </div>
   </div>
 </div>
@@ -627,11 +627,11 @@ function updateSystemStatus() {
   const label = document.getElementById('sys-status');
   if (apiOnline) {
     pulse.style.background = 'var(--green)';
-    label.textContent = 'Online';
+    label.textContent = '在线';
     label.className = 'tst';
   } else {
     pulse.style.background = 'var(--red)';
-    label.textContent = 'Offline';
+    label.textContent = '离线';
     label.className = 'tst off';
   }
 }
@@ -700,7 +700,7 @@ function updateTasksCard() {
   const tasks = pipelineData.tasks;
 
   if (!tasks.length) {
-    list.innerHTML = '<div class="empty-state">No tasks</div>';
+    list.innerHTML = '<div class="empty-state">暂无任务</div>';
     countBadge.textContent = '0';
     return;
   }
@@ -737,7 +737,7 @@ function updateDeptCard() {
   const depts = pipelineData.depts;
 
   if (!depts || !Object.keys(depts).length) {
-    list.innerHTML = '<div class="empty-state">No department data</div>';
+    list.innerHTML = '<div class="empty-state">暂无部门数据</div>';
     return;
   }
 
@@ -768,10 +768,10 @@ function updateScheduleCard() {
 
   if (!sched || !sched.jobs || !sched.jobs.length) {
     const defaultJobs = [
-      { name: 'Data Collection', interval: 'Hourly' },
-      { name: 'Daily Analysis', interval: 'Every 6h' },
-      { name: 'Insight Generation', interval: 'Daily' },
-      { name: 'Governance Check', interval: 'Daily' },
+      { name: '数据采集', interval: '每小时' },
+      { name: '每日分析', interval: '每6小时' },
+      { name: '洞察生成', interval: '每日' },
+      { name: '治理检查', interval: '每日' },
     ];
     el.innerHTML = defaultJobs.map(j => `
       <div class="sched-item">
@@ -784,7 +784,7 @@ function updateScheduleCard() {
   }
 
   el.innerHTML = sched.jobs.map(j => {
-    const name = j.name || j.id || 'Job';
+    const name = j.name || j.id || '任务';
     const next = j.next_run ? new Date(j.next_run).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'}) : '--';
     const cd = j.next_run ? countdown(j.next_run) : '--';
     return `<div class="sched-item">
@@ -801,7 +801,7 @@ function updateLogsCard() {
   const logs = pipelineData.logs;
 
   if (!logs.length) {
-    list.innerHTML = '<div class="empty-state">No logs</div>';
+    list.innerHTML = '<div class="empty-state">暂无日志</div>';
     return;
   }
 
