@@ -573,22 +573,43 @@ function renderGovernance(tasks){
       </div>`;
     }).join(''):'<div style="font-size:.72rem;color:var(--text-dim)">暂无审查</div>');
 
-  // ── 尚书省：六部执行进度
-  const depts={engineering:{n:'工部',d:0,f:0},operations:{n:'户部',d:0,f:0},protocol:{n:'礼部',d:0,f:0},security:{n:'兵部',d:0,f:0},quality:{n:'刑部',d:0,f:0},personnel:{n:'吏部',d:0,f:0}};
-  tasks.forEach(t=>{const k=(t.spec?.department)||'engineering';if(!depts[k])depts[k]={n:k,d:0,f:0};if(t.status==='done')depts[k].d++;if(t.status==='failed')depts[k].f++});
+  // ── 尚书省：六部执行进度 + 最近任务 + 最后活跃
+  const deptKeys=['engineering','operations','protocol','security','quality','personnel'];
+  const depts={};
+  deptKeys.forEach(k=>{depts[k]={n:deptMap[k]||k,d:0,f:0,last:null,lastAction:''}});
+  tasks.forEach(t=>{
+    const k=(t.spec?.department)||'engineering';
+    if(!depts[k])return;
+    if(t.status==='done')depts[k].d++;
+    if(t.status==='failed')depts[k].f++;
+    if(!depts[k].last||(t.created_at&&t.created_at>depts[k].last)){
+      depts[k].last=t.created_at;depts[k].lastAction=t.action||'';depts[k].lastStatus=t.status;
+    }
+  });
   const maxTotal=Math.max(1,...Object.values(depts).map(x=>x.d+x.f));
   $('gov-shangshu').innerHTML=`<div class='gov-block-head'><span class='gov-block-title'>尚书省</span><span class='gov-block-count'>六部</span></div>`+
-    Object.entries(depts).map(([,dept])=>{
+    deptKeys.map(k=>{
+      const dept=depts[k];
       const total=dept.d+dept.f;
       const doneW=Math.round(dept.d/maxTotal*100);
       const failW=Math.round(dept.f/maxTotal*100);
-      return `<div class='dept-row'>
-        <span class='dept-name'>${dept.n}</span>
-        <div class='dept-bar'>
-          <div class='dept-bar-done' style='width:${doneW}%'></div>
-          <div class='dept-bar-fail' style='width:${failW}%;left:${doneW}%'></div>
+      const rate=total?Math.round(dept.d/total*100):0;
+      const lastTime=dept.last?relTime(dept.last):'';
+      const lastAct=dept.lastAction?esc(dept.lastAction.slice(0,35)):'';
+      const statusColor=dept.lastStatus==='done'?'var(--green)':dept.lastStatus==='failed'?'var(--red)':'var(--text-dim)';
+      return `<div style="padding:4px 0;border-bottom:1px solid #f4f4f0">
+        <div class='dept-row'>
+          <span class='dept-name' style="font-weight:500">${dept.n}</span>
+          <div class='dept-bar'>
+            <div class='dept-bar-done' style='width:${doneW}%'></div>
+            <div class='dept-bar-fail' style='width:${failW}%;left:${doneW}%'></div>
+          </div>
+          <span class='dept-stat'>${dept.d}/${total} ${rate}%</span>
         </div>
-        <span class='dept-stat'>${dept.d}/${total}</span>
+        ${lastAct?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:2px;display:flex;justify-content:space-between">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;color:${statusColor}">${lastAct}</span>
+          <span style="flex-shrink:0;margin-left:8px">${lastTime}</span>
+        </div>`:''}
       </div>`;
     }).join('');
 
