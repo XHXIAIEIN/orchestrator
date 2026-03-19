@@ -52,6 +52,34 @@ curl -s http://localhost:23714/api/departments/engineering/guidelines
 
 Available departments: `engineering`, `quality`, `operations`, `protocol`, `security`, `personnel`
 
+## Parallel Scenarios
+
+```bash
+# List available scenarios
+curl -s http://localhost:23714/api/scenarios
+
+# Trigger a scenario (dispatches multiple departments in parallel)
+curl -s -X POST http://localhost:23714/api/scenarios/full_audit/run -H 'Content-Type: application/json' -d '{"project":"orchestrator"}'
+```
+
+| Scenario | Departments | Use case |
+|---|---|---|
+| `full_audit` | security + quality + protocol | Full system audit |
+| `code_and_review` | engineering + quality | Fix + review on different projects |
+| `system_health` | operations + personnel | Health check + performance report |
+| `deep_scan` | protocol + security + personnel | Debt scan + security + metrics |
+| `full_pipeline` | protocol + security + quality + personnel | All read-only departments at once |
+
+## Experiences
+
+```bash
+# Recent experiences
+curl -s http://localhost:23714/api/experiences
+
+# By type (bonding/humor/conflict/trust/discovery/limitation/milestone/lesson)
+curl -s 'http://localhost:23714/api/experiences?type=milestone&limit=5'
+```
+
 ## Other endpoints
 
 - `GET /api/events?days=7` — event records

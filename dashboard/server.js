@@ -198,6 +198,37 @@ app.post('/api/tasks/:id/approve', (req, res) => {
   });
 });
 
+app.get('/api/scenarios', (req, res) => {
+  res.json({
+    full_audit: { description: "Full system audit: security + quality + protocol in parallel", departments: ["security", "quality", "protocol"] },
+    code_and_review: { description: "Engineering fix + quality review on different projects", departments: ["engineering", "quality"] },
+    system_health: { description: "Operations health check + personnel performance report", departments: ["operations", "personnel"] },
+    deep_scan: { description: "Protocol debt scan + security audit + personnel metrics", departments: ["protocol", "security", "personnel"] },
+    full_pipeline: { description: "All read-only departments scan simultaneously", departments: ["protocol", "security", "quality", "personnel"] },
+  });
+});
+
+app.post('/api/scenarios/:name/run', (req, res) => {
+  const name = req.params.name;
+  const { project, cwd } = req.body || {};
+  const proc = spawn('python3', ['-c', `
+import sys, json; sys.path.insert(0, '/orchestrator')
+from src.governance.governor import Governor
+from src.storage.events_db import EventsDB
+db = EventsDB('/orchestrator/data/events.db')
+g = Governor(db=db)
+results = g.run_parallel_scenario('${name}', project='${project || 'orchestrator'}', cwd='${cwd || ''}')
+print(json.dumps([{'id': t.get('id'), 'action': t.get('action'), 'status': t.get('status')} for t in results]))
+  `]);
+  let out = '', err = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.stderr.on('data', d => { err += d; });
+  proc.on('close', () => {
+    try { res.json({ dispatched: JSON.parse(out) }); }
+    catch { res.status(500).json({ error: err || out || 'unknown error' }); }
+  });
+});
+
 app.get('/api/stats', (req, res) => {
   const db = getDb();
   if (!db) return res.json({ bySource: [], total: 0 });

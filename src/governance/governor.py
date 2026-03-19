@@ -48,6 +48,32 @@ STALE_THRESHOLD = CLAUDE_TIMEOUT + 120  # seconds — if a task is "running" lon
 MAX_CONCURRENT = 3  # 最多同时跑几个 sub-agent
 MAX_AGENT_TURNS = 25  # Agent SDK 最大交互轮数（防止无限循环）
 
+# ── Parallel dispatch scenarios ──
+# Defines which department combinations can run in parallel for common workflows.
+# Governor.run_parallel_scenario() uses this to dispatch multi-department tasks at once.
+PARALLEL_SCENARIOS = {
+    "full_audit": {
+        "description": "Full system audit: security + quality + protocol in parallel",
+        "departments": ["security", "quality", "protocol"],
+    },
+    "code_and_review": {
+        "description": "Engineering fix + quality review on different projects",
+        "departments": ["engineering", "quality"],
+    },
+    "system_health": {
+        "description": "Operations health check + personnel performance report",
+        "departments": ["operations", "personnel"],
+    },
+    "deep_scan": {
+        "description": "Protocol debt scan + security audit + personnel metrics",
+        "departments": ["protocol", "security", "personnel"],
+    },
+    "full_pipeline": {
+        "description": "All read-only departments scan simultaneously",
+        "departments": ["protocol", "security", "quality", "personnel"],
+    },
+}
+
 
 # ── 认知模式 ──
 
@@ -474,6 +500,88 @@ class Governor:
                 f"Governor batch: dispatched {len(dispatched)} tasks to [{slot_list}]",
                 "INFO", "governor"
             )
+        return dispatched
+
+    def run_parallel_scenario(self, scenario_name: str, project: str = "orchestrator",
+                              cwd: str = "", action_prefix: str = "") -> list[dict]:
+        """Dispatch a predefined parallel scenario — multiple departments at once.
+
+        Args:
+            scenario_name: Key from PARALLEL_SCENARIOS (e.g. "full_audit")
+            project: Target project name
+            cwd: Working directory (auto-resolved if empty)
+            action_prefix: Optional prefix for task actions
+
+        Returns:
+            List of dispatched task dicts
+        """
+        scenario = PARALLEL_SCENARIOS.get(scenario_name)
+        if not scenario:
+            available = ", ".join(PARALLEL_SCENARIOS.keys())
+            log.error(f"Governor: unknown scenario '{scenario_name}'. Available: {available}")
+            return []
+
+        self._reap_zombie_tasks()
+
+        running_count = self.db.count_running_tasks()
+        slots = MAX_CONCURRENT - running_count
+        if slots <= 0:
+            log.info(f"Governor: no slots available for scenario '{scenario_name}'")
+            return []
+
+        # Resolve cwd
+        if not cwd:
+            from src.core.project_registry import resolve_project
+            cwd = resolve_project(project) or os.environ.get("ORCHESTRATOR_ROOT", ".")
+
+        departments = scenario["departments"][:slots]  # Don't exceed available slots
+        dispatched = []
+
+        for dept in departments:
+            action = f"{action_prefix}{scenario['description']}" if action_prefix else scenario["description"]
+            spec = {
+                "department": dept,
+                "project": project,
+                "cwd": cwd,
+                "problem": f"Parallel scenario: {scenario_name}",
+                "summary": f"{dept} — {scenario['description']}",
+            }
+            task_id = self.db.create_task(
+                action=action,
+                reason=f"Parallel scenario dispatch: {scenario_name}",
+                priority="medium",
+                spec=spec,
+                source="auto",
+            )
+
+            # Cognitive mode
+            task_dict = self.db.get_task(task_id)
+            spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
+            self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+
+            # Scrutiny
+            self.db.update_task(task_id, status="scrutinizing")
+            approved, reason = self.scrutinize(task_id, self.db.get_task(task_id))
+
+            if not approved:
+                self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=reason,
+                                    finished_at=datetime.now(timezone.utc).isoformat())
+                log.info(f"Governor: scenario task #{task_id} ({dept}) rejected: {reason}")
+                continue
+
+            self.db.update_task(task_id, scrutiny_note=f"准奏：{reason}")
+            self.execute_task_async(task_id)
+            dispatched.append(self.db.get_task(task_id))
+
+        if dispatched:
+            dept_list = ", ".join(d["spec"].get("department", "?") if isinstance(d.get("spec"), dict)
+                                 else json.loads(d.get("spec", "{}")).get("department", "?")
+                                 for d in dispatched)
+            self.db.write_log(
+                f"Governor scenario '{scenario_name}': dispatched {len(dispatched)} tasks [{dept_list}]",
+                "INFO", "governor"
+            )
+            log.info(f"Governor: scenario '{scenario_name}' dispatched {len(dispatched)} tasks")
         return dispatched
 
     def execute_task_async(self, task_id: int):
