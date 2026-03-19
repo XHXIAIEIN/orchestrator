@@ -89,8 +89,11 @@ def run_analysis():
     try:
         db.write_log("Governor 开始检查任务", "INFO", "governor")
         governor = Governor(db=db)
-        governor.run()
-        db.write_log("Governor 执行完毕", "INFO", "governor")
+        dispatched = governor.run_batch()
+        if dispatched:
+            db.write_log(f"Governor dispatched {len(dispatched)} tasks in parallel", "INFO", "governor")
+        else:
+            db.write_log("Governor: nothing to dispatch", "INFO", "governor")
     except Exception as e:
         log.error(f"Governor failed: {e}")
 

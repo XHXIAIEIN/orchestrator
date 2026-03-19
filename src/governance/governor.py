@@ -366,62 +366,112 @@ class Governor:
                 log.warning(f"Governor: reaped zombie task #{stale['id']} (stuck {int(age)}s)")
 
     def run(self) -> dict | None:
-        """Auto-triggered: pick top high-priority recommendation, scrutinize, then execute.
-        支持并行：如果正在运行的任务数 < MAX_CONCURRENT，可以继续派发新任务。"""
+        """Auto-triggered: pick one recommendation, scrutinize, then execute.
+        Legacy single-task method — use run_batch() for parallel dispatch."""
+        results = self.run_batch(max_dispatch=1)
+        return results[0] if results else None
+
+    def run_batch(self, max_dispatch: int = MAX_CONCURRENT) -> list[dict]:
+        """Pick multiple high-priority recommendations and dispatch in parallel.
+
+        Rules:
+        - Respects MAX_CONCURRENT global limit
+        - One task per department at a time (no two engineering tasks in parallel)
+        - Each task goes through scrutiny before dispatch
+        - Returns list of dispatched task dicts
+        """
         self._reap_zombie_tasks()
 
         running_count = self.db.count_running_tasks()
-        if running_count >= MAX_CONCURRENT:
+        slots = min(max_dispatch, MAX_CONCURRENT - running_count)
+        if slots <= 0:
             log.info(f"Governor: {running_count} tasks running (max {MAX_CONCURRENT}), skipping")
-            return None
+            return []
+
+        # Find which departments are already busy
+        running_tasks = self.db.get_running_tasks()
+        busy_departments = set()
+        for t in running_tasks:
+            try:
+                spec = json.loads(t.get("spec", "{}"))
+                dept = spec.get("department")
+                if dept:
+                    busy_departments.add(dept)
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         insights = self.db.get_latest_insights()
         recs = insights.get("recommendations", [])
         high = [r for r in recs if r.get("priority") == "high"]
         if not high:
             log.info("Governor: no high-priority recommendations, skipping")
-            return None
+            return []
 
-        rec = high[0]
-        spec = {
-            "department":     rec.get("department", "engineering"),
-            "project":        rec.get("project", "orchestrator"),
-            "cwd":            rec.get("cwd", ""),
-            "problem":        rec.get("problem", ""),
-            "behavior_chain": rec.get("behavior_chain", ""),
-            "observation":    rec.get("observation", ""),
-            "expected":       rec.get("expected", ""),
-            "summary":        rec.get("summary", ""),
-            "importance":     rec.get("importance", ""),
-        }
-        task_id = self.db.create_task(
-            action=rec.get("action", ""),
-            reason=rec.get("reason", ""),
-            priority=rec.get("priority", "high"),
-            spec=spec,
-            source="auto",
-        )
-        log.info(f"Governor: created task #{task_id}: {rec.get('summary', '')}")
+        dispatched = []
+        dispatched_departments = set()
 
-        # 写入认知模式到 spec
-        task_dict = self.db.get_task(task_id)
-        spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
-        self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+        for rec in high:
+            if len(dispatched) >= slots:
+                break
 
-        # 门下省审查
-        self.db.update_task(task_id, status="scrutinizing")
-        self.db.write_log(f"门下省审查任务 #{task_id}：{rec.get('summary', '')[:50]}", "INFO", "governor")
-        approved, reason = self.scrutinize(task_id, self.db.get_task(task_id))
+            dept = rec.get("department", "engineering")
 
-        if not approved:
-            self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=reason,
-                                finished_at=datetime.now(timezone.utc).isoformat())
-            self.db.write_log(f"任务 #{task_id} 被门下省驳回：{reason}", "WARNING", "governor")
-            log.info(f"Governor: task #{task_id} rejected by scrutiny")
-            return self.db.get_task(task_id)
+            # Skip if this department is already running or already dispatched in this batch
+            if dept in busy_departments or dept in dispatched_departments:
+                log.info(f"Governor: skipping rec for {dept} (department busy)")
+                continue
 
-        self.db.update_task(task_id, scrutiny_note=f"准奏：{reason}")
-        return self.execute_task(task_id)
+            spec = {
+                "department":     dept,
+                "project":        rec.get("project", "orchestrator"),
+                "cwd":            rec.get("cwd", ""),
+                "problem":        rec.get("problem", ""),
+                "behavior_chain": rec.get("behavior_chain", ""),
+                "observation":    rec.get("observation", ""),
+                "expected":       rec.get("expected", ""),
+                "summary":        rec.get("summary", ""),
+                "importance":     rec.get("importance", ""),
+            }
+            task_id = self.db.create_task(
+                action=rec.get("action", ""),
+                reason=rec.get("reason", ""),
+                priority=rec.get("priority", "high"),
+                spec=spec,
+                source="auto",
+            )
+            log.info(f"Governor: created task #{task_id}: {rec.get('summary', '')} [{dept}]")
+
+            # Cognitive mode
+            task_dict = self.db.get_task(task_id)
+            spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
+            self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+
+            # Scrutiny
+            self.db.update_task(task_id, status="scrutinizing")
+            self.db.write_log(f"门下省审查任务 #{task_id}：{rec.get('summary', '')[:50]}", "INFO", "governor")
+            approved, reason = self.scrutinize(task_id, self.db.get_task(task_id))
+
+            if not approved:
+                self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=reason,
+                                    finished_at=datetime.now(timezone.utc).isoformat())
+                self.db.write_log(f"任务 #{task_id} 被门下省驳回：{reason}", "WARNING", "governor")
+                log.info(f"Governor: task #{task_id} rejected by scrutiny")
+                continue
+
+            self.db.update_task(task_id, scrutiny_note=f"准奏：{reason}")
+
+            # Dispatch async — don't block, let departments run in parallel
+            self.execute_task_async(task_id)
+            dispatched_departments.add(dept)
+            dispatched.append(self.db.get_task(task_id))
+
+        if dispatched:
+            dept_list = ", ".join(dispatched_departments)
+            self.db.write_log(
+                f"Governor batch: dispatched {len(dispatched)} tasks to [{dept_list}]",
+                "INFO", "governor"
+            )
+        return dispatched
 
     def execute_task_async(self, task_id: int):
         """在后台线程中执行任务，不阻塞调用方。"""
