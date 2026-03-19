@@ -14,28 +14,36 @@
   --accent: #635bff; --green: #0a7d54; --red: #c0392b; --amber: #b8860b;
   --mono: 'IBM Plex Mono', 'JetBrains Mono', monospace;
   --serif: 'Noto Serif SC', 'Georgia', serif;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg: 0 10px 32px rgba(0,0,0,.08), 0 4px 8px rgba(0,0,0,.04);
+  --radius: 6px;
 }
 html { font-size: 15px; }
-body { font-family: var(--mono); background: var(--bg); color: var(--text); line-height: 1.65; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--mono); background: var(--bg); color: var(--text); line-height: 1.7; -webkit-font-smoothing: antialiased; }
 ::selection { background: #635bff22; }
 
 /* ── Nav ── */
 nav {
-  position: sticky; top: 0; z-index: 50; background: var(--bg);
+  position: sticky; top: 0; z-index: 50; background: rgba(250,250,248,.92);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 32px; font-size: .75rem;
+  padding: 0 32px; height: 48px; font-size: .75rem;
 }
-.nav-left { display: flex; align-items: center; gap: 12px; }
-.nav-logo { font-family: var(--serif); font-size: 1.1rem; color: var(--text); font-weight: 400; }
-.nav-links { display: flex; gap: 6px; }
+.nav-left { display: flex; align-items: center; gap: 20px; }
+.nav-logo { font-family: var(--serif); font-size: 1.05rem; color: var(--text); font-weight: 500; letter-spacing: -.02em; }
+.nav-links { display: flex; gap: 4px; }
 .nav-link {
-  padding: 3px 10px; border: 1px solid var(--border); border-radius: 3px;
+  padding: 4px 12px; border-radius: var(--radius);
   color: var(--text-mid); text-decoration: none; font-size: .7rem;
   letter-spacing: .5px; text-transform: uppercase; transition: all .15s;
+  border: none; background: transparent;
 }
-.nav-link:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
-.nav-link.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.nav-link:hover { background: #f0f0ec; color: var(--text); }
+.nav-link.active { background: var(--text); color: var(--bg); }
+.nav-link.api-link { color: var(--text-dim); font-size: .65rem; margin-left: 4px; }
+.nav-link.api-link:hover { color: var(--accent); background: transparent; }
 .nav-right { display: flex; align-items: center; gap: 16px; font-size: .7rem; color: var(--text-dim); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 4px; }
 .status-dot.off { background: var(--red); }
@@ -46,19 +54,19 @@ nav {
 /* ── Hero ── */
 .hero { padding: 56px 0 48px; border-bottom: 1px solid var(--border); }
 .hero-title {
-  font-family: var(--serif); font-size: 3.2rem; line-height: 1.15;
-  color: var(--text); margin-bottom: 6px; font-weight: 400;
+  font-family: var(--serif); font-size: 2.8rem; line-height: 1.2;
+  color: var(--text); margin-bottom: 6px; font-weight: 400; letter-spacing: -.02em;
 }
-.hero-title sup { font-size: .9rem; color: var(--text-dim); font-family: var(--mono); vertical-align: super; }
+.hero-title sup { font-size: .85rem; color: var(--text-dim); font-family: var(--mono); vertical-align: super; }
 .roast {
-  font-family: var(--serif); font-size: 1.25rem; line-height: 1.85;
+  font-family: var(--serif); font-size: 1.2rem; line-height: 1.9;
   color: var(--text-mid); font-style: italic; max-width: 680px; margin-top: 24px;
   opacity: 0; animation: fadeIn .6s ease .15s forwards;
 }
-.roast-footer { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
-.roast-sig { font-size: .65rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+.roast-footer { margin-top: 18px; display: flex; align-items: center; gap: 12px; }
+.roast-sig { font-size: .6rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-dim); }
 .voice-btn {
-  background: none; border: 1px solid var(--border); border-radius: 50%; width: 28px; height: 28px;
+  background: none; border: 1px solid var(--border); border-radius: 50%; width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-dim);
   transition: all .2s;
 }
@@ -73,36 +81,36 @@ nav {
 
 .roast-history-toggle {
   font-family: var(--mono); font-size: .6rem; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--text-dim); background: none; border: 1px solid var(--border); border-radius: 3px;
-  padding: 3px 10px; cursor: pointer; margin-top: 16px; transition: all .15s;
+  color: var(--text-dim); background: none; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 12px; cursor: pointer; margin-top: 18px; transition: all .15s;
 }
 .roast-history-toggle:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
-.roast-history { margin-top: 20px; }
+.roast-history { margin-top: 24px; }
 .roast-history.collapsed { display: none; }
 .roast-history-item {
-  padding: 16px 0; border-bottom: 1px solid #f0f0ec;
+  padding: 18px 0; border-bottom: 1px solid #f0f0ec;
   opacity: 0; animation: fadeIn .4s ease forwards;
 }
 .roast-history-item:last-child { border-bottom: none; }
-.roast-history-date { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.roast-history-date { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .history-play-btn { background: none; border: 1px solid var(--border); border-radius: 50%; width: 20px; height: 20px; font-size: .5rem; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; justify-content: center; transition: all .15s; padding: 0; line-height: 1; }
 .history-play-btn:hover { color: var(--accent); border-color: var(--accent); }
 .roast-history-text { font-family: var(--serif); font-size: .9rem; line-height: 1.85; color: var(--text-mid); }
 
 /* ── Section ── */
-section { padding: 40px 0; border-bottom: 1px solid var(--border); }
+section { padding: 48px 0; border-bottom: 1px solid var(--border); }
 section:last-of-type { border-bottom: none; }
 .section-head {
   display: flex; justify-content: space-between; align-items: baseline;
-  margin-bottom: 20px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  margin-bottom: 24px; padding-bottom: 10px; border-bottom: 2px solid var(--text);
 }
-.section-label { font-size: .65rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+.section-label { font-size: .68rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text); font-weight: 500; }
 .section-meta { font-size: .65rem; color: var(--text-dim); }
 
 /* ── Table rows ── */
 .tbl-header {
   display: grid; font-size: .6rem; letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--text-dim); padding: 0 0 6px; border-bottom: 1px solid var(--border);
+  color: var(--text-dim); padding: 0 0 8px; border-bottom: 1px solid var(--border);
 }
 .tbl-row {
   display: grid; padding: 10px 0; border-bottom: 1px solid #f0f0ec;
@@ -112,19 +120,23 @@ section:last-of-type { border-bottom: none; }
 .tbl-row:last-child { border-bottom: none; }
 
 /* ── Governance ── */
-.gov-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
-.gov-col { padding: 20px 24px; border-right: 1px solid var(--border); }
-.gov-col:last-child { border-right: none; }
-.gov-dept-label { font-size: .58rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
-.gov-dept-name { font-family: var(--serif); font-size: 1.5rem; color: var(--text); margin: 4px 0 16px; }
-.gov-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: .78rem; color: var(--text-mid); border-bottom: 1px solid #f0f0ec; }
+.gov-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.gov-col {
+  padding: 24px; background: var(--surface);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border); transition: box-shadow .2s;
+}
+.gov-col:hover { box-shadow: var(--shadow-md); }
+.gov-dept-label { font-size: .58rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-dim); }
+.gov-dept-name { font-family: var(--serif); font-size: 1.4rem; color: var(--text); margin: 6px 0 18px; }
+.gov-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: .78rem; color: var(--text-mid); border-bottom: 1px solid #f0f0ec; }
 .gov-row:last-child { border-bottom: none; }
 .gov-val { color: var(--text); font-weight: 500; }
-.gov-bar-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: .72rem; }
+.gov-bar-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: .72rem; }
 .gov-bar-name { min-width: 28px; color: var(--text-mid); }
-.gov-bar { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
-.gov-bar-fill { height: 100%; background: var(--green); border-radius: 2px; }
-.gov-note { font-size: .68rem; color: var(--text-dim); margin-top: 12px; }
+.gov-bar { flex: 1; height: 4px; background: #f0f0ec; border-radius: 2px; overflow: hidden; }
+.gov-bar-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width .4s ease; }
+.gov-note { font-size: .68rem; color: var(--text-dim); margin-top: 14px; padding-top: 10px; border-top: 1px solid #f0f0ec; }
 
 /* ── Activity ── */
 .activity-grid { display: grid; grid-template-columns: 1fr 260px; gap: 32px; }
@@ -134,121 +146,150 @@ section:last-of-type { border-bottom: none; }
 .hm-cell { width: 12px; height: 12px; border-radius: 2px; cursor: pointer; transition: transform .1s; }
 .hm-cell:hover { transform: scale(1.8); z-index: 2; }
 .hm-0{background:#f0f0ec} .hm-1{background:#d4e4d0} .hm-2{background:#a0cca0} .hm-3{background:#5ea05e} .hm-4{background:var(--green)}
-.hm-labels { display: flex; justify-content: space-between; font-size: .55rem; color: var(--text-dim); margin-top: 4px; }
-.hm-tooltip { position:fixed; background:var(--text); color:var(--bg); border-radius:4px; padding:6px 10px; font-size:.68rem; pointer-events:none; z-index:99; display:none; }
+.hm-labels { display: flex; justify-content: space-between; font-size: .55rem; color: var(--text-dim); margin-top: 6px; }
+.hm-tooltip { position:fixed; background:var(--text); color:var(--bg); border-radius:var(--radius); padding:6px 12px; font-size:.68rem; pointer-events:none; z-index:99; display:none; box-shadow: var(--shadow-md); }
 
 .ev-search { display: flex; gap: 8px; margin: 16px 0 12px; }
 .ev-search input, .ev-search select {
-  font-family: var(--mono); font-size: .72rem; padding: 5px 10px;
-  border: 1px solid var(--border); border-radius: 3px; background: var(--surface); color: var(--text); outline: none;
+  font-family: var(--mono); font-size: .72rem; padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); outline: none;
+  transition: border-color .15s;
 }
 .ev-search input { flex: 1; }
-.ev-search input:focus { border-color: var(--accent); }
-.ev-row { display: grid; grid-template-columns: 100px 1fr; padding: 4px 0; font-size: .75rem; border-bottom: 1px solid #f4f4f0; }
+.ev-search input:focus, .ev-search select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,91,255,.08); }
+.ev-row { display: grid; grid-template-columns: 100px 1fr; padding: 6px 0; font-size: .75rem; border-bottom: 1px solid #f4f4f0; align-items: center; }
 .ev-row:last-child { border-bottom: none; }
 .ev-date { color: var(--text-dim); font-size: .68rem; }
 .ev-title { color: var(--text); }
-.ev-src { font-size: .55rem; color: var(--text-dim); background: #f0f0ec; padding: 1px 5px; border-radius: 2px; margin-right: 6px; }
+.ev-src { font-size: .55rem; color: var(--text-dim); background: #f0f0ec; padding: 2px 6px; border-radius: 3px; margin-right: 6px; }
+.ev-status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 
 /* Categories sidebar */
-.cat-toggle { display: flex; gap: 4px; margin-bottom: 12px; }
+.cat-toggle { display: flex; gap: 4px; margin-bottom: 14px; }
 .cat-btn {
-  font-family: var(--mono); font-size: .6rem; padding: 2px 8px;
-  border: 1px solid var(--border); border-radius: 2px;
-  background: transparent; color: var(--text-dim); cursor: pointer;
+  font-family: var(--mono); font-size: .6rem; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: transparent; color: var(--text-dim); cursor: pointer; transition: all .15s;
 }
+.cat-btn:hover { border-color: var(--text-mid); color: var(--text-mid); }
 .cat-btn.active { background: var(--text); color: var(--bg); border-color: var(--text); }
-.cat-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: .72rem; color: var(--text-mid); border-bottom: 1px solid #f4f4f0; }
+.cat-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: .72rem; color: var(--text-mid); border-bottom: 1px solid #f4f4f0; }
 .cat-row:last-child { border-bottom: none; }
-.cat-bar-wrap { flex: 1; margin: 0 10px; height: 2px; background: var(--border); border-radius: 1px; align-self: center; }
-.cat-bar-fill { height: 100%; background: var(--accent); border-radius: 1px; }
+.cat-bar-wrap { flex: 1; margin: 0 10px; height: 3px; background: #f0f0ec; border-radius: 2px; align-self: center; }
+.cat-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s ease; }
 
 /* ── Insights ── */
 .insight-daily {
-  font-family: var(--serif); font-size: .95rem; line-height: 1.8;
-  color: var(--text); max-width: 680px; margin-bottom: 20px;
+  font-family: var(--serif); font-size: .95rem; line-height: 1.9;
+  color: var(--text); max-width: 680px; margin-bottom: 24px;
 }
-.insight-daily .tags { font-family: var(--mono); font-size: .7rem; color: var(--text-dim); margin-top: 6px; }
+.insight-daily .tags { font-family: var(--mono); font-size: .7rem; color: var(--accent); margin-top: 8px; letter-spacing: .3px; }
 .insight-overview {
   font-family: var(--serif); font-size: .9rem; line-height: 2;
   color: var(--text-mid); max-width: 680px;
-  padding: 16px 20px; margin-bottom: 28px;
-  background: #f6f6f3; border-radius: 4px;
+  padding: 18px 24px; margin-bottom: 32px;
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); border: 1px solid var(--border);
 }
-.sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.insight-columns { display: grid; grid-template-columns: 1fr 280px; gap: 40px; }
+.sub-label { font-size: .62rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text); font-weight: 500; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.insight-columns { display: grid; grid-template-columns: 1fr 280px; gap: 48px; }
 @media (max-width: 860px) { .insight-columns { grid-template-columns: 1fr; } }
-.insight-main { }
-.insight-side { }
 
 .pattern-item {
   font-family: var(--serif); font-size: .88rem; color: var(--text-mid);
-  padding: 8px 0; border-bottom: 1px solid #f4f4f0; line-height: 1.75;
+  padding: 10px 0; border-bottom: 1px solid #f4f4f0; line-height: 1.8;
 }
 .pattern-item:last-child { border-bottom: none; }
 
-.rec-item { padding: 14px 0; border-bottom: 1px solid #f0f0ec; }
+.rec-item { padding: 16px 0; border-bottom: 1px solid #f0f0ec; }
 .rec-item:last-child { border-bottom: none; }
 .rec-action { font-family: var(--serif); font-size: .9rem; color: var(--text); line-height: 1.7; }
-.rec-reason { font-family: var(--serif); font-size: .8rem; color: var(--text-dim); margin-top: 6px; line-height: 1.6; font-style: italic; }
-.rec-priority { font-family: var(--mono); font-size: .55rem; padding: 2px 7px; border-radius: 2px; margin-left: 8px; vertical-align: middle; letter-spacing: .5px; text-transform: uppercase; }
+.rec-reason { font-family: var(--serif); font-size: .8rem; color: var(--text-dim); margin-top: 6px; line-height: 1.65; font-style: italic; }
+.rec-priority { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; margin-left: 8px; vertical-align: middle; letter-spacing: .5px; text-transform: uppercase; }
 .rec-high { background: #fde8e8; color: var(--red); }
 .rec-medium { background: #e6f4ea; color: var(--green); }
 .rec-low { background: #f0f0ec; color: var(--text-dim); }
 .collapsed { display: none; }
 
 /* ── Debts ── */
-.debt-item { padding: 12px 0; border-bottom: 1px solid #f0f0ec; }
-.debt-item:last-child { border-bottom: none; }
+.debt-item {
+  padding: 14px 16px; margin-bottom: 8px;
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+  border-left: 3px solid var(--text-dim);
+  transition: box-shadow .2s;
+}
+.debt-item:hover { box-shadow: var(--shadow-md); }
+.debt-item:last-child { margin-bottom: 0; }
+.debt-item.debt-border-high { border-left-color: var(--red); }
+.debt-item.debt-border-medium { border-left-color: var(--amber); }
+.debt-item.debt-border-low { border-left-color: var(--green); }
 .debt-head { display: flex; align-items: center; gap: 8px; }
-.debt-severity { font-family: var(--mono); font-size: .55rem; padding: 2px 7px; border-radius: 2px; letter-spacing: .5px; text-transform: uppercase; }
+.debt-severity { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px; text-transform: uppercase; }
 .debt-sev-high { background: #fde8e8; color: var(--red); }
 .debt-sev-medium { background: #fef3e0; color: var(--amber); }
 .debt-sev-low { background: #f0f0ec; color: var(--text-dim); }
-.debt-status { font-family: var(--mono); font-size: .55rem; padding: 2px 7px; border-radius: 2px; letter-spacing: .5px; text-transform: uppercase; }
+.debt-status { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px; text-transform: uppercase; }
 .debt-status-open { background: #e8f0fe; color: #1a56db; }
 .debt-status-resolved { background: #e6f4ea; color: var(--green); }
-.debt-summary { font-family: var(--serif); font-size: .88rem; color: var(--text); line-height: 1.75; margin-top: 4px; }
-.debt-meta { font-family: var(--mono); font-size: .65rem; color: var(--text-dim); margin-top: 4px; }
-.debt-group { margin-bottom: 24px; }
+.debt-summary { font-family: var(--serif); font-size: .88rem; color: var(--text); line-height: 1.75; margin-top: 6px; }
+.debt-meta { font-family: var(--mono); font-size: .65rem; color: var(--text-dim); margin-top: 6px; }
+.debt-group { margin-bottom: 28px; }
 .debt-group:last-child { margin-bottom: 0; }
-.debt-proj-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.debt-proj-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
 .debt-proj-name { font-family: var(--mono); font-size: .78rem; font-weight: 500; color: var(--text); }
 .debt-proj-count { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); }
 
 /* ── Tasks ── */
-.task-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
-.t-badge { font-size: .6rem; padding: 2px 8px; border-radius: 2px; letter-spacing: .3px; }
+.task-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+.t-badge { font-size: .6rem; padding: 3px 10px; border-radius: 3px; letter-spacing: .3px; }
 .t-done { background: #e6f4ea; color: var(--green); }
 .t-failed { background: #fde8e8; color: var(--red); }
 .t-running { background: #e8f0fe; color: #1a56db; animation: pulse 1.5s infinite; }
 .t-pending { background: #f0f0ec; color: var(--text-dim); }
 .t-awaiting { background: #fef3e0; color: var(--amber); }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-.task-row { display: grid; grid-template-columns: 80px 1fr 80px; padding: 10px 0; border-bottom: 1px solid #f0f0ec; align-items: start; cursor: pointer; transition: background .1s; }
-.task-row:hover { background: #f8f8f5; margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 3px; }
+.task-status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.task-dot-done { background: var(--green); }
+.task-dot-failed { background: var(--red); }
+.task-dot-running { background: #1a56db; animation: pulse 1.5s infinite; }
+.task-dot-pending { background: var(--text-dim); }
+.task-dot-awaiting { background: var(--amber); }
+
+.task-row {
+  display: grid; grid-template-columns: 80px 1fr 100px; padding: 12px 0; border-bottom: 1px solid #f0f0ec;
+  align-items: start; cursor: pointer; transition: all .15s;
+}
+.task-row:hover { background: #f8f8f5; margin: 0 -12px; padding-left: 12px; padding-right: 12px; border-radius: var(--radius); }
 .task-row:last-child { border-bottom: none; }
 .task-id { font-size: .68rem; color: var(--text-dim); }
 .task-action { font-size: .82rem; color: var(--text); }
-.task-meta-line { font-size: .65rem; color: var(--text-dim); margin-top: 2px; }
-.task-end { text-align: right; }
-.task-detail { display:none; grid-column: 1/-1; margin-top:10px; padding:14px; background:#f8f8f5; border-radius:4px; font-size:.75rem; }
+.task-meta-line { font-size: .65rem; color: var(--text-dim); margin-top: 3px; }
+.task-end { text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.task-detail { display:none; grid-column: 1/-1; margin-top:12px; padding:16px; background:#f8f8f5; border-radius:var(--radius); font-size:.75rem; border: 1px solid var(--border); }
 .task-detail.open { display:block; }
-.task-detail-row { display:flex; gap:8px; padding:3px 0; }
+.task-detail-row { display:flex; gap:8px; padding:4px 0; }
 .task-detail-label { color:var(--text-dim); min-width:50px; }
 .task-detail-val { color:var(--text-mid); }
-.task-output { margin-top:8px; padding:8px; background:var(--surface); border:1px solid var(--border); border-radius:3px; color:var(--text-mid); white-space:pre-wrap; word-break:break-word; max-height:180px; overflow-y:auto; font-size:.7rem; }
-.btn-approve { font-family:var(--mono); font-size:.6rem; padding:3px 10px; border:1px solid var(--accent); border-radius:2px; background:transparent; color:var(--accent); cursor:pointer; }
+.task-output { margin-top:10px; padding:10px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); color:var(--text-mid); white-space:pre-wrap; word-break:break-word; max-height:180px; overflow-y:auto; font-size:.7rem; }
+.btn-approve { font-family:var(--mono); font-size:.6rem; padding:4px 12px; border:1px solid var(--accent); border-radius:var(--radius); background:transparent; color:var(--accent); cursor:pointer; transition: all .15s; }
 .btn-approve:hover { background:var(--accent); color:#fff; }
 
 /* ── Logs ── */
 .logs-controls { display: flex; gap: 6px; }
-.logs-btn { font-family:var(--mono); font-size:.6rem; padding:2px 8px; border:1px solid var(--border); border-radius:2px; background:transparent; color:var(--text-dim); cursor:pointer; }
-.logs-btn:hover { background:var(--text); color:var(--bg); }
-.logs-body { max-height: 280px; overflow-y: auto; margin-top: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; }
+.logs-btn {
+  font-family:var(--mono); font-size:.6rem; padding:3px 10px;
+  border:1px solid var(--border); border-radius:var(--radius);
+  background:transparent; color:var(--text-dim); cursor:pointer; transition: all .15s;
+}
+.logs-btn:hover { background:var(--text); color:var(--bg); border-color: var(--text); }
+.logs-body {
+  max-height: 280px; overflow-y: auto; margin-top: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px; box-shadow: var(--shadow-sm);
+}
 .logs-body.collapsed { display: none; }
-.log-line { font-size: .65rem; padding: 2px 0; display: flex; gap: 8px; border-bottom: 1px solid #f8f8f5; }
+.log-line { font-size: .65rem; padding: 3px 0; display: flex; gap: 8px; border-bottom: 1px solid #f8f8f5; }
 .log-line:last-child { border-bottom: none; }
 .log-ts { color: var(--text-dim); min-width: 62px; }
 .log-src { color: var(--accent); min-width: 58px; }
@@ -257,18 +298,27 @@ section:last-of-type { border-bottom: none; }
 .log-WARNING .log-msg { color: var(--amber); }
 
 /* ── Modal ── */
-.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:100; align-items:center; justify-content:center; backdrop-filter:blur(2px); }
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:100; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
 .modal-overlay.open { display:flex; }
-.modal { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:28px; width:min(600px,90vw); max-height:80vh; overflow-y:auto; box-shadow:0 16px 48px rgba(0,0,0,.12); }
-.modal h3 { font-family:var(--serif); font-size:1.15rem; color:var(--text); margin-bottom:20px; }
-.modal-field { margin:10px 0; }
+.modal { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:32px; width:min(600px,90vw); max-height:80vh; overflow-y:auto; box-shadow: var(--shadow-lg); }
+.modal h3 { font-family:var(--serif); font-size:1.15rem; color:var(--text); margin-bottom:24px; }
+.modal-field { margin:12px 0; }
 .modal-label { font-size:.55rem; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); }
-.modal-value { font-size:.8rem; color:var(--text-mid); margin-top:3px; line-height:1.6; }
-.modal-actions { display:flex; gap:10px; margin-top:24px; justify-content:flex-end; }
-.modal-actions button { font-family:var(--mono); font-size:.7rem; padding:6px 18px; border-radius:4px; cursor:pointer; }
+.modal-value { font-size:.8rem; color:var(--text-mid); margin-top:4px; line-height:1.7; }
+.modal-actions { display:flex; gap:10px; margin-top:28px; justify-content:flex-end; }
+.modal-actions button { font-family:var(--mono); font-size:.7rem; padding:7px 20px; border-radius:var(--radius); cursor:pointer; transition: all .15s; }
 .btn-cancel { border:1px solid var(--border); background:var(--surface); color:var(--text-mid); }
+.btn-cancel:hover { border-color: var(--text-mid); }
 .btn-go { border:none; background:var(--accent); color:#fff; }
 .btn-go:hover { opacity:.9; }
+
+/* ── Responsive ── */
+@media (max-width: 860px) {
+  .gov-grid { grid-template-columns: 1fr; gap: 12px; }
+  nav { padding: 0 16px; }
+  .container { padding: 0 16px 60px; }
+  .hero-title { font-size: 2rem; }
+}
 </style>
 </head>
 <body>
@@ -280,12 +330,13 @@ section:last-of-type { border-bottom: none; }
       <a class="nav-link active" href="#">Dashboard</a>
       <a class="nav-link" href="/pipeline">Pipeline</a>
       <a class="nav-link" href="/agents">Agents</a>
+      <a class="nav-link api-link" href="/api-reference">API</a>
     </div>
   </div>
   <div class="nav-right">
-    <span id="h-collect">采集 —</span>
-    <span id="h-analyze">分析 —</span>
-    <span><span class="status-dot" id="h-dot"></span><span id="h-ws">连接中</span></span>
+    <span id="h-collect">--:--</span>
+    <span id="h-analyze">--:--</span>
+    <span><span class="status-dot" id="h-dot"></span><span id="h-ws">...</span></span>
   </div>
 </nav>
 
@@ -293,24 +344,24 @@ section:last-of-type { border-bottom: none; }
 
   <!-- Hero -->
   <div class="hero">
-    <h1 class="hero-title">管家日报 <sup id="roast-date"></sup></h1>
-    <div class="roast" id="roast">观察中...</div>
+    <h1 class="hero-title">Daily Report <sup id="roast-date"></sup></h1>
+    <div class="roast" id="roast">Observing...</div>
     <div class="roast-footer">
-      <span class="roast-sig">— Orchestrator</span>
-      <button class="voice-btn" id="voice-btn" onclick="speakRoast()" title="让 SOUL 说出来">
+      <span class="roast-sig">-- Orchestrator</span>
+      <button class="voice-btn" id="voice-btn" onclick="speakRoast()" title="Speak">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       </button>
       <span class="voice-status" id="voice-status"></span>
     </div>
     <audio id="voice-audio" style="display:none"></audio>
     <div id="roast-history" class="roast-history collapsed"></div>
-    <button class="roast-history-toggle" id="roast-history-btn" onclick="toggleRoastHistory()" style="display:none">往期语录</button>
+    <button class="roast-history-toggle" id="roast-history-btn" onclick="toggleRoastHistory()" style="display:none">Past Entries</button>
   </div>
 
   <!-- 三省六部 -->
   <section>
     <div class="section-head">
-      <span class="section-label">/ 三省六部</span>
+      <span class="section-label">三省六部</span>
       <span class="section-meta" id="gov-meta"></span>
     </div>
     <div class="gov-grid" id="gov-grid">
@@ -335,7 +386,7 @@ section:last-of-type { border-bottom: none; }
   <!-- Insights -->
   <section>
     <div class="section-head">
-      <span class="section-label">/ 洞察</span>
+      <span class="section-label">Insights</span>
       <span class="section-meta" id="event-count"></span>
     </div>
     <div id="daily-summary" class="insight-daily"></div>
@@ -343,17 +394,17 @@ section:last-of-type { border-bottom: none; }
 
     <div class="insight-columns">
       <div class="insight-main">
-        <div class="sub-label">行为模式</div>
+        <div class="sub-label">Patterns</div>
         <div id="insights-patterns"></div>
-        <div class="sub-label" style="margin-top:28px">建议</div>
+        <div class="sub-label" style="margin-top:32px">Recommendations</div>
         <div id="insights-recs"></div>
       </div>
       <div class="insight-side">
-        <div class="sub-label">时间分布</div>
+        <div class="sub-label">Time Distribution</div>
         <div class="cat-toggle">
-          <button class="cat-btn active" onclick="loadCats(1,this)">今日</button>
-          <button class="cat-btn" onclick="loadCats(7,this)">7天</button>
-          <button class="cat-btn" onclick="loadCats(30,this)">30天</button>
+          <button class="cat-btn active" onclick="loadCats(1,this)">Today</button>
+          <button class="cat-btn" onclick="loadCats(7,this)">7d</button>
+          <button class="cat-btn" onclick="loadCats(30,this)">30d</button>
         </div>
         <div id="cat-list"></div>
       </div>
@@ -363,7 +414,7 @@ section:last-of-type { border-bottom: none; }
   <!-- Attention Debts -->
   <section>
     <div class="section-head">
-      <span class="section-label">/ 注意力债务</span>
+      <span class="section-label">Attention Debts</span>
       <span class="section-meta" id="debt-count"></span>
     </div>
     <div id="debt-list"></div>
@@ -372,15 +423,15 @@ section:last-of-type { border-bottom: none; }
   <!-- Activity -->
   <section>
     <div class="section-head">
-      <span class="section-label">/ 活动</span>
-      <span class="section-meta"><button class="logs-btn" onclick="document.getElementById('activity-detail').classList.toggle('collapsed')">展开/收起</button></span>
+      <span class="section-label">Activity</span>
+      <span class="section-meta"><button class="logs-btn" onclick="document.getElementById('activity-detail').classList.toggle('collapsed')">Toggle Details</button></span>
     </div>
     <div class="heatmap" id="heatmap"></div>
     <div class="hm-labels"><span id="hm-start"></span><span id="hm-end"></span></div>
     <div id="activity-detail" class="collapsed" style="margin-top:16px">
       <div class="ev-search">
-        <input id="ev-search" placeholder="搜索..." oninput="filterEvents()">
-        <select id="ev-filter" onchange="filterEvents()"><option value="">全部</option></select>
+        <input id="ev-search" placeholder="Search..." oninput="filterEvents()">
+        <select id="ev-filter" onchange="filterEvents()"><option value="">All</option></select>
       </div>
       <div id="events"></div>
     </div>
@@ -389,11 +440,11 @@ section:last-of-type { border-bottom: none; }
   <!-- Tasks -->
   <section>
     <div class="section-head">
-      <span class="section-label">/ 任务</span>
+      <span class="section-label">Tasks</span>
     </div>
     <div class="task-stats" id="task-stats"></div>
-    <div class="tbl-header" style="grid-template-columns:80px 1fr 80px">
-      <span>/ ID</span><span>/ 动作</span><span style="text-align:right">/ 状态</span>
+    <div class="tbl-header" style="grid-template-columns:80px 1fr 100px">
+      <span>ID</span><span>Action</span><span style="text-align:right">Status</span>
     </div>
     <div id="task-list"></div>
   </section>
@@ -401,10 +452,10 @@ section:last-of-type { border-bottom: none; }
   <!-- Logs -->
   <section>
     <div class="section-head">
-      <span class="section-label">/ 日志</span>
+      <span class="section-label">Logs</span>
       <div class="logs-controls">
-        <button class="logs-btn" onclick="toggleLogs()">收起</button>
-        <button class="logs-btn" onclick="clearLogs()">清空</button>
+        <button class="logs-btn" onclick="toggleLogs()">Collapse</button>
+        <button class="logs-btn" onclick="clearLogs()">Clear</button>
       </div>
     </div>
     <div class="logs-body" id="logs"></div>
@@ -417,8 +468,8 @@ section:last-of-type { border-bottom: none; }
     <h3 id="modal-title"></h3>
     <div id="modal-body"></div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal()">取消</button>
-      <button class="btn-go" id="modal-go">确认执行</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-go" id="modal-go">Confirm</button>
     </div>
   </div>
 </div>
@@ -432,23 +483,23 @@ let _events=[],_tasks=[],_stats={};
 function generateRoast(stats,events,tasks){
   const lines=[];
   const late=events.filter(e=>{const h=new Date(e.occurred_at).getHours();return h>=0&&h<5});
-  if(late.length>5) lines.push(`过去一周 ${late.length} 次凌晨活动。你的作息比我的定时采集器还不稳定。`);
-  else if(late.length>0) lines.push(`${late.length} 次凌晨活跃——你比 24 小时运行的我还不知道休息。`);
+  if(late.length>5) lines.push(`Past week: ${late.length} late-night sessions. Your sleep schedule is less stable than my cron jobs.`);
+  else if(late.length>0) lines.push(`${late.length} late-night activities -- you run longer hours than a 24/7 daemon.`);
   const src={};events.forEach(e=>{src[e.source]=(src[e.source]||0)+1});
   const sorted=Object.entries(src).sort((a,b)=>b[1]-a[1]);
   if(sorted.length>1){const[top,cnt]=sorted[0];const pct=Math.round(cnt/events.length*100);
-    if(pct>40){const name=top.replace('browser_chrome_profile1','Chrome 主号').replace('claude','Claude 对话').replace('git','Git');
-      lines.push(`${name} 占了 ${pct}% 的足迹。剩下的来源是来凑数的。`);}}
+    if(pct>40){const name=top.replace('browser_chrome_profile1','Chrome').replace('claude','Claude').replace('git','Git');
+      lines.push(`${name} accounts for ${pct}% of all traces. The rest are extras.`);}}
   const done=tasks.filter(t=>t.status==='done').length;const failed=tasks.filter(t=>t.status==='failed').length;
   if(done+failed>0){const rate=Math.round(done/(done+failed)*100);
-    if(rate<50)lines.push(`Governor 成功率 ${rate}%——连公务员考试都过不了。`);
-    else if(rate<=70)lines.push(`Governor 成功率 ${rate}%。勉强及格。`);
-    else lines.push(`Governor 成功率 ${rate}%，开始值回票价了。`);}
+    if(rate<50)lines.push(`Governor success rate: ${rate}%. Barely functional.`);
+    else if(rate<=70)lines.push(`Governor success rate: ${rate}%. Passing grade.`);
+    else lines.push(`Governor success rate: ${rate}%. Starting to earn its keep.`);}
   const steam=(stats.bySource||[]).find(s=>s.source==='steam');
-  if(steam)lines.push(`Steam 库 ${steam.count} 个游戏，大部分落灰。数字仓鼠。`);
-  if(stats.total>4000)lines.push(`已观察 ${stats.total.toLocaleString()} 条足迹。隐私？你自己给的权限。`);
+  if(steam)lines.push(`Steam library: ${steam.count} games, most collecting dust. Digital hoarding at its finest.`);
+  if(stats.total>4000)lines.push(`${stats.total.toLocaleString()} traces observed. Privacy? You gave me the keys.`);
   const picked=lines.sort(()=>Math.random()-.5).slice(0,3);
-  return picked.join(' ')||'数据不够，等几天再吐槽你。';
+  return picked.join(' ')||'Not enough data yet. Check back in a few days.';
 }
 
 /* ── Governance ── */
@@ -457,30 +508,30 @@ function renderGovernance(tasks){
   const manual=tasks.length-auto;
   const recent=tasks[0];
   $('gov-zhongshu').innerHTML=
-    `<div class='gov-row'><span>自动</span><span class='gov-val'>${auto}</span></div>`+
-    `<div class='gov-row'><span>手动</span><span class='gov-val'>${manual}</span></div>`+
-    `<div class='gov-row'><span>总计</span><span class='gov-val'>${tasks.length}</span></div>`+
-    (recent?`<div class='gov-note'>最近：${esc(recent.action||'')}</div>`:'');
+    `<div class='gov-row'><span>Auto</span><span class='gov-val'>${auto}</span></div>`+
+    `<div class='gov-row'><span>Manual</span><span class='gov-val'>${manual}</span></div>`+
+    `<div class='gov-row'><span>Total</span><span class='gov-val'>${tasks.length}</span></div>`+
+    (recent?`<div class='gov-note'>Latest: ${esc(recent.action||'')}</div>`:'');
   const scrutinized=tasks.filter(t=>t.scrutiny_note);
   const approved=scrutinized.filter(t=>(t.scrutiny_note||'').includes('准奏'));
   const rejected=tasks.filter(t=>t.status==='scrutiny_failed');
   const bypassed=tasks.filter(t=>(t.scrutiny_note||'').includes('默认放行'));
   $('gov-menxia').innerHTML=
-    `<div class='gov-row'><span>已审查</span><span class='gov-val'>${scrutinized.length}</span></div>`+
-    `<div class='gov-row'><span>准奏</span><span class='gov-val' style='color:var(--green)'>${approved.length}</span></div>`+
-    `<div class='gov-row'><span>驳回</span><span class='gov-val' style='color:var(--red)'>${rejected.length}</span></div>`+
-    `<div class='gov-row'><span>异常放行</span><span class='gov-val' style='color:var(--amber)'>${bypassed.length}</span></div>`+
-    `<div class='gov-note'>通过率 ${scrutinized.length?Math.round(approved.length/scrutinized.length*100):'—'}%</div>`;
+    `<div class='gov-row'><span>Reviewed</span><span class='gov-val'>${scrutinized.length}</span></div>`+
+    `<div class='gov-row'><span>Approved</span><span class='gov-val' style='color:var(--green)'>${approved.length}</span></div>`+
+    `<div class='gov-row'><span>Rejected</span><span class='gov-val' style='color:var(--red)'>${rejected.length}</span></div>`+
+    `<div class='gov-row'><span>Bypassed</span><span class='gov-val' style='color:var(--amber)'>${bypassed.length}</span></div>`+
+    `<div class='gov-note'>Pass rate: ${scrutinized.length?Math.round(approved.length/scrutinized.length*100):'--'}%</div>`;
   const depts={engineering:{n:'工部',d:0,f:0},operations:{n:'户部',d:0,f:0},protocol:{n:'礼部',d:0,f:0},security:{n:'兵部',d:0,f:0},quality:{n:'刑部',d:0,f:0},personnel:{n:'吏部',d:0,f:0}};
   tasks.forEach(t=>{const k=(t.spec?.department)||'engineering';if(!depts[k])depts[k]={n:k,d:0,f:0};if(t.status==='done')depts[k].d++;if(t.status==='failed')depts[k].f++});
   const d=tasks.filter(t=>t.status==='done').length,f=tasks.filter(t=>t.status==='failed').length,r=tasks.filter(t=>t.status==='running').length;
-  let h=`<div class='gov-row'><span>完成</span><span class='gov-val' style='color:var(--green)'>${d}</span></div>`+
-    `<div class='gov-row'><span>失败</span><span class='gov-val' style='color:var(--red)'>${f}</span></div>`+
-    `<div class='gov-row'><span>运行中</span><span class='gov-val'>${r}</span></div><div style='margin-top:12px'>`;
+  let h=`<div class='gov-row'><span>Done</span><span class='gov-val' style='color:var(--green)'>${d}</span></div>`+
+    `<div class='gov-row'><span>Failed</span><span class='gov-val' style='color:var(--red)'>${f}</span></div>`+
+    `<div class='gov-row'><span>Running</span><span class='gov-val'>${r}</span></div><div style='margin-top:14px'>`;
   for(const[,dept]of Object.entries(depts)){const t=dept.d+dept.f;const p=t?Math.round(dept.d/t*100):0;
     h+=`<div class='gov-bar-row'><span class='gov-bar-name'>${dept.n}</span><div class='gov-bar'><div class='gov-bar-fill' style='width:${p}%'></div></div><span style='font-size:.6rem;color:var(--text-dim)'>${dept.d}/${t}</span></div>`}
   h+='</div>';$('gov-shangshu').innerHTML=h;
-  $('gov-meta').textContent=`${tasks.length} 任务 · ${d} 完成 · ${f} 失败`;
+  $('gov-meta').textContent=`${tasks.length} tasks | ${d} done | ${f} failed`;
 }
 
 /* ── Heatmap ── */
@@ -498,52 +549,54 @@ function renderHeatmap(data){
   $('hm-start').textContent=start.toISOString().slice(5,10);
   $('hm-end').textContent=today.toISOString().slice(5,10);
 }
-function showTip(el,ev){const t=$('tooltip');t.textContent=`${el.dataset.day} · ${el.dataset.count} 条`;t.style.display='block';t.style.left=ev.pageX+12+'px';t.style.top=ev.pageY-30+'px'}
+function showTip(el,ev){const t=$('tooltip');t.textContent=`${el.dataset.day} | ${el.dataset.count} events`;t.style.display='block';t.style.left=ev.pageX+12+'px';t.style.top=ev.pageY-30+'px'}
 function hideTip(){$('tooltip').style.display='none'}
 
 /* ── Events ── */
-function buildSourceOptions(){const sel=$('ev-filter');const cur=sel.value;const srcs=[...new Set(_events.map(e=>e.source))].sort();sel.innerHTML="<option value=''>全部</option>"+srcs.map(s=>`<option value='${esc(s)}'>${esc(s)}</option>`).join('');sel.value=cur}
+function buildSourceOptions(){const sel=$('ev-filter');const cur=sel.value;const srcs=[...new Set(_events.map(e=>e.source))].sort();sel.innerHTML="<option value=''>All</option>"+srcs.map(s=>`<option value='${esc(s)}'>${esc(s)}</option>`).join('');sel.value=cur}
 function filterEvents(){
   const q=($('ev-search').value||'').toLowerCase();const src=$('ev-filter').value;
   const list=_events.filter(e=>{if(src&&e.source!==src)return false;if(q&&!(e.title||'').toLowerCase().includes(q))return false;return true}).slice(0,40);
-  const el=$('events');if(!list.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.75rem;padding:8px 0'>暂无</div>";return}
+  const el=$('events');if(!list.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.75rem;padding:8px 0'>No events</div>";return}
   el.innerHTML=list.map(e=>{const ts=(e.occurred_at||'').replace('T',' ').slice(5,16);
-    return`<div class='ev-row'><span class='ev-date'>${esc(ts)}</span><span><span class='ev-src'>${esc(e.source)}</span><span class='ev-title'>${esc((e.title||'').slice(0,55))}</span></span></div>`}).join('');
+    return`<div class='ev-row'><span class='ev-date'>${esc(ts)}</span><span><span class='ev-status-dot' style='background:var(--green)'></span><span class='ev-src'>${esc(e.source)}</span><span class='ev-title'>${esc((e.title||'').slice(0,55))}</span></span></div>`}).join('');
 }
 
 /* ── Categories ── */
 async function loadCats(days,btn){
   if(btn){document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active')}
   try{const rows=await fetch('/api/stats/categories?days='+days).then(r=>r.json());
-    if(!rows.length){$('cat-list').innerHTML="<div style='color:var(--text-dim);font-size:.72rem'>暂无</div>";return}
+    if(!rows.length){$('cat-list').innerHTML="<div style='color:var(--text-dim);font-size:.72rem'>No data</div>";return}
     const tot=rows.reduce((s,r)=>s+(r.total_min||0),0)||1;
     $('cat-list').innerHTML=rows.map(r=>{const p=Math.round((r.total_min||0)/tot*100);const h=((r.total_min||0)/60).toFixed(1);
       return`<div class='cat-row'><span>${esc(r.category)}</span><div class='cat-bar-wrap'><div class='cat-bar-fill' style='width:${p}%'></div></div><span style='color:var(--text-dim)'>${h}h</span></div>`}).join('')
-  }catch{$('cat-list').innerHTML="<div style='color:var(--text-dim)'>加载失败</div>"}
+  }catch{$('cat-list').innerHTML="<div style='color:var(--text-dim)'>Load failed</div>"}
 }
 
 /* ── Tasks ── */
-const SZ={done:'完成',failed:'失败',running:'运行中',pending:'待执行',awaiting_approval:'待审批',scrutinizing:'审查中',scrutiny_failed:'驳回'};
+const SZ={done:'Done',failed:'Failed',running:'Running',pending:'Pending',awaiting_approval:'Awaiting',scrutinizing:'Review',scrutiny_failed:'Rejected'};
 const SC={done:'t-done',failed:'t-failed',running:'t-running',pending:'t-pending',awaiting_approval:'t-awaiting',scrutinizing:'t-awaiting',scrutiny_failed:'t-failed'};
+const SD={done:'task-dot-done',failed:'task-dot-failed',running:'task-dot-running',pending:'task-dot-pending',awaiting_approval:'task-dot-awaiting',scrutinizing:'task-dot-awaiting',scrutiny_failed:'task-dot-failed'};
 function renderTasks(tasks){
   const counts={};tasks.forEach(t=>{counts[t.status]=(counts[t.status]||0)+1});
   $('task-stats').innerHTML=Object.entries(counts).map(([s,c])=>`<span class='t-badge ${SC[s]||'t-pending'}'>${SZ[s]||s} ${c}</span>`).join('');
-  if(!tasks.length){$('task-list').innerHTML="<div style='color:var(--text-dim);padding:12px 0'>暂无</div>";return}
+  if(!tasks.length){$('task-list').innerHTML="<div style='color:var(--text-dim);padding:12px 0'>No tasks</div>";return}
   $('task-list').innerHTML=tasks.map(t=>{
     const ts=(t.created_at||'').replace('T',' ').slice(5,16);
-    const badge=`<span class='t-badge ${SC[t.status]||''}'>${SZ[t.status]||t.status}</span>`;
+    const dotCls=SD[t.status]||'task-dot-pending';
+    const statusLabel=SZ[t.status]||t.status;
     const dept=t.spec?.department?({engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'}[t.spec.department]||''):'';
     const dur=t.started_at&&t.finished_at?Math.round((new Date(t.finished_at)-new Date(t.started_at))/1000)+'s':'';
-    const approve=t.status==='awaiting_approval'?`<button class='btn-approve' onclick='event.stopPropagation();openModal(${t.id})'>执行</button>`:'';
+    const approve=t.status==='awaiting_approval'?`<button class='btn-approve' onclick='event.stopPropagation();openModal(${t.id})'>Execute</button>`:'';
     let detail='';
-    if(t.spec?.problem)detail+=`<div class='task-detail-row'><span class='task-detail-label'>问题</span><span class='task-detail-val'>${esc(t.spec.problem)}</span></div>`;
-    if(t.spec?.observation)detail+=`<div class='task-detail-row'><span class='task-detail-label'>观察</span><span class='task-detail-val'>${esc(t.spec.observation)}</span></div>`;
-    if(t.scrutiny_note)detail+=`<div class='task-detail-row'><span class='task-detail-label'>审查</span><span class='task-detail-val'>${esc(t.scrutiny_note)}</span></div>`;
+    if(t.spec?.problem)detail+=`<div class='task-detail-row'><span class='task-detail-label'>Problem</span><span class='task-detail-val'>${esc(t.spec.problem)}</span></div>`;
+    if(t.spec?.observation)detail+=`<div class='task-detail-row'><span class='task-detail-label'>Observed</span><span class='task-detail-val'>${esc(t.spec.observation)}</span></div>`;
+    if(t.scrutiny_note)detail+=`<div class='task-detail-row'><span class='task-detail-label'>Review</span><span class='task-detail-val'>${esc(t.scrutiny_note)}</span></div>`;
     if(t.output)detail+=`<div class='task-output'>${esc((t.output||'').slice(0,500))}</div>`;
     return`<div class='task-row' onclick="this.querySelector('.task-detail')?.classList.toggle('open')">
       <span class='task-id'>#${t.id}</span>
-      <div><div class='task-action'>${esc((t.action||'').slice(0,60))}</div><div class='task-meta-line'>${dept?dept+' · ':''}${esc(ts)}${dur?' · '+dur:''}</div></div>
-      <span class='task-end'>${badge}${approve}</span>
+      <div><div class='task-action'>${esc((t.action||'').slice(0,60))}</div><div class='task-meta-line'>${dept?dept+' | ':''}${esc(ts)}${dur?' | '+dur:''}</div></div>
+      <span class='task-end'><span class='task-status-dot ${dotCls}'></span>${statusLabel}${approve}</span>
       <div class='task-detail'>${detail}</div>
     </div>`}).join('');
 }
@@ -551,15 +604,15 @@ function renderTasks(tasks){
 /* ── Modal ── */
 let _mid=null;
 function openModal(id){const t=_tasks.find(t=>t.id===id);if(!t)return;_mid=id;
-  $('modal-title').textContent=t.action||'任务详情';
-  let h='';[['问题','problem'],['行为链','behavior_chain'],['观察','observation'],['预期','expected'],['重要性','importance'],['计划','summary']].forEach(([l,k])=>{
+  $('modal-title').textContent=t.action||'Task Details';
+  let h='';[['Problem','problem'],['Behavior Chain','behavior_chain'],['Observation','observation'],['Expected','expected'],['Importance','importance'],['Plan','summary']].forEach(([l,k])=>{
     const v=t.spec?.[k];if(v)h+=`<div class='modal-field'><div class='modal-label'>${l}</div><div class='modal-value'>${esc(v)}</div></div>`});
-  if(t.reason)h+=`<div class='modal-field'><div class='modal-label'>原因</div><div class='modal-value'>${esc(t.reason)}</div></div>`;
+  if(t.reason)h+=`<div class='modal-field'><div class='modal-label'>Reason</div><div class='modal-value'>${esc(t.reason)}</div></div>`;
   $('modal-body').innerHTML=h;$('modal').classList.add('open')}
 function closeModal(){$('modal').classList.remove('open');_mid=null}
-$('modal-go').onclick=async()=>{if(!_mid)return;$('modal-go').disabled=true;$('modal-go').textContent='执行中...';
+$('modal-go').onclick=async()=>{if(!_mid)return;$('modal-go').disabled=true;$('modal-go').textContent='Executing...';
   try{await fetch('/api/tasks/'+_mid+'/approve',{method:'POST'})}catch{}
-  closeModal();$('modal-go').disabled=false;$('modal-go').textContent='确认执行';loadAll()};
+  closeModal();$('modal-go').disabled=false;$('modal-go').textContent='Confirm';loadAll()};
 
 /* ── Logs ── */
 let _lo=true;
@@ -573,20 +626,20 @@ evtSrc.onmessage=e=>{try{const d=JSON.parse(e.data);appendLogs(d.logs||[])}catch
 
 /* ── Schedule ── */
 async function updateSchedule(){try{const s=await fetch('/api/schedule-status').then(r=>r.json());
-  if(s.next_collectors){const secs=Math.max(0,Math.round((new Date(s.next_collectors)-Date.now())/1000));$('h-collect').textContent=secs>0?`采集 ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`:'采集中'}
-  if(s.next_analysis){const secs=Math.max(0,Math.round((new Date(s.next_analysis)-Date.now())/1000));$('h-analyze').textContent=secs>0?`分析 ${Math.floor(secs/60)}m`:'分析中'}
+  if(s.next_collectors){const secs=Math.max(0,Math.round((new Date(s.next_collectors)-Date.now())/1000));$('h-collect').textContent=secs>0?`Collect ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`:'Collecting'}
+  if(s.next_analysis){const secs=Math.max(0,Math.round((new Date(s.next_analysis)-Date.now())/1000));$('h-analyze').textContent=secs>0?`Analyze ${Math.floor(secs/60)}m`:'Analyzing'}
 }catch{}}
 setInterval(updateSchedule,5000);updateSchedule();
 
 /* ── WebSocket ── */
 const ws=new WebSocket(`ws://${location.host}`);
-ws.onopen=()=>{$('h-ws').textContent='在线';$('h-dot').classList.remove('off')};
-ws.onclose=()=>{$('h-ws').textContent='离线';$('h-dot').classList.add('off')};
+ws.onopen=()=>{$('h-ws').textContent='Online';$('h-dot').classList.remove('off')};
+ws.onclose=()=>{$('h-ws').textContent='Offline';$('h-dot').classList.add('off')};
 ws.onmessage=e=>{try{const d=JSON.parse(e.data);
   if(d.type==='task_update')loadAll();
   if(d.type==='soul_voice'&&d.audio){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('');const blob=new Blob([Uint8Array.from(atob(d.audio),c=>c.charCodeAt(0))],{type:d.mime||'audio/mpeg'});const blobUrl=URL.createObjectURL(blob);voiceAudio.src=blobUrl;voiceAudio.currentTime=0;voiceAudio.oncanplay=()=>{voiceAudio.oncanplay=null;voiceAudio.play();voiceBtn.classList.add('playing')};voiceAudio.onended=()=>{voiceBtn.classList.remove('playing');URL.revokeObjectURL(blobUrl)}}
   if(d.type==='tts_status'&&(d.status==='compiling'||d.status==='generating')){_ttsPhase=d.status}
-  if(d.type==='tts_status'&&d.status==='error'){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('生成失败: '+(d.error||'未知错误'),'error');setTimeout(()=>setVoiceStatus(''),5000)}
+  if(d.type==='tts_status'&&d.status==='error'){stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('TTS failed: '+(d.error||'unknown'),'error');setTimeout(()=>setVoiceStatus(''),5000)}
 }catch{}};
 
 /* ── Insights render ── */
@@ -596,14 +649,14 @@ function renderInsightsSection(insights) {
   if (insights.overview) {
     ov.textContent = insights.overview;
   } else {
-    ov.innerHTML = "<span style='color:var(--text-dim)'>等待首次洞察生成</span>";
+    ov.innerHTML = "<span style='color:var(--text-dim)'>Awaiting first insight generation</span>";
   }
   // Patterns
   const pa = $('insights-patterns');
   if (Array.isArray(insights.patterns) && insights.patterns.length) {
     pa.innerHTML = insights.patterns.map(p => `<div class='pattern-item'>${esc(p)}</div>`).join('');
   } else {
-    pa.innerHTML = "<div style='color:var(--text-dim);font-size:.8rem'>暂无</div>";
+    pa.innerHTML = "<div style='color:var(--text-dim);font-size:.8rem'>None</div>";
   }
   // Recommendations
   const re = $('insights-recs');
@@ -612,7 +665,7 @@ function renderInsightsSection(insights) {
       `<div class='rec-item'><div class='rec-action'>${esc(r.action||'')}<span class='rec-priority rec-${r.priority||'low'}'>${r.priority||''}</span></div><div class='rec-reason'>${esc(r.reason||'')}</div></div>`
     ).join('');
   } else {
-    re.innerHTML = "<div style='color:var(--text-dim);font-size:.8rem'>暂无</div>";
+    re.innerHTML = "<div style='color:var(--text-dim);font-size:.8rem'>None</div>";
   }
 }
 
@@ -624,10 +677,10 @@ function renderDailySummary(summary) {
       const d = JSON.parse(latest.summary || '{}');
       let html = '<p>' + esc(d.summary || '') + '</p>';
       if (d.top_topics?.length) html += '<div class="tags">' + d.top_topics.map(t => '#' + esc(t)).join('  ') + '</div>';
-      el.innerHTML = html || '<span style="color:var(--text-dim)">等待首次分析</span>';
+      el.innerHTML = html || '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
     } catch { el.innerHTML = '<p>' + esc(latest.summary || '') + '</p>'; }
   } else {
-    el.innerHTML = '<span style="color:var(--text-dim)">等待首次分析</span>';
+    el.innerHTML = '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
   }
 }
 
@@ -635,21 +688,22 @@ function renderDailySummary(summary) {
 function renderDebts(debts){
   const el=$('debt-list');
   const open=debts.filter(d=>(d.status||'open')==='open').length;
-  $('debt-count').textContent=debts.length?`${open} 未解决 / ${debts.length} 总计`:'';
-  if(!debts.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.8rem;padding:8px 0'>暂无债务</div>";return}
-  const groups={};debts.forEach(d=>{const p=d.project||'未分类';if(!groups[p])groups[p]=[];groups[p].push(d)});
+  $('debt-count').textContent=debts.length?`${open} open / ${debts.length} total`:'';
+  if(!debts.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.8rem;padding:8px 0'>No debts</div>";return}
+  const groups={};debts.forEach(d=>{const p=d.project||'Uncategorized';if(!groups[p])groups[p]=[];groups[p].push(d)});
   let html='';
   for(const[proj,items]of Object.entries(groups)){
     const pOpen=items.filter(d=>(d.status||'open')==='open').length;
-    html+=`<div class='debt-group'><div class='debt-proj-head'><span class='debt-proj-name'>${esc(proj)}</span><span class='debt-proj-count'>${pOpen} 未解决</span></div>`;
+    html+=`<div class='debt-group'><div class='debt-proj-head'><span class='debt-proj-name'>${esc(proj)}</span><span class='debt-proj-count'>${pOpen} open</span></div>`;
     html+=items.map(d=>{
       const sevCls={'high':'debt-sev-high','medium':'debt-sev-medium','low':'debt-sev-low'}[d.severity]||'debt-sev-low';
-      const sevLabel={'high':'高','medium':'中','low':'低'}[d.severity]||d.severity;
+      const borderCls={'high':'debt-border-high','medium':'debt-border-medium','low':'debt-border-low'}[d.severity]||'debt-border-low';
+      const sevLabel={'high':'HIGH','medium':'MED','low':'LOW'}[d.severity]||d.severity;
       const st=(d.status||'open');
       const stCls=st==='resolved'?'debt-status-resolved':'debt-status-open';
-      const stLabel=st==='resolved'?'已解决':'待处理';
+      const stLabel=st==='resolved'?'Resolved':'Open';
       const ts=(d.created_at||'').replace('T',' ').slice(0,16);
-      return`<div class='debt-item'>
+      return`<div class='debt-item ${borderCls}'>
         <div class='debt-head'><span class='debt-severity ${sevCls}'>${sevLabel}</span><span class='debt-status ${stCls}'>${stLabel}</span></div>
         <div class='debt-summary'>${esc(d.summary||'')}</div>
         <div class='debt-meta'>${esc(ts)}</div>
@@ -676,7 +730,7 @@ async function loadAll(){
   const llmText=profile.commentary||profile.daily_note||'';
   $('roast').textContent=llmText||generateRoast(stats,events,tasks);
   $('roast-date').textContent=`(${new Date().toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})})`;
-  $('event-count').textContent=`${(stats.total||0).toLocaleString()} 条`;
+  $('event-count').textContent=`${(stats.total||0).toLocaleString()} events`;
   renderDailySummary(summary);
   renderInsightsSection(insights);
   renderDebts(debts);
@@ -697,7 +751,7 @@ async function loadRoastHistory(){
     $('roast-history').innerHTML=past.map((r,i)=>{
       const ts=(r.date||'').replace('T',' ').slice(0,16);
       const text=r.commentary||r.daily_note;
-      return`<div class='roast-history-item' style='animation-delay:${i*0.08}s'><div class='roast-history-date'>${esc(ts)}<button class='history-play-btn' onclick='playHistory(${i})' title='播放'>&#9654;</button></div><div class='roast-history-text'>${esc(text)}</div></div>`
+      return`<div class='roast-history-item' style='animation-delay:${i*0.08}s'><div class='roast-history-date'>${esc(ts)}<button class='history-play-btn' onclick='playHistory(${i})' title='Play'>&#9654;</button></div><div class='roast-history-text'>${esc(text)}</div></div>`
     }).join('');
   }catch{}
 }
@@ -714,14 +768,14 @@ function _requestTTS(text, reference_id){
   startTtsTimer();
   const body=reference_id?{text,reference_id}:{text};
   fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).catch(()=>{
-    stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('语音服务不可用','error');setTimeout(()=>setVoiceStatus(''),4000);
+    stopTtsTimer();voiceBtn.classList.remove('loading');setVoiceStatus('Voice service unavailable','error');setTimeout(()=>setVoiceStatus(''),4000);
   });
 }
 function toggleRoastHistory(){
   const el=$('roast-history');
   const btn=$('roast-history-btn');
   el.classList.toggle('collapsed');
-  btn.textContent=el.classList.contains('collapsed')?'往期语录':'收起';
+  btn.textContent=el.classList.contains('collapsed')?'Past Entries':'Collapse';
 }
 
 // ── SOUL Voice ──
@@ -745,9 +799,9 @@ function startTtsTimer() {
 
 function _updateTtsLabel(sec) {
   if (_ttsPhase === 'compiling') {
-    setVoiceStatus(`首次启动，模型编译中... ${sec}s（约60s）`, 'active');
+    setVoiceStatus(`First run, compiling model... ${sec}s (~60s)`, 'active');
   } else {
-    setVoiceStatus(`语音生成中... ${sec}s`, 'active');
+    setVoiceStatus(`Generating voice... ${sec}s`, 'active');
   }
 }
 
@@ -771,7 +825,7 @@ function speakRoast() {
   // Otherwise generate new
   const roastEl = document.getElementById('roast');
   const text = roastEl?.textContent?.trim();
-  if (!text || text === '观察中...') return;
+  if (!text || text === 'Observing...') return;
   _requestTTS(text, null);
 }
 </script>
