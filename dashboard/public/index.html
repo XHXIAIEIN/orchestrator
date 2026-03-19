@@ -150,13 +150,22 @@ section:last-of-type { border-bottom: none; }
 .gov-entry-text { color: var(--text-mid); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gov-entry-tag { font-size: .58rem; color: var(--text-dim); flex-shrink: 0; }
 
-/* 六部进度 */
-.dept-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
-.dept-name { font-size: .7rem; color: var(--text-mid); min-width: 24px; }
-.dept-bar { flex: 1; height: 3px; background: #f0f0ec; border-radius: 2px; overflow: hidden; position: relative; }
-.dept-bar-done { height: 100%; background: var(--green); border-radius: 2px; position: absolute; left: 0; top: 0; transition: width .4s; }
-.dept-bar-fail { height: 100%; background: var(--red); border-radius: 2px; position: absolute; top: 0; transition: width .4s, left .4s; }
-.dept-stat { font-size: .58rem; color: var(--text-dim); min-width: 36px; text-align: right; }
+/* 六部 2x3 grid */
+.dept-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; }
+.dept-grid-cell { padding: 6px 0; border-bottom: 1px solid #f4f4f0; }
+.dept-grid-cell:nth-last-child(-n+2) { border-bottom: none; }
+.dept-grid-top { display: flex; align-items: center; gap: 6px; }
+.dept-grid-name { font-family: var(--serif); font-size: .78rem; font-weight: 500; color: var(--text); min-width: 28px; }
+.dept-grid-bar { flex: 1; height: 3px; background: #f0f0ec; border-radius: 2px; overflow: hidden; position: relative; }
+.dept-grid-bar-done { height: 100%; background: var(--green); border-radius: 2px; position: absolute; left: 0; top: 0; transition: width .4s; }
+.dept-grid-bar-fail { height: 100%; background: var(--red); border-radius: 2px; position: absolute; top: 0; transition: width .4s, left .4s; }
+.dept-grid-stat { font-size: .6rem; color: var(--text-dim); white-space: nowrap; }
+.dept-grid-stat .rate { color: var(--green); font-weight: 500; }
+.dept-grid-last { font-size: .6rem; color: var(--text-dim); margin-top: 3px; display: flex; justify-content: space-between; }
+.dept-grid-last-action { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.dept-grid-last-action.s-done { color: var(--green); }
+.dept-grid-last-action.s-failed { color: var(--red); }
+.dept-grid-last-time { flex-shrink: 0; margin-left: 6px; }
 
 /* 右列：最近任务 */
 .gov-sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
@@ -588,6 +597,7 @@ function renderGovernance(tasks){
   });
   const maxTotal=Math.max(1,...Object.values(depts).map(x=>x.d+x.f));
   $('gov-shangshu').innerHTML=`<div class='gov-block-head'><span class='gov-block-title'>尚书省</span><span class='gov-block-count'>六部</span></div>`+
+    `<div class='dept-grid'>`+
     deptKeys.map(k=>{
       const dept=depts[k];
       const total=dept.d+dept.f;
@@ -595,23 +605,24 @@ function renderGovernance(tasks){
       const failW=Math.round(dept.f/maxTotal*100);
       const rate=total?Math.round(dept.d/total*100):0;
       const lastTime=dept.last?relTime(dept.last):'';
-      const lastAct=dept.lastAction?esc(dept.lastAction.slice(0,35)):'';
-      const statusColor=dept.lastStatus==='done'?'var(--green)':dept.lastStatus==='failed'?'var(--red)':'var(--text-dim)';
-      return `<div style="padding:4px 0;border-bottom:1px solid #f4f4f0">
-        <div class='dept-row'>
-          <span class='dept-name' style="font-weight:500">${dept.n}</span>
-          <div class='dept-bar'>
-            <div class='dept-bar-done' style='width:${doneW}%'></div>
-            <div class='dept-bar-fail' style='width:${failW}%;left:${doneW}%'></div>
+      const lastAct=dept.lastAction?esc(dept.lastAction.slice(0,30)):'';
+      const statusCls=dept.lastStatus==='done'?'s-done':dept.lastStatus==='failed'?'s-failed':'';
+      return `<div class='dept-grid-cell'>
+        <div class='dept-grid-top'>
+          <span class='dept-grid-name'>${dept.n}</span>
+          <div class='dept-grid-bar'>
+            <div class='dept-grid-bar-done' style='width:${doneW}%'></div>
+            <div class='dept-grid-bar-fail' style='width:${failW}%;left:${doneW}%'></div>
           </div>
-          <span class='dept-stat'>${dept.d}/${total} ${rate}%</span>
+          <span class='dept-grid-stat'>${dept.d}/${total} <span class='rate'>${rate}%</span></span>
         </div>
-        ${lastAct?`<div style="font-size:.62rem;color:var(--text-dim);margin-top:2px;display:flex;justify-content:space-between">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;color:${statusColor}">${lastAct}</span>
-          <span style="flex-shrink:0;margin-left:8px">${lastTime}</span>
+        ${lastAct?`<div class='dept-grid-last'>
+          <span class='dept-grid-last-action ${statusCls}'>${lastAct}</span>
+          <span class='dept-grid-last-time'>${lastTime}</span>
         </div>`:''}
       </div>`;
-    }).join('');
+    }).join('')+
+    `</div>`;
 
   // ── 右列：最近任务
   const recentAll=tasks.slice(0,12);
