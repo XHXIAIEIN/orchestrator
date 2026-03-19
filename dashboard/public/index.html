@@ -256,28 +256,36 @@ section:last-of-type { border-bottom: none; }
 .collapsed { display: none; }
 
 /* ── Debts ── */
-.debt-item {
-  padding: 12px 0; border-bottom: 1px solid #f0f0ec;
+.debt-group { margin-bottom: 4px; }
+.debt-proj-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid #f0f0ec; cursor: pointer; transition: background .1s;
 }
+.debt-proj-row:hover { background: #f8f8f5; margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 3px; }
+.debt-proj-arrow { font-size: .6rem; color: var(--text-dim); transition: transform .2s; width: 12px; text-align: center; }
+.debt-proj-arrow.open { transform: rotate(90deg); }
+.debt-proj-name { font-family: var(--mono); font-size: .75rem; font-weight: 500; color: var(--text); flex: 1; }
+.debt-proj-badges { display: flex; gap: 4px; align-items: center; }
+.debt-proj-sev { font-family: var(--mono); font-size: .52rem; padding: 1px 6px; border-radius: 3px; letter-spacing: .3px; }
+.debt-proj-sev.high { background: #fde8e8; color: var(--red); }
+.debt-proj-sev.med { background: #fef3e0; color: var(--amber); }
+.debt-proj-sev.low { background: #f0f0ec; color: var(--text-dim); }
+.debt-proj-count { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); }
+
+.debt-detail { display: none; padding: 0 0 8px 22px; }
+.debt-detail.open { display: block; }
+.debt-item { padding: 6px 0; border-bottom: 1px solid #f8f8f5; }
 .debt-item:last-child { border-bottom: none; }
-.debt-item.debt-border-high .debt-severity { background: #fde8e8; color: var(--red); }
-.debt-item.debt-border-medium .debt-severity { background: #fef3e0; color: var(--amber); }
-.debt-item.debt-border-low .debt-severity { background: #f0f0ec; color: var(--text-dim); }
-.debt-head { display: flex; align-items: center; gap: 8px; }
-.debt-severity { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px; text-transform: uppercase; }
+.debt-head { display: flex; align-items: center; gap: 6px; }
+.debt-severity { font-family: var(--mono); font-size: .52rem; padding: 1px 6px; border-radius: 3px; letter-spacing: .3px; text-transform: uppercase; }
 .debt-sev-high { background: #fde8e8; color: var(--red); }
 .debt-sev-medium { background: #fef3e0; color: var(--amber); }
 .debt-sev-low { background: #f0f0ec; color: var(--text-dim); }
-.debt-status { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; letter-spacing: .5px; text-transform: uppercase; }
+.debt-status { font-family: var(--mono); font-size: .52rem; padding: 1px 6px; border-radius: 3px; letter-spacing: .3px; }
 .debt-status-open { background: #e8f0fe; color: #1a56db; }
 .debt-status-resolved { background: #e6f4ea; color: var(--green); }
-.debt-summary { font-family: var(--serif); font-size: .88rem; color: var(--text); line-height: 1.75; margin-top: 6px; }
-.debt-meta { font-family: var(--mono); font-size: .65rem; color: var(--text-dim); margin-top: 6px; }
-.debt-group { margin-bottom: 28px; }
-.debt-group:last-child { margin-bottom: 0; }
-.debt-proj-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
-.debt-proj-name { font-family: var(--mono); font-size: .78rem; font-weight: 500; color: var(--text); }
-.debt-proj-count { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); }
+.debt-summary { font-family: var(--serif); font-size: .82rem; color: var(--text-mid); line-height: 1.6; margin-top: 3px; }
+.debt-meta { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); margin-top: 2px; }
 
 /* ── Tasks ── */
 .task-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -801,28 +809,56 @@ function renderDailySummary(summary) {
 function renderDebts(debts){
   const el=$('debt-list');
   const open=debts.filter(d=>(d.status||'open')==='open').length;
-  $('debt-count').textContent=debts.length?`${open} open / ${debts.length} total`:'';
-  if(!debts.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.8rem;padding:8px 0'>No debts</div>";return}
-  const groups={};debts.forEach(d=>{const p=d.project||'Uncategorized';if(!groups[p])groups[p]=[];groups[p].push(d)});
+  $('debt-count').textContent=debts.length?`${open} 未解决 / ${debts.length} 总计`:'';
+  if(!debts.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.8rem;padding:8px 0'>暂无债务</div>";return}
+
+  // Group by project
+  const groups={};debts.forEach(d=>{const p=d.project||'未分类';if(!groups[p])groups[p]=[];groups[p].push(d)});
+
+  // Sort groups: most open debts first
+  const sorted=Object.entries(groups).sort((a,b)=>{
+    const aOpen=a[1].filter(d=>(d.status||'open')==='open').length;
+    const bOpen=b[1].filter(d=>(d.status||'open')==='open').length;
+    return bOpen-aOpen;
+  });
+
   let html='';
-  for(const[proj,items]of Object.entries(groups)){
+  sorted.forEach(([proj,items],idx)=>{
     const pOpen=items.filter(d=>(d.status||'open')==='open').length;
-    html+=`<div class='debt-group'><div class='debt-proj-head'><span class='debt-proj-name'>${esc(proj)}</span><span class='debt-proj-count'>${pOpen} open</span></div>`;
+    const pHigh=items.filter(d=>d.severity==='high'&&(d.status||'open')==='open').length;
+    const pMed=items.filter(d=>d.severity==='medium'&&(d.status||'open')==='open').length;
+    const id='debt-g-'+idx;
+
+    html+=`<div class='debt-group'>
+      <div class='debt-proj-row' onclick="var d=$('${id}'),a=this.querySelector('.debt-proj-arrow');d.classList.toggle('open');a.classList.toggle('open')">
+        <span class='debt-proj-arrow'>&#9654;</span>
+        <span class='debt-proj-name'>${esc(proj)}</span>
+        <div class='debt-proj-badges'>
+          ${pHigh?`<span class='debt-proj-sev high'>${pHigh}</span>`:''}
+          ${pMed?`<span class='debt-proj-sev med'>${pMed}</span>`:''}
+        </div>
+        <span class='debt-proj-count'>${pOpen} / ${items.length}</span>
+      </div>
+      <div class='debt-detail' id='${id}'>`;
+
     html+=items.map(d=>{
       const sevCls={'high':'debt-sev-high','medium':'debt-sev-medium','low':'debt-sev-low'}[d.severity]||'debt-sev-low';
-      const borderCls={'high':'debt-border-high','medium':'debt-border-medium','low':'debt-border-low'}[d.severity]||'debt-border-low';
       const sevLabel={'high':'HIGH','medium':'MED','low':'LOW'}[d.severity]||d.severity;
       const st=(d.status||'open');
       const stCls=st==='resolved'?'debt-status-resolved':'debt-status-open';
-      const stLabel=st==='resolved'?'Resolved':'Open';
-      const ts=(d.created_at||'').replace('T',' ').slice(0,16);
-      return`<div class='debt-item ${borderCls}'>
-        <div class='debt-head'><span class='debt-severity ${sevCls}'>${sevLabel}</span><span class='debt-status ${stCls}'>${stLabel}</span></div>
+      const stLabel=st==='resolved'?'已解决':'未解决';
+      const ts=d.created_at?relTime(d.created_at):'';
+      return`<div class='debt-item'>
+        <div class='debt-head'>
+          <span class='debt-severity ${sevCls}'>${sevLabel}</span>
+          <span class='debt-status ${stCls}'>${stLabel}</span>
+          <span style='margin-left:auto;font-size:.6rem;color:var(--text-dim)'>${ts}</span>
+        </div>
         <div class='debt-summary'>${esc(d.summary||'')}</div>
-        <div class='debt-meta'>${esc(ts)}</div>
       </div>`}).join('');
-    html+='</div>';
-  }
+
+    html+=`</div></div>`;
+  });
   el.innerHTML=html;
 }
 
