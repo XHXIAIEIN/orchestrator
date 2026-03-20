@@ -91,7 +91,7 @@ class LLMRouter:
         if self._ollama_available is False:
             if route.get("fallback"):
                 log.info(f"router: [skip_ollama] {task_type} -> claude (ollama unavailable)")
-                return self._claude_fallback(prompt, task_type, route, max_tokens)
+                return self._claude_fallback(prompt, task_type, route, max_tokens, images)
             log.warning(f"router: [skip_ollama] {task_type} failed (ollama unavailable, no fallback)")
             return ""
 
@@ -105,7 +105,7 @@ class LLMRouter:
             if len(result.strip()) < MIN_RESPONSE_LEN:
                 if route.get("fallback"):
                     log.warning(f"router: [fallback] {task_type} ollama_garbage ({len(result.strip())} chars) -> claude")
-                    return self._claude_fallback(prompt, task_type, route, max_tokens)
+                    return self._claude_fallback(prompt, task_type, route, max_tokens, images)
                 log.warning(f"router: [error] {task_type} ollama_garbage ({len(result.strip())} chars), no fallback")
                 return result
 
@@ -117,16 +117,18 @@ class LLMRouter:
             reason = type(e).__name__
             if route.get("fallback"):
                 log.warning(f"router: [fallback] {task_type} ollama_{reason} ({elapsed:.1f}s) -> claude")
-                return self._claude_fallback(prompt, task_type, route, max_tokens)
+                return self._claude_fallback(prompt, task_type, route, max_tokens, images)
             log.warning(f"router: [error] {task_type} ollama_{reason} ({elapsed:.1f}s), no fallback")
             return ""
 
     def _claude_fallback(self, prompt: str, task_type: str, route: dict,
-                          max_tokens: int) -> str:
-        """Fallback 到 Claude CLI。"""
+                          max_tokens: int,
+                          images: list[str] | None = None) -> str:
+        """Fallback 到 Claude API（支持多模态）。"""
         fallback_model = route.get("fallback_model", "claude-haiku-4-5-20251001")
         t0 = time.time()
-        result = self._claude_generate(prompt, fallback_model, route["timeout"], max_tokens)
+        result = self._claude_generate(prompt, fallback_model, route["timeout"],
+                                        max_tokens, images)
         elapsed = time.time() - t0
         log.info(f"router: [claude_fallback] {task_type} {elapsed:.1f}s ok")
         return result
@@ -158,15 +160,33 @@ class LLMRouter:
         return data.get("response", "")
 
     def _claude_generate(self, prompt: str, model: str, timeout: int,
-                          max_tokens: int) -> str:
-        """调 Claude API SDK（替代旧的 subprocess CLI 调用）。"""
+                          max_tokens: int,
+                          images: list[str] | None = None) -> str:
+        """调 Claude API SDK。支持多模态（images 为 base64 列表）。"""
         from src.core.config import get_anthropic_client
         try:
             client = get_anthropic_client()
+
+            # 构建消息内容：有图片时用多模态格式
+            if images:
+                content = []
+                for img_b64 in images:
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": img_b64,
+                        },
+                    })
+                content.append({"type": "text", "text": prompt})
+            else:
+                content = prompt
+
             response = client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": content}],
             )
             text = next(
                 (b.text for b in response.content if b.type == "text"), ""
