@@ -25,6 +25,8 @@ ROUTES = {
     # 多模态路由 — 仅 Ollama，无 Claude fallback
     "vision":        {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},
     "ocr":           {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},  # glm-ocr 有兼容性问题，暂用 gemma3
+    # GUI 自动化推理 — 多模态，优先 Ollama，fallback 到 Claude
+    "gui_reason":    {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 60,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
 }
 
 MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
