@@ -330,37 +330,18 @@ class WindowManager:
 
     @staticmethod
     def _set_clipboard(text: str) -> bool:
-        """Set clipboard content using Win32 API."""
-        CF_UNICODETEXT = 13
-        GHND = 0x0042  # GMEM_MOVEABLE | GMEM_ZEROINIT
-
-        kernel32 = ctypes.windll.kernel32
-        # Set argtypes for proper 64-bit pointer handling
-        kernel32.GlobalAlloc.restype = ctypes.c_void_p
-        kernel32.GlobalLock.restype = ctypes.c_void_p
-        kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
-        kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
-        user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
-
-        if not user32.OpenClipboard(0):
-            return False
+        """Set clipboard content. Uses PowerShell Set-Clipboard for reliable Unicode."""
+        escaped = text.replace("'", "''")
         try:
-            user32.EmptyClipboard()
-            data = text.encode("utf-16-le") + b"\x00\x00"
-            h = kernel32.GlobalAlloc(GHND, len(data))
-            if not h:
-                log.error("WindowManager: GlobalAlloc failed")
-                return False
-            p = kernel32.GlobalLock(h)
-            if not p:
-                log.error("WindowManager: GlobalLock failed")
-                return False
-            ctypes.memmove(p, data, len(data))
-            kernel32.GlobalUnlock(h)
-            user32.SetClipboardData(CF_UNICODETEXT, h)
-            return True
-        finally:
-            user32.CloseClipboard()
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"Set-Clipboard -Value '{escaped}'"],
+                capture_output=True, timeout=3,
+            )
+            return r.returncode == 0
+        except Exception as e:
+            log.error(f"WindowManager: Set-Clipboard failed: {e}")
+            return False
 
     def send_click(self, x: int, y: int, button: str = "left") -> bool:
         """Send a click at window-local coords via PostMessage. No focus required."""

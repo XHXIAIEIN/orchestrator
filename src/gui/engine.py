@@ -20,6 +20,7 @@ from src.gui.grounder import GroundingRouter
 from src.gui.prompts import REASONER_SYSTEM, build_reasoner_prompt
 from src.gui.screen import ScreenManager
 from src.gui.trajectory import Trajectory, TrajectoryStep
+from src.gui.window import WindowManager
 from src.core.llm_router import get_router
 
 try:
@@ -46,30 +47,57 @@ class GUIEngine:
         trajectory_size: How many recent steps to keep in the sliding window.
     """
 
-    def __init__(self, max_steps: int = 15, trajectory_size: int = 8) -> None:
+    def __init__(self, max_steps: int = 15, trajectory_size: int = 8,
+                 background: bool = False) -> None:
         self.max_steps = max_steps
+        self.background = background
         self.kill_event = threading.Event()
         self.screen = ScreenManager()
         self.grounder = GroundingRouter(screen_manager=self.screen)
         self.executor = ActionExecutor(self.kill_event)
         self.trajectory = Trajectory(max_steps=trajectory_size)
+        self.window = WindowManager()
         self._kill_listener = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def execute(self, instruction: str, target_app: str = "", monitor_id: int = 1) -> GUIResult:
+    def execute(self, instruction: str, target_app: str = "",
+                monitor_id: int = 1, process_name: str = "",
+                window_title: str = "") -> GUIResult:
         """Run the automation loop for *instruction*.
 
-        Starts ESC kill listener, runs the loop, then stops the listener.
+        Window targeting (optional but recommended):
+            process_name: lock onto window by process (e.g. "notepad")
+            window_title: lock onto window by title substring
+
+        When a window is locked:
+            - background=True:  screenshots via PrintWindow, input via SendMessage
+            - background=False: focus window first, then use pyautogui
         """
         self.kill_event.clear()
+
+        # Lock onto target window if specified
+        target_spec = process_name or window_title or target_app
+        if target_spec:
+            info = self.window.lock(
+                process_name=process_name,
+                title_contains=window_title or target_app,
+            )
+            if info:
+                log.info("engine: locked onto '%s' (hwnd=%d, bg=%s)",
+                         info.title, info.hwnd, self.background)
+            else:
+                log.warning("engine: could not find window '%s', running unlocked",
+                            target_spec)
+
         self._start_kill_listener()
         try:
             result = self._run_loop(instruction, target_app, monitor_id)
         finally:
             self._stop_kill_listener()
+            self.window.unlock()
         return result
 
     # ------------------------------------------------------------------
@@ -89,8 +117,8 @@ class GUIEngine:
                     trajectory=self.trajectory,
                 )
 
-            # 2. Capture screenshot
-            screenshot_png, monitor_info = self.screen.capture(monitor_id)
+            # 2. Capture screenshot (window-specific if locked, else full screen)
+            screenshot_png = self._capture(monitor_id)
 
             # 3. Make thumbnail
             thumbnail = self._make_thumbnail(screenshot_png)
@@ -173,8 +201,14 @@ class GUIEngine:
                 action["y"] = gy
                 del action["target"]
 
-            # 9. Execute action
-            result_str = self.executor.execute(action)
+            # 9. Execute action (background via WindowManager, or foreground via pyautogui)
+            if self.background and self.window.target:
+                result_str = self._execute_background(action)
+            else:
+                # Foreground: focus target window first if locked
+                if self.window.target:
+                    self.window.focus()
+                result_str = self.executor.execute(action)
 
             # 10. Kill check after execution
             if result_str.startswith("INTERRUPTED"):
@@ -206,6 +240,63 @@ class GUIEngine:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _capture(self, monitor_id: int) -> bytes:
+        """Capture screenshot — window-specific if locked, else full monitor."""
+        if self.window.target:
+            if not self.window.is_alive():
+                log.warning("engine: target window is gone")
+                return b""
+            png = self.window.capture_window()
+            if png:
+                return png
+            log.warning("engine: PrintWindow failed, falling back to screen capture")
+        png, _ = self.screen.capture(monitor_id)
+        return png
+
+    def _execute_background(self, action: dict) -> str:
+        """Execute action via WindowManager (background, no focus needed)."""
+        name = action.get("action", "")
+        wm = self.window
+
+        try:
+            if name == "type_text":
+                ok = wm.send_text(action["text"])
+                return "success" if ok else "ERROR: send_text failed"
+
+            elif name == "click":
+                ok = wm.send_click(action["x"], action["y"],
+                                   action.get("button", "left"))
+                return "success" if ok else "ERROR: send_click failed"
+
+            elif name == "hotkey":
+                ok = wm.send_hotkey(*action["keys"])
+                return "success" if ok else "ERROR: send_hotkey failed"
+
+            elif name == "scroll":
+                # No background scroll support yet, fall back to foreground
+                wm.focus()
+                return self.executor.execute(action)
+
+            elif name == "wait":
+                time.sleep(min(action.get("seconds", 1), 10))
+                return "success"
+
+            elif name == "screenshot":
+                return "screenshot_requested"
+
+            elif name in ("done", "fail", "double_click", "right_click", "drag"):
+                # Control signals handled before this point;
+                # complex actions fall back to foreground
+                wm.focus()
+                return self.executor.execute(action)
+
+            else:
+                return f"REJECTED: unknown action '{name}'"
+
+        except Exception as e:
+            log.error("engine: background action '%s' failed: %s", name, e)
+            return f"ERROR: {e}"
 
     def _parse_action(self, raw: str) -> dict | None:
         """Parse JSON action from LLM response.
