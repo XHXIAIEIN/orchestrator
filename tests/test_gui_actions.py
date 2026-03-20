@@ -70,10 +70,12 @@ class TestClick:
 # ---------------------------------------------------------------------------
 
 class TestTypeText:
-    @patch("src.gui.actions.pyautogui")
-    def test_type_text_calls_write(self, mock_pg, executor):
+    @patch("src.gui.actions._clipboard_paste")
+    def test_type_text_uses_clipboard(self, mock_paste, executor):
+        """type_text must use clipboard paste, not pyautogui.write(),
+        to avoid IME interference (e.g. 'Hello' → '热车时突然投入')."""
         result = executor.execute({"action": "type_text", "text": "hello"})
-        mock_pg.write.assert_called_once_with("hello", interval=0.03)
+        mock_paste.assert_called_once_with("hello")
         assert result == "success"
 
 

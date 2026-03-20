@@ -4,6 +4,7 @@ Whitelist-based GUI action executor.
 Only dispatches pre-approved pyautogui operations — never executes raw code.
 """
 
+import subprocess
 import threading
 import time
 
@@ -91,7 +92,12 @@ class ActionExecutor:
             pyautogui.rightClick(action["x"], action["y"])
 
         elif name == "type_text":
-            pyautogui.write(action["text"], interval=0.03)
+            # Clipboard paste instead of pyautogui.write() to bypass IME.
+            # pyautogui.write() simulates individual key presses, which get
+            # eaten by Chinese/Japanese/Korean input methods and produce
+            # garbled text (e.g. "Hello" → "热车时突然投入").
+            text = action["text"]
+            _clipboard_paste(text)
 
         elif name == "hotkey":
             pyautogui.hotkey(*action["keys"])
@@ -110,3 +116,44 @@ class ActionExecutor:
             time.sleep(seconds)
 
         return "success"
+
+
+def _clipboard_paste(text: str) -> None:
+    """Write text via clipboard + Ctrl+V to bypass IME interference.
+    Saves and restores the original clipboard content."""
+    # Save current clipboard
+    try:
+        original = subprocess.run(
+            ["powershell", "-Command", "Get-Clipboard"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.rstrip("\r\n")
+    except Exception:
+        original = None
+
+    # Set clipboard to our text
+    subprocess.run(
+        ["powershell", "-Command", f"Set-Clipboard -Value {_ps_escape(text)}"],
+        capture_output=True, timeout=3,
+    )
+
+    # Paste
+    time.sleep(0.05)
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.1)
+
+    # Restore original clipboard
+    if original is not None:
+        try:
+            subprocess.run(
+                ["powershell", "-Command", f"Set-Clipboard -Value {_ps_escape(original)}"],
+                capture_output=True, timeout=3,
+            )
+        except Exception:
+            pass
+
+
+def _ps_escape(text: str) -> str:
+    """Escape a string for safe embedding in a PowerShell -Command argument."""
+    # Single-quote the string, doubling any internal single quotes
+    escaped = text.replace("'", "''")
+    return f"'{escaped}'"
