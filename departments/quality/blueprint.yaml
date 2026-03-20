@@ -1,0 +1,27 @@
+# Quality (刑部) Blueprint v1
+
+version: "1"
+name_zh: 刑部
+model: claude-sonnet-4-6
+description: "Quality assurance: code review, test execution, regression detection"
+
+policy:
+  allowed_tools: [Bash, Read, Glob, Grep]
+  denied_tools: [Edit, Write, WebFetch, WebSearch]
+  readable_paths: ["**"]
+  denied_paths: []
+  can_commit: false
+  can_network: false
+  read_only: true  # quality reviews, doesn't fix
+
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
+
+max_turns: 25
+timeout_s: 300
+
+on_done: ""
+on_fail: log_only

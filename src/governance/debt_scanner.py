@@ -158,25 +158,35 @@ class DebtScanner:
                 f"最后助手回复: {s['last_assistant'][:150]}"
             )
 
-        prompt = f"""你是 Orchestrator 礼部——负责审计注意力债务。
+        prompt = f"""You are Orchestrator's Protocol Ministry (礼部) — auditing attention debts.
 
-分析以下 {len(batch)} 个 Claude 对话会话，找出被提到但从未解决的问题。
+Analyze the following {len(batch)} Claude conversation sessions. Find GENUINE unresolved problems.
 
-判断标准：
-- 用户提到了 bug/error/问题，但对话结束时没有修复确认
-- 用户说了"后面再做"/"先跳过"/"下次"但没有后续
-- 对话中途用户切换话题，前面的问题被遗忘
-- 助手最后的回复暗示工作未完成
+## What IS an attention debt:
+- User reported a bug/error that was never confirmed fixed in the conversation
+- User explicitly said "do it later" / "skip for now" / "next time" with no follow-up
+- A concrete task was started but abandoned mid-conversation without completion
 
-对于每个发现的遗留问题，输出 JSON 数组，每项包含：
-- session_id: 来源会话的 slug 或 ID
-- project: 项目名称（从会话数据的括号中提取）
-- summary: 一句话描述遗留问题（中文）
+## What is NOT an attention debt (DO NOT report these):
+- Context limit reached / conversation naturally ended — this is normal, not a debt
+- User interrupted to ask something else — this is the user's choice, not forgotten work
+- Assistant said "let me know if you need more help" — this is politeness, not incomplete work
+- User said "ok" or "got it" and the conversation ended — this means they're satisfied
+- Vague "status unclear" with no concrete unresolved action — if you can't name the specific unresolved task, it's not a debt
+
+## Severity guide:
+- high: Data loss risk, broken functionality user actively needs, security issue
+- medium: Known bug but user has workaround, planned feature partially done
+- low: Nice-to-have, cosmetic, documentation gaps
+
+Output a JSON array. Each item:
+- session_id: source session slug or ID
+- project: project name (from the parentheses in session data)
+- summary: one-sentence description of the unresolved problem (Chinese)
 - severity: high/medium/low
-- context: 相关消息的简短引用
+- context: brief quote from relevant messages
 
-如果没有发现遗留问题，返回空数组 []。
-只输出 JSON 数组，不要其他内容。
+If no genuine debts found, return []. Output ONLY the JSON array.
 
 === 会话数据 ===
 
@@ -201,18 +211,20 @@ class DebtScanner:
             return
 
         # Fuzzy dedup: check if a similar debt already exists for this project
-        # Compare by checking if >60% of the keywords overlap
+        # Compare by checking keyword overlap at WORD level (not character level)
         try:
             with self.db._connect() as conn:
                 existing = conn.execute(
                     "SELECT summary FROM attention_debts WHERE project = ? AND status = 'open'",
                     (project,)
                 ).fetchall()
-                new_words = set(summary)
+                new_words = set(re.findall(r'[\w\u4e00-\u9fff]+', summary.lower()))
                 for (existing_summary,) in existing:
-                    existing_words = set(existing_summary)
-                    overlap = len(new_words & existing_words) / max(len(new_words), 1)
-                    if overlap > 0.6:
+                    existing_words = set(re.findall(r'[\w\u4e00-\u9fff]+', existing_summary.lower()))
+                    if not new_words:
+                        break
+                    overlap = len(new_words & existing_words) / len(new_words)
+                    if overlap > 0.5:
                         return  # Too similar, skip
 
                 now = datetime.now(timezone.utc).isoformat()

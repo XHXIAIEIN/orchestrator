@@ -1,0 +1,46 @@
+# Engineering (工部) Blueprint v1
+# Machine-readable config — Governor reads this.
+# SKILL.md remains the LLM prompt — Agent reads that.
+
+version: "1"
+name_zh: 工部
+model: claude-sonnet-4-6
+description: "Code engineering: writes code, fixes bugs, refactors, optimizes"
+
+policy:
+  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]
+  denied_tools: [WebFetch, WebSearch]
+  writable_paths:
+    - "src/**"
+    - "departments/**"
+    - "dashboard/**"
+    - "tests/**"
+    - "SOUL/**"
+    - "scripts/**"
+  denied_paths:
+    - ".env"
+    - "*.key"
+    - "*.pem"
+    - "credentials.*"
+    - "data/events.db"  # schema changes need Operations
+  can_commit: true
+  can_network: false
+  read_only: false
+
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
+  - check: disk_space
+    target: "100"
+    required: false
+    message: "Need at least 100MB free for code changes"
+
+max_turns: 25
+timeout_s: 300
+retry_on_failure: false
+
+# After engineering completes, auto-dispatch quality review
+on_done: quality_review
+on_fail: log_only

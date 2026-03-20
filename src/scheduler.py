@@ -22,6 +22,7 @@ from src.governance.debt_resolver import resolve_debts, check_resolved_debts
 from src.analysis.performance import PerformanceReport
 from src.voice.voice_picker import refresh_voice_pool
 from src.governance.skill_evolver import run_evolution
+from src.governance.policy_advisor import generate_all_suggestions
 from src.analysis.burst_detector import record_bursts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -281,7 +282,39 @@ def start():
     scheduler.add_job(_voice_refresh, "interval", days=7, id="voice_refresh")
     scheduler.add_job(_skill_evolution, "cron", day_of_week="mon", hour=9, timezone="Asia/Shanghai", id="skill_evolution")
 
-    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00", "INFO", "scheduler")
+    def _policy_suggestions():
+        db = EventsDB(DB_PATH)
+        try:
+            results = generate_all_suggestions()
+            if results:
+                depts = ", ".join(results.keys())
+                db.write_log(f"Policy Advisor 生成建议: {depts}", "INFO", "policy_advisor")
+            else:
+                db.write_log("Policy Advisor: 无新建议", "DEBUG", "policy_advisor")
+        except Exception as e:
+            log.error(f"PolicyAdvisor failed: {e}")
+            db.write_log(f"Policy Advisor 失败: {e}", "ERROR", "policy_advisor")
+
+    scheduler.add_job(_policy_suggestions, "cron", hour=7, timezone="Asia/Shanghai", id="policy_suggestions")
+
+    def _weekly_audit():
+        """每周三触发兵部安全扫描 + 吏部绩效 + 礼部债务扫描（并行场景 deep_scan）。"""
+        db = EventsDB(DB_PATH)
+        try:
+            from src.governance.governor import Governor
+            gov = Governor(db=db, db_path=DB_PATH)
+            results = gov.run_parallel_scenario("deep_scan")
+            if results:
+                db.write_log(f"每周审计：deep_scan 派发 {len(results)} 个任务", "INFO", "scheduler")
+            else:
+                db.write_log("每周审计：deep_scan 无可用 slot 或派发失败", "WARNING", "scheduler")
+        except Exception as e:
+            log.error(f"Weekly audit failed: {e}")
+            db.write_log(f"每周审计失败: {e}", "ERROR", "scheduler")
+
+    scheduler.add_job(_weekly_audit, "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")
+
+    db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00，策略建议：每日07:00，每周审计(兵部+吏部+礼部)：每周三10:00", "INFO", "scheduler")
 
     log.info("Scheduler started. Collectors: hourly. Analysis: every 6 hours. Debt scan: every 12 hours.")
     log.info("Running initial collection...")

@@ -52,6 +52,33 @@ curl -s http://localhost:23714/api/departments/engineering/guidelines
 
 Available departments: `engineering`, `quality`, `operations`, `protocol`, `security`, `personnel`
 
+## Blueprints (Department Policies)
+
+```bash
+# All department blueprints (policies, preflight rules, lifecycle config)
+curl -s http://localhost:23714/api/blueprints
+
+# Single department blueprint
+curl -s http://localhost:23714/api/departments/engineering/blueprint
+```
+
+Blueprint defines the machine-readable policy for each department: allowed tools, writable paths, preflight checks, timeout, max turns, and post-execution hooks. SKILL.md is the LLM prompt; blueprint.yaml is the Governor config.
+
+## Policy Advisor
+
+```bash
+# Denial event summary across all departments
+curl -s http://localhost:23714/api/policy-advisor/summary
+
+# Denial events for a department
+curl -s 'http://localhost:23714/api/departments/engineering/policy-denials?limit=20'
+
+# Generated blueprint adjustment suggestions (markdown)
+curl -s http://localhost:23714/api/departments/engineering/policy-suggestions
+```
+
+Policy Advisor observes task execution, records when agents hit policy limits (blocked tools, timeouts, max turns, write-in-readonly), and generates data-driven blueprint.yaml adjustment suggestions.
+
 ## Parallel Scenarios
 
 ```bash

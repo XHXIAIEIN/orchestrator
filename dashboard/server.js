@@ -16,9 +16,9 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Clean URL routes
-app.get('/pipeline', (req, res) => res.sendFile(path.join(__dirname, 'public', 'preview.html')));
-app.get('/agents', (req, res) => res.sendFile(path.join(__dirname, 'public', 'agents.html')));
+// Clean URL routes (Pipeline and Agents merged into main Dashboard)
+app.get('/pipeline', (req, res) => res.redirect('/'));
+app.get('/agents', (req, res) => res.redirect('/'));
 
 // Swagger UI at /docs
 app.get('/api-reference', (req, res) => {
@@ -49,6 +49,12 @@ function dbAll(db, sql, params = []) {
   while (stmt.step()) rows.push(stmt.getAsObject());
   stmt.free();
   return rows;
+}
+
+function dbRun(db, sql, params = []) {
+  db.run(sql, params);
+  const data = db.export();
+  fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
 // ── 健康检查 & 跨项目摘要 ──
@@ -345,6 +351,27 @@ app.get('/api/events/heatmap', (req, res) => {
   finally { db.close(); }
 });
 
+// ── Burst Sessions ──
+
+app.get('/api/bursts', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  const days = parseInt(req.query.days) || 30;
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  try {
+    const rows = dbAll(db,
+      "SELECT id, title, metadata, score, occurred_at FROM events WHERE category = 'burst_session' AND occurred_at >= ? ORDER BY occurred_at DESC LIMIT 50",
+      [since]
+    );
+    res.json(rows.map(r => {
+      let meta = {};
+      try { meta = JSON.parse(r.metadata || '{}'); } catch {}
+      return { ...r, metadata: meta };
+    }));
+  } catch { res.json([]); }
+  finally { db.close(); }
+});
+
 app.get('/api/summaries', (req, res) => {
   const db = getDb();
   if (!db) return res.json([]);
@@ -374,6 +401,55 @@ app.get('/api/debts', (req, res) => {
     const rows = dbAll(db, sql, params);
     res.json(rows);
   } catch { res.json([]); }
+  finally { db.close(); }
+});
+
+// Batch route MUST come before :id routes (Express matches first)
+app.post('/api/debts/batch/dismiss', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const { project } = req.body || {};
+    if (!project) return res.status(400).json({ error: 'project is required' });
+    dbRun(db, "UPDATE attention_debts SET status = 'dismissed', resolved_at = datetime('now') WHERE project = ? AND status = 'open'", [project]);
+    res.json({ ok: true, project, status: 'dismissed' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+  finally { db.close(); }
+});
+
+app.post('/api/debts/:id/resolve', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+    dbRun(db, "UPDATE attention_debts SET status = 'resolved', resolved_at = datetime('now') WHERE id = ?", [id]);
+    res.json({ ok: true, id, status: 'resolved' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+  finally { db.close(); }
+});
+
+app.post('/api/debts/:id/dismiss', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+    dbRun(db, "UPDATE attention_debts SET status = 'dismissed', resolved_at = datetime('now') WHERE id = ?", [id]);
+    res.json({ ok: true, id, status: 'dismissed' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+  finally { db.close(); }
+});
+
+app.post('/api/debts/:id/reopen', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+    dbRun(db, "UPDATE attention_debts SET status = 'open', resolved_at = NULL WHERE id = ?", [id]);
+    res.json({ ok: true, id, status: 'open' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
   finally { db.close(); }
 });
 
@@ -1073,6 +1149,40 @@ app.get('/api/departments', (req, res) => {
   res.json(DEPT_KEYS);
 });
 
+// ── Blueprint API (NemoClaw-inspired) ──
+
+const yaml = (() => { try { return require('js-yaml'); } catch { return null; } })();
+
+app.get('/api/blueprints', (req, res) => {
+  const result = {};
+  for (const dept of DEPT_KEYS) {
+    const bpPath = path.join(DEPARTMENTS_DIR, dept, 'blueprint.yaml');
+    try {
+      const raw = fs.readFileSync(bpPath, 'utf8');
+      result[dept] = yaml ? yaml.load(raw) : { raw, _note: 'js-yaml not installed, returning raw' };
+    } catch {
+      result[dept] = null;
+    }
+  }
+  res.json(result);
+});
+
+app.get('/api/departments/:name/blueprint', (req, res) => {
+  const dept = req.params.name;
+  if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
+  const bpPath = path.join(DEPARTMENTS_DIR, dept, 'blueprint.yaml');
+  try {
+    const raw = fs.readFileSync(bpPath, 'utf8');
+    if (yaml) {
+      res.json(yaml.load(raw));
+    } else {
+      res.type('text/yaml').send(raw);
+    }
+  } catch {
+    res.status(404).json({ error: 'blueprint.yaml not found' });
+  }
+});
+
 app.get('/api/departments/:name', (req, res) => {
   const dept = req.params.name;
   if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
@@ -1108,7 +1218,14 @@ app.get('/api/departments/:name', (req, res) => {
   let suggestions = '';
   try { suggestions = fs.readFileSync(path.join(deptDir, 'skill-suggestions.md'), 'utf8'); } catch {}
 
-  res.json({ name: dept, skill, guidelines, runs, learnedSkills, suggestions });
+  // blueprint
+  let blueprint = null;
+  try {
+    const bpRaw = fs.readFileSync(path.join(deptDir, 'blueprint.yaml'), 'utf8');
+    blueprint = yaml ? yaml.load(bpRaw) : { raw: bpRaw };
+  } catch {}
+
+  res.json({ name: dept, skill, blueprint, guidelines, runs, learnedSkills, suggestions });
 });
 
 app.get('/api/departments/:name/skill', (req, res) => {
@@ -1128,6 +1245,44 @@ app.get('/api/departments/:name/runs', (req, res) => {
     const runs = lines.slice(-limit).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     res.json(runs);
   } catch { res.json([]); }
+});
+
+// ── Policy Advisor endpoints ──
+
+app.get('/api/departments/:name/policy-denials', (req, res) => {
+  const dept = req.params.name;
+  if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  try {
+    const lines = fs.readFileSync(path.join(DEPARTMENTS_DIR, dept, 'policy-denials.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+    const denials = lines.slice(-limit).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    res.json(denials);
+  } catch { res.json([]); }
+});
+
+app.get('/api/departments/:name/policy-suggestions', (req, res) => {
+  const dept = req.params.name;
+  if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
+  try {
+    res.type('text/markdown').send(fs.readFileSync(path.join(DEPARTMENTS_DIR, dept, 'policy-suggestions.md'), 'utf8'));
+  } catch { res.status(404).json({ error: 'No policy suggestions yet' }); }
+});
+
+app.get('/api/policy-advisor/summary', (req, res) => {
+  const summary = {};
+  for (const dept of DEPT_KEYS) {
+    const denialsPath = path.join(DEPARTMENTS_DIR, dept, 'policy-denials.jsonl');
+    const suggestionsPath = path.join(DEPARTMENTS_DIR, dept, 'policy-suggestions.md');
+    let denialCount = 0;
+    let hasSuggestions = false;
+    try {
+      const lines = fs.readFileSync(denialsPath, 'utf8').trim().split('\n').filter(Boolean);
+      denialCount = lines.length;
+    } catch {}
+    try { fs.accessSync(suggestionsPath); hasSuggestions = true; } catch {}
+    summary[dept] = { denials: denialCount, has_suggestions: hasSuggestions };
+  }
+  res.json(summary);
 });
 
 app.get('/api/departments/:name/guidelines', (req, res) => {

@@ -1,0 +1,41 @@
+# Operations (户部) Blueprint v1
+
+version: "1"
+name_zh: 户部
+model: claude-sonnet-4-6
+description: "System operations: collector repairs, DB management, performance optimization"
+
+policy:
+  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]
+  denied_tools: [WebFetch, WebSearch]
+  writable_paths:
+    - "src/collectors/**"
+    - "src/scheduler.py"
+    - "data/**"
+    - "docker-compose.yml"
+    - "Dockerfile"
+    - ".env"
+  denied_paths:
+    - "SOUL/private/**"
+    - "departments/*/SKILL.md"  # don't touch other dept prompts
+  can_commit: true
+  can_network: false
+  read_only: false
+  max_file_changes: 10  # ops changes should be surgical
+
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
+  - check: disk_space
+    target: "200"
+    required: true
+    message: "Operations needs 200MB+ for DB/data work"
+
+max_turns: 25
+timeout_s: 300
+retry_on_failure: true  # ops tasks often fail on transient issues
+
+on_done: ""
+on_fail: alert

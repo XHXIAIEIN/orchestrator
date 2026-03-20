@@ -12,7 +12,6 @@ services:
       - PORT=${PORT:-23714}
       # Tell collectors where to find mounted data
       - CHROME_HISTORY_ROOT=/chrome-data
-      - ORCHESTRATOR_CLAUDE_HOME=/claude-home
       - CLAUDE_HOME=/claude-home
       - GIT_REPOS_ROOT=/git-repos
       - ORCHESTRATOR_ROOT=/orchestrator

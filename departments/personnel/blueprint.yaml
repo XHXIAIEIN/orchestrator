@@ -1,0 +1,30 @@
+# Personnel (吏部) Blueprint v1
+
+version: "1"
+name_zh: 吏部
+model: claude-haiku-4-5
+description: "Performance management: collector health, task success rates, trend analysis"
+
+policy:
+  allowed_tools: [Read, Glob, Grep]
+  denied_tools: [Bash, Edit, Write, WebFetch, WebSearch]
+  readable_paths: ["**"]
+  denied_paths:
+    - ".env"
+    - "*.key"
+    - "*.pem"
+  can_commit: false
+  can_network: false
+  read_only: true
+
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
+
+max_turns: 15
+timeout_s: 180
+
+on_done: ""
+on_fail: log_only

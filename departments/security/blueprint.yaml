@@ -1,0 +1,27 @@
+# Security (兵部) Blueprint v1
+
+version: "1"
+name_zh: 兵部
+model: claude-haiku-4-5
+description: "Security defense: secret scanning, permission audit, dependency vulnerabilities"
+
+policy:
+  allowed_tools: [Bash, Read, Glob, Grep]
+  denied_tools: [Edit, Write, WebFetch, WebSearch]
+  readable_paths: ["**"]
+  denied_paths: []  # security needs to read everything, including .env
+  can_commit: false
+  can_network: false
+  read_only: true
+
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
+
+max_turns: 20
+timeout_s: 240
+
+on_done: ""
+on_fail: alert  # security failures should be flagged

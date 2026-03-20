@@ -29,6 +29,10 @@ from src.governance.prompts import (
     DEPARTMENTS, PARALLEL_SCENARIOS, SECOND_OPINION_MODEL,
     load_department, find_git_bash,
 )
+from src.governance.blueprint import (
+    load_blueprint, run_preflight, preflight_passed, get_allowed_tools,
+)
+from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
 
@@ -244,9 +248,12 @@ class Governor:
 
     def _dispatch_task(self, spec: dict, action: str, reason: str,
                        priority: str = "high", source: str = "auto") -> dict | None:
-        """Atomic dispatch pipeline: create → classify → scrutinize → execute.
+        """Atomic dispatch pipeline: create → classify → preflight → scrutinize → execute.
 
-        Returns the task dict on success, None if scrutiny rejects."""
+        NemoClaw-inspired five-stage lifecycle:
+          Resolve (dept lookup) → Verify (preflight) → Plan (scrutiny) → Apply (execute) → Status (finalize)
+
+        Returns the task dict on success, None if preflight/scrutiny rejects."""
         task_id = self.db.create_task(
             action=action, reason=reason, priority=priority, spec=spec, source=source,
         )
@@ -259,7 +266,23 @@ class Governor:
         spec["cognitive_mode"] = classify_cognitive_mode(task_dict)
         self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
 
-        # Scrutiny
+        # ── Preflight verification (Blueprint) ──
+        blueprint = load_blueprint(dept) if dept != "?" else None
+        if blueprint:
+            task_cwd = _resolve_project_cwd(
+                spec.get("project", "orchestrator"), spec.get("cwd", ""))
+            pf_results = run_preflight(blueprint, task_dict, task_cwd)
+            passed, pf_reason = preflight_passed(pf_results)
+            if not passed:
+                self.db.update_task(task_id, status="preflight_failed",
+                                    scrutiny_note=f"预检失败：{pf_reason}",
+                                    finished_at=datetime.now(timezone.utc).isoformat())
+                self.db.write_log(f"任务 #{task_id} 预检失败：{pf_reason}", "WARNING", "governor")
+                log.info(f"Governor: task #{task_id} failed preflight: {pf_reason}")
+                return None
+            log.info(f"Governor: task #{task_id} preflight passed ({len(pf_results)} checks)")
+
+        # ── Scrutiny (门下省审查) ──
         self.db.update_task(task_id, status="scrutinizing")
         self.db.write_log(f"门下省审查任务 #{task_id}：{summary[:50]}", "INFO", "governor")
         approved, note = self.scrutinize(task_id, self.db.get_task(task_id))
@@ -449,7 +472,8 @@ class Governor:
             pass
 
     async def _run_agent_session(self, task_id: int, prompt: str, dept_prompt: str,
-                                  allowed_tools: list, task_cwd: str) -> str:
+                                  allowed_tools: list, task_cwd: str,
+                                  max_turns: int = MAX_AGENT_TURNS) -> str:
         """Run the Agent SDK session and stream events. Returns result text."""
         # Agent SDK 环境准备
         agent_env = {}
@@ -469,7 +493,7 @@ class Governor:
                 allowed_tools=allowed_tools,
                 permission_mode="bypassPermissions",
                 system_prompt=dept_prompt,
-                max_turns=MAX_AGENT_TURNS,
+                max_turns=max_turns,
                 **({"env": agent_env} if agent_env else {}),
             ),
         ):
@@ -570,6 +594,19 @@ class Governor:
         except Exception as e:
             log.warning(f"Governor: failed to write run-log for task #{task_id}: {e}")
 
+        # ── Policy Advisor: observe execution for denial patterns ──
+        try:
+            blueprint = load_blueprint(dept_key)
+            if blueprint:
+                agent_events = self.db.get_agent_events(task_id, limit=50)
+                observe_task_execution(
+                    department=dept_key, task_id=task_id,
+                    agent_events=agent_events, task_output=output,
+                    task_status=status, blueprint=blueprint,
+                )
+        except Exception as e:
+            log.warning(f"Governor: policy advisor observation failed for task #{task_id}: {e}")
+
         # 部门协作
         if status == "done":
             if dept_key == "engineering":
@@ -579,7 +616,11 @@ class Governor:
                 self._dispatch_rework(task_id, task, task_cwd, project_name, output)
 
     def execute_task(self, task_id: int) -> dict:
-        """Execute task by ID — routes to department based on spec.department."""
+        """Execute task by ID — routes to department based on spec.department.
+
+        Blueprint-aware: if blueprint.yaml exists, uses its policy for tools/timeout/max_turns.
+        Falls back to DEPARTMENTS dict for backwards compatibility.
+        """
         task = self.db.get_task(task_id)
         if not task:
             log.error(f"Governor: task #{task_id} not found")
@@ -591,29 +632,44 @@ class Governor:
         project_name = spec.get("project", "orchestrator")
         task_cwd = _resolve_project_cwd(project_name, spec.get("cwd", ""))
 
+        # ── Blueprint resolution ──
+        blueprint = load_blueprint(dept_key)
+
         prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name)
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
 
         cognitive_mode = classify_cognitive_mode(task)
-        log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, project={project_name}, cwd={task_cwd}")
+        bp_tag = f"bp=v{blueprint.version}" if blueprint else "bp=none"
+        log.info(f"Governor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, {bp_tag}, project={project_name}, cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
         self.db.update_task(task_id, status="running", started_at=now)
         self.db.write_log(f"开始执行任务 #{task_id}（{project_name}）：{task.get('action','')[:50]}", "INFO", "governor")
 
-        output = "(no output)"
-        status = "failed"
-        try:
+        # ── Resolve tools from Blueprint or fallback ──
+        if blueprint:
+            allowed_tools = get_allowed_tools(blueprint)
+        else:
             tools_str = dept.get("tools", "")
             allowed_tools = [t.strip() for t in tools_str.split(",") if t.strip()]
 
-            run_fn = self._run_agent_session(task_id, prompt, dept_prompt, allowed_tools, task_cwd)
+        # ── Apply Blueprint overrides ──
+        task_timeout = blueprint.timeout_s if blueprint else CLAUDE_TIMEOUT
+        task_max_turns = blueprint.max_turns if blueprint else MAX_AGENT_TURNS
+
+        output = "(no output)"
+        status = "failed"
+        try:
+            run_fn = self._run_agent_session(
+                task_id, prompt, dept_prompt, allowed_tools, task_cwd,
+                max_turns=task_max_turns,
+            )
             output = anyio.from_thread.run(run_fn) if _in_async_context() else anyio.run(run_fn)
             output = output[:2000] if output else "(no output)"
             status = "done" if output and output != "(no output)" else "failed"
         except TimeoutError:
-            output = f"timeout after {CLAUDE_TIMEOUT}s"
+            output = f"timeout after {task_timeout}s"
         except Exception as e:
             output = str(e)[:2000]
             log.error(f"Governor: Agent SDK error for task #{task_id}: {e}")
@@ -714,6 +770,10 @@ class Governor:
         self.db.write_log(f"工部任务 #{parent_id} 完成 → 派刑部验收任务 #{review_id}", "INFO", "governor")
         log.info(f"Governor: dispatched quality review #{review_id} for engineering task #{parent_id}")
 
+        # 跳过门下省审查（验收本身就是审查），直接执行
+        self.db.update_task(review_id, scrutiny_note="免审：工部→刑部验收链自动派单")
+        self.execute_task_async(review_id)
+
     def _dispatch_rework(self, review_task_id: int, review_task: dict,
                          task_cwd: str, project_name: str, review_output: str):
         """刑部验收失败，打回工部重做。追溯原始工部任务，携带刑部反馈。"""
@@ -770,6 +830,16 @@ class Governor:
             f"刑部验收 #{review_task_id} FAIL → 打回工部，创建返工任务 #{rework_id}（第 {rework_count + 1} 次）",
             "WARNING", "governor")
         log.info(f"Governor: dispatched rework #{rework_id} for failed review #{review_task_id}")
+
+        # 返工任务走正常门下省审查后执行
+        self.db.update_task(rework_id, status="scrutinizing")
+        approved, note = self.scrutinize(rework_id, self.db.get_task(rework_id))
+        if approved:
+            self.db.update_task(rework_id, scrutiny_note=f"准奏：{note}")
+            self.execute_task_async(rework_id)
+        else:
+            self.db.update_task(rework_id, status="scrutiny_failed", scrutiny_note=note,
+                                finished_at=datetime.now(timezone.utc).isoformat())
 
     def _visual_verify(self, task_id: int, task_cwd: str, spec: dict) -> str:
         """可选视觉验证：检查约定路径是否有截图，有则用 vision 模型验证。"""

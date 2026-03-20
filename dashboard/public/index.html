@@ -79,6 +79,9 @@ nav {
 @keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
+/* ── System section (reuses gov-entry pattern) ── */
+.sys-agents { margin-top: 10px; }
+
 .roast-history-toggle {
   font-family: var(--mono); font-size: .6rem; letter-spacing: 1px; text-transform: uppercase;
   color: var(--text-dim); background: none; border: 1px solid var(--border); border-radius: var(--radius);
@@ -128,10 +131,7 @@ section:last-of-type { border-bottom: none; }
 .gov-stat-num.red { color: var(--red); }
 .gov-stat-num.blue { color: #1a56db; }
 
-.gov-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-@media (max-width: 860px) { .gov-layout { grid-template-columns: 1fr; } }
-.gov-left { display: flex; flex-direction: column; gap: 0; }
-.gov-right { display: flex; flex-direction: column; }
+.gov-layout { display: flex; flex-direction: column; gap: 0; }
 
 .gov-block { padding: 14px 0; border-bottom: 1px solid #f0f0ec; }
 .gov-block:first-child { padding-top: 0; }
@@ -167,22 +167,26 @@ section:last-of-type { border-bottom: none; }
 .dept-grid-last-action.s-failed { color: var(--red); }
 .dept-grid-last-time { flex-shrink: 0; margin-left: 6px; }
 
-/* 右列：最近任务 */
+/* 最近任务（全宽，三省下方） */
 .gov-sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
-.gov-task-list { display: flex; flex-direction: column; flex: 1; }
-.gov-task-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f4f4f0; font-size: .75rem; }
+.gov-recent-block { padding-top: 14px; border-top: 1px solid #f0f0ec; }
+.gov-task-list { display: flex; flex-direction: column; }
+.gov-task-item {
+  display: grid; grid-template-columns: 5px 32px 1fr auto auto;
+  align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f4f4f0; font-size: .75rem;
+}
 .gov-task-item:last-child { border-bottom: none; }
-.gov-task-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+.gov-task-dot { width: 5px; height: 5px; border-radius: 50%; }
 .gov-task-dot.done { background: var(--green); }
 .gov-task-dot.failed { background: var(--red); }
 .gov-task-dot.running { background: #1a56db; animation: pulse 1.5s infinite; }
 .gov-task-dot.pending { background: var(--text-dim); }
 .gov-task-dot.awaiting { background: var(--amber); }
 .gov-task-dot.scrutiny_failed { background: var(--red); opacity: .5; }
-.gov-task-body { flex: 1; min-width: 0; }
-.gov-task-action { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gov-task-meta { font-size: .6rem; color: var(--text-dim); margin-top: 2px; display: flex; gap: 6px; }
-.gov-task-time { font-size: .62rem; color: var(--text-dim); flex-shrink: 0; }
+.gov-task-dept { font-family: var(--serif); font-size: .72rem; color: var(--text-mid); text-align: center; }
+.gov-task-action { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gov-task-meta { font-size: .6rem; color: var(--text-dim); display: flex; gap: 6px; white-space: nowrap; }
+.gov-task-time { font-size: .62rem; color: var(--text-dim); text-align: right; white-space: nowrap; }
 
 /* ── Activity ── */
 .activity-grid { display: grid; grid-template-columns: 1fr 260px; gap: 32px; }
@@ -194,6 +198,16 @@ section:last-of-type { border-bottom: none; }
 .hm-0{background:#f0f0ec} .hm-1{background:#d4e4d0} .hm-2{background:#a0cca0} .hm-3{background:#5ea05e} .hm-4{background:var(--green)}
 .hm-labels { display: flex; justify-content: space-between; font-size: .55rem; color: var(--text-dim); margin-top: 6px; }
 .hm-tooltip { position:fixed; background:var(--text); color:var(--bg); border-radius:var(--radius); padding:6px 12px; font-size:.68rem; pointer-events:none; z-index:99; display:none; box-shadow: var(--shadow-md); }
+
+/* ── Burst Sessions ── */
+.burst-card { background: var(--surface); border: 1px solid #f5c6cb; border-left: 3px solid var(--red); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 8px; }
+.burst-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.burst-icon { font-size: .85rem; }
+.burst-project { font-weight: 500; font-size: .78rem; }
+.burst-time { font-size: .62rem; color: var(--text-dim); margin-left: auto; }
+.burst-stats { display: flex; gap: 16px; font-size: .68rem; color: var(--text-mid); }
+.burst-stat b { color: var(--text); font-weight: 500; }
+.burst-none { font-size: .72rem; color: var(--text-dim); padding: 8px 0; }
 
 .ev-search { display: flex; gap: 8px; margin: 16px 0 12px; }
 .ev-search input, .ev-search select {
@@ -286,44 +300,56 @@ section:last-of-type { border-bottom: none; }
 .debt-status-resolved { background: #e6f4ea; color: var(--green); }
 .debt-summary { font-family: var(--serif); font-size: .82rem; color: var(--text-mid); line-height: 1.6; margin-top: 3px; }
 .debt-meta { font-family: var(--mono); font-size: .6rem; color: var(--text-dim); margin-top: 2px; }
+.debt-actions { display: none; gap: 4px; }
+.debt-item:hover .debt-actions, .debt-proj-row:hover .debt-actions { display: flex; }
+.debt-status-dismissed { background: #f0f0ec; color: var(--text-dim); }
+.debt-item-done { opacity: .45; }
+.debt-item-done:hover { opacity: .7; }
+.debt-group-done { display: none; }
+.debt-dismissed-toggle { margin-top: 12px; }
 
 /* ── Tasks ── */
-.task-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
-.t-badge { font-size: .6rem; padding: 3px 10px; border-radius: 3px; letter-spacing: .3px; }
+/* ── Tasks ── */
+.task-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.t-badge { font-size: .6rem; padding: 2px 8px; border-radius: 3px; letter-spacing: .3px; }
 .t-done { background: #e6f4ea; color: var(--green); }
 .t-failed { background: #fde8e8; color: var(--red); }
-.t-running { background: #e8f0fe; color: #1a56db; animation: pulse 1.5s infinite; }
+.t-running { background: #e8f0fe; color: #1a56db; }
 .t-pending { background: #f0f0ec; color: var(--text-dim); }
 .t-awaiting { background: #fef3e0; color: var(--amber); }
 
-.task-status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-.task-dot-done { background: var(--green); }
-.task-dot-failed { background: var(--red); }
-.task-dot-running { background: #1a56db; animation: pulse 1.5s infinite; }
-.task-dot-pending { background: var(--text-dim); }
-.task-dot-awaiting { background: var(--amber); }
-
 .task-row {
-  display: grid; grid-template-columns: 80px 1fr 100px; padding: 12px 0; border-bottom: 1px solid #f0f0ec;
-  align-items: start; cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 0; border-bottom: 1px solid #f0f0ec;
+  cursor: pointer; transition: background .1s;
 }
 .task-row:hover { background: #f8f8f5; margin: 0 -12px; padding-left: 12px; padding-right: 12px; border-radius: var(--radius); }
 .task-row:last-child { border-bottom: none; }
-.task-id { font-size: .68rem; color: var(--text-dim); }
-.task-action { font-size: .82rem; color: var(--text); }
-.task-meta-line { font-size: .65rem; color: var(--text-dim); margin-top: 3px; }
-.task-end { text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
-.task-detail { display:none; grid-column: 1/-1; margin-top:12px; padding:16px; background:#f8f8f5; border-radius:var(--radius); font-size:.75rem; border: 1px solid var(--border); }
+.task-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.task-dot.s-done { background: var(--green); }
+.task-dot.s-failed { background: var(--red); }
+.task-dot.s-running { background: #1a56db; animation: pulse 1.5s infinite; }
+.task-dot.s-pending { background: var(--text-dim); }
+.task-dot.s-awaiting { background: var(--amber); }
+.task-dot.s-scrutiny_failed { background: var(--red); opacity: .5; }
+.task-dot.s-preflight_failed { background: var(--red); opacity: .5; }
+.task-id { font-size: .62rem; color: var(--text-dim); min-width: 30px; flex-shrink: 0; }
+.task-dept { font-family: var(--serif); font-size: .72rem; color: var(--text-mid); min-width: 28px; flex-shrink: 0; }
+.task-body { flex: 1; min-width: 0; }
+.task-action { font-size: .78rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-meta-line { font-size: .6rem; color: var(--text-dim); margin-top: 2px; }
+.task-status { font-size: .6rem; color: var(--text-dim); flex-shrink: 0; white-space: nowrap; }
+.btn-approve { font-family:var(--mono); font-size:.6rem; padding:3px 10px; border:1px solid var(--border); border-radius:var(--radius); background:transparent; color:var(--text-dim); cursor:pointer; transition: all .15s; flex-shrink: 0; margin-left: 4px; }
+.btn-approve:hover { background:var(--text); color:var(--bg); border-color: var(--text); }
+.task-detail { display:none; margin-top:12px; padding:16px; background:#f8f8f5; border-radius:var(--radius); font-size:.75rem; border: 1px solid var(--border); }
 .task-detail.open { display:block; }
 .task-detail-row { display:flex; gap:8px; padding:4px 0; }
 .task-detail-label { color:var(--text-dim); min-width:50px; }
 .task-detail-val { color:var(--text-mid); }
 .task-output { margin-top:10px; padding:10px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); color:var(--text-mid); white-space:pre-wrap; word-break:break-word; max-height:180px; overflow-y:auto; font-size:.7rem; }
-.btn-approve { font-family:var(--mono); font-size:.6rem; padding:4px 12px; border:1px solid var(--accent); border-radius:var(--radius); background:transparent; color:var(--accent); cursor:pointer; transition: all .15s; }
-.btn-approve:hover { background:var(--accent); color:#fff; }
 
 /* ── Logs ── */
-.logs-controls { display: flex; gap: 6px; }
+.logs-controls { display: flex; gap: 6px; margin-left: auto; }
 .logs-btn {
   font-family:var(--mono); font-size:.6rem; padding:3px 10px;
   border:1px solid var(--border); border-radius:var(--radius);
@@ -375,8 +401,6 @@ section:last-of-type { border-bottom: none; }
     <span class="nav-logo">Orchestrator</span>
     <div class="nav-links">
       <a class="nav-link active" href="#">Dashboard</a>
-      <a class="nav-link" href="/pipeline">Pipeline</a>
-      <a class="nav-link" href="/agents">Agents</a>
       <a class="nav-link api-link" href="/api-reference">API</a>
     </div>
   </div>
@@ -413,12 +437,10 @@ section:last-of-type { border-bottom: none; }
     </div>
     <div id="gov-stats" class="gov-stats"></div>
     <div class="gov-layout">
-      <div class="gov-left">
-        <div class="gov-block" id="gov-zhongshu"></div>
-        <div class="gov-block" id="gov-menxia"></div>
-        <div class="gov-block" id="gov-shangshu"></div>
-      </div>
-      <div class="gov-right">
+      <div class="gov-block" id="gov-zhongshu"></div>
+      <div class="gov-block" id="gov-menxia"></div>
+      <div class="gov-block" id="gov-shangshu"></div>
+      <div class="gov-recent-block">
         <div class="gov-sub-label">最近任务</div>
         <div id="gov-recent" class="gov-task-list"></div>
       </div>
@@ -460,6 +482,16 @@ section:last-of-type { border-bottom: none; }
       <span class="section-meta" id="debt-count"></span>
     </div>
     <div id="debt-list"></div>
+    <button class="logs-btn debt-dismissed-toggle" id="debt-toggle-dismissed" style="display:none" onclick="toggleDismissedDebts()"></button>
+  </section>
+
+  <!-- Burst Sessions -->
+  <section>
+    <div class="section-head">
+      <span class="section-label">/ 爆发式会话</span>
+      <span class="section-meta" id="burst-count"></span>
+    </div>
+    <div id="burst-list"></div>
   </section>
 
   <!-- Activity -->
@@ -483,12 +515,24 @@ section:last-of-type { border-bottom: none; }
   <section>
     <div class="section-head">
       <span class="section-label">/ 任务</span>
-    </div>
-    <div class="task-stats" id="task-stats"></div>
-    <div class="tbl-header" style="grid-template-columns:80px 1fr 100px">
-      <span>ID</span><span>操作</span><span style="text-align:right">状态</span>
+      <span id="task-stats" class="task-stats"></span>
     </div>
     <div id="task-list"></div>
+  </section>
+
+  <!-- System -->
+  <section>
+    <div class="section-head">
+      <span class="section-label">/ 系统</span>
+      <span class="section-meta" id="sys-meta"></span>
+      <div class="logs-controls">
+        <button class="logs-btn" onclick="runScenario('full_audit',this)">全面审计</button>
+        <button class="logs-btn" onclick="runScenario('system_health',this)">健康检查</button>
+        <button class="logs-btn" onclick="runScenario('deep_scan',this)">深度扫描</button>
+      </div>
+    </div>
+    <div id="sys-collectors"></div>
+    <div class="sys-agents" id="sys-agents"></div>
   </section>
 
   <!-- Logs -->
@@ -510,8 +554,8 @@ section:last-of-type { border-bottom: none; }
     <h3 id="modal-title"></h3>
     <div id="modal-body"></div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-go" id="modal-go">Confirm</button>
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-go" id="modal-go">确认执行</button>
     </div>
   </div>
 </div>
@@ -632,24 +676,19 @@ function renderGovernance(tasks){
     }).join('')+
     `</div>`;
 
-  // ── 右列：最近任务
-  const recentAll=tasks.slice(0,12);
+  // ── 最近任务（全宽网格，三省下方）
+  const recentAll=tasks.slice(0,10);
   $('gov-recent').innerHTML=recentAll.map(t=>{
     const s=t.status||'pending';
-    const dotCls=s==='done'?'done':s==='failed'?'failed':s==='running'?'running':s==='awaiting_approval'?'awaiting':s;
+    const dotCls=s==='done'?'done':s==='failed'?'failed':s==='running'?'running':s==='awaiting_approval'?'awaiting':s==='scrutiny_failed'?'scrutiny_failed':'pending';
     const dept=deptMap[(t.spec?.department)]||'';
-    const mode=t.spec?.cognitive_mode||'';
     const time=t.created_at?relTime(t.created_at):'';
+    const mode=t.spec?.cognitive_mode?`<span>${t.spec.cognitive_mode}</span>`:'';
     return `<div class='gov-task-item'>
       <div class='gov-task-dot ${dotCls}'></div>
-      <div class='gov-task-body'>
-        <div class='gov-task-action' title='${esc(t.action||'')}'>${esc((t.action||'').slice(0,55))}</div>
-        <div class='gov-task-meta'>
-          ${dept?`<span>${dept}</span>`:''}
-          ${mode?`<span>${mode}</span>`:''}
-          <span>#${t.id}</span>
-        </div>
-      </div>
+      <span class='gov-task-dept'>${dept}</span>
+      <span class='gov-task-action' title='${esc(t.action||'')}'>${esc((t.action||'').slice(0,70))}</span>
+      <span class='gov-task-meta'>${mode}<span>#${t.id}</span></span>
       <span class='gov-task-time'>${time}</span>
     </div>`;
   }).join('')||'<div style="font-size:.72rem;color:var(--text-dim)">暂无任务</div>';
@@ -673,6 +712,35 @@ function renderHeatmap(data){
 function showTip(el,ev){const t=$('tooltip');t.textContent=`${el.dataset.day} | ${el.dataset.count} events`;t.style.display='block';t.style.left=ev.pageX+12+'px';t.style.top=ev.pageY-30+'px'}
 function hideTip(){$('tooltip').style.display='none'}
 
+/* ── Burst Sessions ── */
+function renderBursts(bursts){
+  const el=$('burst-list');
+  if(!bursts.length){
+    el.innerHTML="<div class='burst-none'>近 30 天无爆发式会话 ✓</div>";
+    $('burst-count').textContent='';
+    return;
+  }
+  $('burst-count').textContent=`${bursts.length} burst(s)`;
+  el.innerHTML=bursts.map(b=>{
+    const m=b.metadata||{};
+    const tokensK=Math.round((m.approx_tokens||0)/1000);
+    const ts=(b.occurred_at||'').replace('T',' ').slice(0,16);
+    const proj=(m.project||'unknown').replace(/-/g,'/');
+    return`<div class='burst-card'>
+      <div class='burst-header'>
+        <span class='burst-icon'>🔥</span>
+        <span class='burst-project'>${esc(proj)}</span>
+        <span class='burst-time'>${esc(ts)}</span>
+      </div>
+      <div class='burst-stats'>
+        <span><b>${m.session_count||0}</b> sessions</span>
+        <span>~<b>${tokensK}k</b> tokens</span>
+        <span><b>${m.total_messages||0}</b> messages</span>
+        <span>in <b>15</b>min window</span>
+      </div>
+    </div>`}).join('');
+}
+
 /* ── Events ── */
 function buildSourceOptions(){const sel=$('ev-filter');const cur=sel.value;const srcs=[...new Set(_events.map(e=>e.source))].sort();sel.innerHTML="<option value=''>全部</option>"+srcs.map(s=>`<option value='${esc(s)}'>${esc(s)}</option>`).join('');sel.value=cur}
 function filterEvents(){
@@ -695,31 +763,37 @@ async function loadCats(days,btn){
 }
 
 /* ── Tasks ── */
-const SZ={done:'Done',failed:'Failed',running:'Running',pending:'Pending',awaiting_approval:'Awaiting',scrutinizing:'Review',scrutiny_failed:'Rejected'};
+const SZ={done:'完成',failed:'失败',running:'执行中',pending:'待处理',awaiting_approval:'待审批',scrutinizing:'审查中',scrutiny_failed:'驳回',preflight_failed:'预检失败'};
 const SC={done:'t-done',failed:'t-failed',running:'t-running',pending:'t-pending',awaiting_approval:'t-awaiting',scrutinizing:'t-awaiting',scrutiny_failed:'t-failed'};
 const SD={done:'task-dot-done',failed:'task-dot-failed',running:'task-dot-running',pending:'task-dot-pending',awaiting_approval:'task-dot-awaiting',scrutinizing:'task-dot-awaiting',scrutiny_failed:'task-dot-failed'};
 function renderTasks(tasks){
+  const deptMap={engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'};
   const counts={};tasks.forEach(t=>{counts[t.status]=(counts[t.status]||0)+1});
   $('task-stats').innerHTML=Object.entries(counts).map(([s,c])=>`<span class='t-badge ${SC[s]||'t-pending'}'>${SZ[s]||s} ${c}</span>`).join('');
-  if(!tasks.length){$('task-list').innerHTML="<div style='color:var(--text-dim);padding:12px 0'>No tasks</div>";return}
+  if(!tasks.length){$('task-list').innerHTML="<div style='color:var(--text-dim);font-size:.75rem;padding:8px 0'>暂无任务</div>";return}
   $('task-list').innerHTML=tasks.map(t=>{
-    const ts=(t.created_at||'').replace('T',' ').slice(5,16);
-    const dotCls=SD[t.status]||'task-dot-pending';
-    const statusLabel=SZ[t.status]||t.status;
-    const dept=t.spec?.department?({engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'}[t.spec.department]||''):'';
+    const ts=t.created_at?relTime(t.created_at):'';
+    const dept=deptMap[t.spec?.department]||'';
     const dur=t.started_at&&t.finished_at?Math.round((new Date(t.finished_at)-new Date(t.started_at))/1000)+'s':'';
-    const approve=t.status==='awaiting_approval'?`<button class='btn-approve' onclick='event.stopPropagation();openModal(${t.id})'>Execute</button>`:'';
+    const approve=t.status==='awaiting_approval'?`<button class='btn-approve' onclick='event.stopPropagation();openModal(${t.id})'>执行</button>`:'';
+    // Detail panel — uses same gov-entry style
     let detail='';
-    if(t.spec?.problem)detail+=`<div class='task-detail-row'><span class='task-detail-label'>Problem</span><span class='task-detail-val'>${esc(t.spec.problem)}</span></div>`;
-    if(t.spec?.observation)detail+=`<div class='task-detail-row'><span class='task-detail-label'>Observed</span><span class='task-detail-val'>${esc(t.spec.observation)}</span></div>`;
-    if(t.scrutiny_note)detail+=`<div class='task-detail-row'><span class='task-detail-label'>Review</span><span class='task-detail-val'>${esc(t.scrutiny_note)}</span></div>`;
-    if(t.output)detail+=`<div class='task-output'>${esc((t.output||'').slice(0,500))}</div>`;
-    return`<div class='task-row' onclick="this.querySelector('.task-detail')?.classList.toggle('open')">
+    if(t.spec?.problem)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>问题</span><span class='gov-entry-text'>${esc(t.spec.problem)}</span></div>`;
+    if(t.spec?.observation)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>观察</span><span class='gov-entry-text'>${esc(t.spec.observation)}</span></div>`;
+    if(t.scrutiny_note)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>审查</span><span class='gov-entry-text'>${esc(t.scrutiny_note)}</span></div>`;
+    if(t.output)detail+=`<div style='margin-top:8px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);font-size:.68rem;color:var(--text-mid);white-space:pre-wrap;word-break:break-word;max-height:160px;overflow-y:auto'>${esc((t.output||'').slice(0,500))}</div>`;
+    const hasDetail=detail?`<div class='task-detail'>${detail}</div>`:'';
+    return`<div class='task-row' onclick="this.nextElementSibling?.classList.toggle('open')">
+      <div class='task-dot s-${t.status}'></div>
       <span class='task-id'>#${t.id}</span>
-      <div><div class='task-action'>${esc((t.action||'').slice(0,60))}</div><div class='task-meta-line'>${dept?dept+' | ':''}${esc(ts)}${dur?' | '+dur:''}</div></div>
-      <span class='task-end'><span class='task-status-dot ${dotCls}'></span>${statusLabel}${approve}</span>
-      <div class='task-detail'>${detail}</div>
-    </div>`}).join('');
+      <span class='task-dept'>${dept}</span>
+      <div class='task-body'>
+        <div class='task-action' title='${esc(t.action||'')}'>${esc((t.action||'').slice(0,70))}</div>
+        <div class='task-meta-line'>${ts}${dur?' · '+dur:''}</div>
+      </div>
+      <span class='task-status'>${SZ[t.status]||t.status}</span>
+      ${approve}
+    </div>${hasDetail}`}).join('');
 }
 
 /* ── Modal ── */
@@ -731,9 +805,9 @@ function openModal(id){const t=_tasks.find(t=>t.id===id);if(!t)return;_mid=id;
   if(t.reason)h+=`<div class='modal-field'><div class='modal-label'>Reason</div><div class='modal-value'>${esc(t.reason)}</div></div>`;
   $('modal-body').innerHTML=h;$('modal').classList.add('open')}
 function closeModal(){$('modal').classList.remove('open');_mid=null}
-$('modal-go').onclick=async()=>{if(!_mid)return;$('modal-go').disabled=true;$('modal-go').textContent='Executing...';
+$('modal-go').onclick=async()=>{if(!_mid)return;$('modal-go').disabled=true;$('modal-go').textContent='执行中...';
   try{await fetch('/api/tasks/'+_mid+'/approve',{method:'POST'})}catch{}
-  closeModal();$('modal-go').disabled=false;$('modal-go').textContent='Confirm';loadAll()};
+  closeModal();$('modal-go').disabled=false;$('modal-go').textContent='确认执行';loadAll()};
 
 /* ── Logs ── */
 let _lo=true;
@@ -815,10 +889,12 @@ function renderDebts(debts){
   // Group by project
   const groups={};debts.forEach(d=>{const p=d.project||'未分类';if(!groups[p])groups[p]=[];groups[p].push(d)});
 
-  // Sort groups: most open debts first
+  // Sort: projects with open debts first, all-dismissed/resolved projects last
   const sorted=Object.entries(groups).sort((a,b)=>{
     const aOpen=a[1].filter(d=>(d.status||'open')==='open').length;
     const bOpen=b[1].filter(d=>(d.status||'open')==='open').length;
+    if(aOpen===0&&bOpen>0)return 1;
+    if(bOpen===0&&aOpen>0)return -1;
     return bOpen-aOpen;
   });
 
@@ -827,32 +903,39 @@ function renderDebts(debts){
     const pOpen=items.filter(d=>(d.status||'open')==='open').length;
     const pHigh=items.filter(d=>d.severity==='high'&&(d.status||'open')==='open').length;
     const pMed=items.filter(d=>d.severity==='medium'&&(d.status||'open')==='open').length;
+    const allDone=pOpen===0;
     const id='debt-g-'+idx;
 
-    html+=`<div class='debt-group'>
+    // All-dismissed projects start collapsed
+    html+=`<div class='debt-group${allDone?" debt-group-done":""}'>
       <div class='debt-proj-row' onclick="var d=$('${id}'),a=this.querySelector('.debt-proj-arrow');d.classList.toggle('open');a.classList.toggle('open')">
-        <span class='debt-proj-arrow'>&#9654;</span>
-        <span class='debt-proj-name'>${esc(proj)}</span>
+        <span class='debt-proj-arrow${allDone?"":" open"}'>&#9654;</span>
+        <span class='debt-proj-name${allDone?" debt-proj-muted":""}'>${esc(proj)}</span>
         <div class='debt-proj-badges'>
           ${pHigh?`<span class='debt-proj-sev high'>${pHigh}</span>`:''}
           ${pMed?`<span class='debt-proj-sev med'>${pMed}</span>`:''}
         </div>
-        <span class='debt-proj-count'>${pOpen} / ${items.length}</span>
+        ${pOpen>0?`<div class='debt-actions'><button class='logs-btn' onclick='event.stopPropagation();debtProjectDismiss("${esc(proj)}",this)'>全部忽略</button></div>`:''}
+        <span class='debt-proj-count'>${allDone?'已处理':pOpen+' / '+items.length}</span>
       </div>
-      <div class='debt-detail' id='${id}'>`;
+      <div class='debt-detail${allDone?"":" open"}' id='${id}'>`;
 
     html+=items.map(d=>{
       const sevCls={'high':'debt-sev-high','medium':'debt-sev-medium','low':'debt-sev-low'}[d.severity]||'debt-sev-low';
       const sevLabel={'high':'HIGH','medium':'MED','low':'LOW'}[d.severity]||d.severity;
       const st=(d.status||'open');
-      const stCls=st==='resolved'?'debt-status-resolved':'debt-status-open';
-      const stLabel=st==='resolved'?'已解决':'未解决';
+      const stCls=st==='resolved'?'debt-status-resolved':st==='dismissed'?'debt-status-dismissed':'debt-status-open';
+      const stLabel=st==='resolved'?'已解决':st==='dismissed'?'已忽略':'未解决';
       const ts=d.created_at?relTime(d.created_at):'';
-      return`<div class='debt-item'>
+      const actions=st==='open'
+        ?`<div class='debt-actions'><button class='logs-btn' onclick='debtAction(${d.id},"resolve",this)'>已解决</button><button class='logs-btn' onclick='debtAction(${d.id},"dismiss",this)'>忽略</button></div>`
+        :`<div class='debt-actions'><button class='logs-btn' onclick='debtAction(${d.id},"reopen",this)'>重新打开</button></div>`;
+      return`<div class='debt-item${st!=="open"?" debt-item-done":""}'>
         <div class='debt-head'>
           <span class='debt-severity ${sevCls}'>${sevLabel}</span>
           <span class='debt-status ${stCls}'>${stLabel}</span>
-          <span style='margin-left:auto;font-size:.6rem;color:var(--text-dim)'>${ts}</span>
+          ${actions}
+          <span style='font-size:.6rem;color:var(--text-dim);margin-left:auto'>${ts}</span>
         </div>
         <div class='debt-summary'>${esc(d.summary||'')}</div>
       </div>`}).join('');
@@ -860,6 +943,86 @@ function renderDebts(debts){
     html+=`</div></div>`;
   });
   el.innerHTML=html;
+
+  // Toggle button for dismissed projects
+  const doneCount=sorted.filter(([,items])=>items.every(d=>(d.status||'open')!=='open')).length;
+  const toggleBtn=$('debt-toggle-dismissed');
+  if(doneCount>0){
+    toggleBtn.style.display='';
+    toggleBtn.textContent=`显示已忽略项目 (${doneCount})`;
+    toggleBtn.dataset.shown='0';
+  }else{
+    toggleBtn.style.display='none';
+  }
+}
+
+let _debtShowDismissed=false;
+function toggleDismissedDebts(){
+  _debtShowDismissed=!_debtShowDismissed;
+  const btn=$('debt-toggle-dismissed');
+  document.querySelectorAll('.debt-group-done').forEach(el=>{
+    el.style.display=_debtShowDismissed?'block':'none';
+    el.style.opacity=_debtShowDismissed?'.5':'';
+  });
+  const cnt=document.querySelectorAll('.debt-group-done').length;
+  btn.textContent=_debtShowDismissed?'隐藏已忽略项目':`显示已忽略项目 (${cnt})`;
+}
+
+/* ── Debt actions ── */
+async function debtAction(id,action,btn){
+  btn.disabled=true;const orig=btn.textContent;btn.textContent='…';
+  try{
+    await fetch(`/api/debts/${id}/${action}`,{method:'POST'});
+    // Re-render debts only (don't collapse project group via full reload)
+    const debts=await fetch('/api/debts').then(r=>r.json()).catch(()=>[]);
+    renderDebts(debts);
+  }catch{btn.textContent='失败';setTimeout(()=>{btn.textContent=orig;btn.disabled=false},1500)}
+}
+async function debtProjectDismiss(project,btn){
+  btn.disabled=true;btn.textContent='…';
+  try{
+    await fetch('/api/debts/batch/dismiss',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project})});
+    const debts=await fetch('/api/debts').then(r=>r.json()).catch(()=>[]);
+    renderDebts(debts);
+  }catch{btn.textContent='失败';setTimeout(()=>{btn.textContent='全部忽略';btn.disabled=false},1500)}
+}
+
+/* ── System section ── */
+async function loadSystem(){
+  try{
+    const[pipeline,agents]=await Promise.all([
+      fetch('/api/pipeline/status').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/agents/live').then(r=>r.json()).catch(()=>({agents:[]})),
+    ]);
+    const colls=pipeline.collectors||{};
+    const el=$('sys-collectors');
+    const names=Object.keys(colls);
+    if(!names.length){el.innerHTML="<div class='gov-entry'><span style='color:var(--text-dim)'>无采集器数据</span></div>";
+    }else{
+      el.innerHTML=names.map(n=>{
+        const c=colls[n];const cnt=c.last_count||0;
+        const dotCls=cnt>0?'approved':(c.status==='ok'?'manual':'rejected');
+        return`<div class='gov-entry'><div class='gov-entry-dot ${dotCls}'></div><span class='gov-entry-text'>${esc(n)}</span><span class='gov-entry-tag'>${cnt} 事件</span></div>`;
+      }).join('');
+    }
+    const deptStats=pipeline.departments||{};
+    const running=Object.values(deptStats).reduce((s,d)=>s+(d.tasks_running||0),0);
+    $('sys-meta').textContent=running?`${running} 执行中`:'空闲';
+    const ag=$('sys-agents');
+    if(agents.agents?.length){
+      ag.innerHTML=agents.agents.map(a=>{
+        const dept={engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'}[a.department]||a.department;
+        return`<div class='gov-entry'><div class='gov-entry-dot auto' style='animation:pulse 1.5s infinite'></div><span class='gov-entry-text'>${dept} #${a.task_id}: ${esc((a.action||'').slice(0,50))}</span><span class='gov-entry-tag'>${a.elapsed_s||0}s</span></div>`;
+      }).join('');
+    }else{ag.innerHTML=''}
+  }catch{}
+}
+async function runScenario(name,btn){
+  const label=btn.textContent;
+  btn.disabled=true;btn.textContent='派发中…';
+  try{await fetch('/api/scenarios/'+name+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project:'orchestrator'})});
+    btn.textContent='已派发';setTimeout(()=>{btn.textContent=label;btn.disabled=false},2000);loadAll();
+  }catch{btn.textContent='失败';setTimeout(()=>{btn.textContent=label;btn.disabled=false},2000)}
 }
 
 /* ── Main ── */
@@ -885,7 +1048,7 @@ async function loadAll(){
   renderDebts(debts);
   renderGovernance(tasks);renderHeatmap(heatmap);buildSourceOptions();filterEvents();
   loadCats(1,document.querySelector('.cat-btn.active'));renderTasks(tasks);
-  loadRoastHistory();
+  loadRoastHistory();loadSystem();
 }
 loadAll();setInterval(loadAll,60000);
 

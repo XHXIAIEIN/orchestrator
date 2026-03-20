@@ -123,8 +123,77 @@ spec = {
 - 户部运维完成 → 吏部生成绩效快照
 - 兵部发现安全问题 → 自动创建工部修复任务
 
+## Blueprint 系统（2026-03-20 实现）
+
+### 设计来源
+
+借鉴 [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) 的 Plugin/Blueprint 分层架构：
+- **Plugin**（薄调度层）= Governor —— 只做路由和决策
+- **Blueprint**（厚产物层）= `blueprint.yaml` —— 承载策略、权限、生命周期
+
+### 双层配置
+
+| 文件 | 读者 | 职责 |
+|------|------|------|
+| `SKILL.md` | Agent (LLM) | 身份定义、行为准则、红线、完成标准 |
+| `blueprint.yaml` | Governor (代码) | 策略约束、预检规则、工具白名单、生命周期钩子 |
+
+**核心原则**：改部门策略不碰 prompt，改 prompt 不影响调度。
+
+### 五阶段生命周期
+
+```
+Create → Classify → Preflight(Blueprint) → Scrutinize(门下省) → Execute
+```
+
+Preflight 在门下省审查之前，拦截明显不可执行的任务（cwd 不存在、SKILL.md 缺失、磁盘空间不足），避免浪费 LLM token。
+
+### Blueprint YAML 结构
+
+```yaml
+version: "1"
+name_zh: 工部
+model: claude-sonnet-4-6
+
+policy:
+  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]
+  denied_paths: [".env", "*.key", "data/events.db"]
+  can_commit: true
+  read_only: false
+
+preflight:
+  - check: cwd_exists
+  - check: skill_exists
+  - check: disk_space
+    target: "100"
+
+max_turns: 25
+timeout_s: 300
+on_done: quality_review
+on_fail: log_only
+```
+
+### 策略矩阵
+
+| 部门 | 可写 | 可提交 | 联网 | 执行后动作 |
+|------|------|--------|------|-----------|
+| 工部 | src/, departments/, dashboard/ | ✅ | ❌ | → 刑部验收 |
+| 户部 | src/collectors/, data/, docker | ✅ | ❌ | — |
+| 礼部 | ❌ (read-only) | ❌ | ❌ | — |
+| 兵部 | ❌ (read-only) | ❌ | ❌ | 失败时 alert |
+| 刑部 | ❌ (read-only) | ❌ | ❌ | — |
+| 吏部 | ❌ (read-only) | ❌ | ❌ | — |
+
+### 实现文件
+
+- `src/governance/blueprint.py` — Blueprint 加载、预检、策略执行
+- `departments/*/blueprint.yaml` × 6 — 各部声明式配置
+- `dashboard/server.js` — `/api/blueprints` + `/api/departments/:name/blueprint` 端点
+
 ## 待做
 
-- 子 agent 模型选择：不同部门可用不同模型（刑部/吏部用 Haiku 省钱，工部用 Sonnet）
+- ~~子 agent 模型选择：不同部门可用不同模型~~ ✅ 已通过 Blueprint `model` 字段实现
 - 部门间协作链拓展：兵部发现安全问题 → 工部修复
 - Dashboard 展示任务链（parent_task_id 可视化）
+- Blueprint 版本管理：支持 `version` 字段跨版本迁移
+- 采集器 Blueprint 化：把 collector 配置从代码抽成声明式 YAML

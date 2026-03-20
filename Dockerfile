@@ -18,8 +18,7 @@ RUN cd dashboard && npm install --omit=dev
 
 # Python dependencies
 COPY requirements.txt .
-RUN pip3 install --break-system-packages --no-cache-dir \
-    anthropic claude-agent-sdk anyio python-dotenv apscheduler numpy
+RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY . .

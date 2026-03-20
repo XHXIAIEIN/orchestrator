@@ -222,6 +222,72 @@ TTS 服务健康检查。
 
 ---
 
+## Blueprint
+
+### GET /api/blueprints
+
+所有部门的 Blueprint 配置（声明式策略、预检规则、生命周期）。
+
+**响应**:
+```json
+{
+  "engineering": {
+    "version": "1",
+    "name_zh": "工部",
+    "model": "claude-sonnet-4-6",
+    "policy": {
+      "allowed_tools": ["Bash", "Read", "Edit", "Write", "Glob", "Grep"],
+      "denied_paths": [".env", "*.key", "data/events.db"],
+      "can_commit": true,
+      "read_only": false
+    },
+    "preflight": [
+      { "check": "cwd_exists", "required": true },
+      { "check": "skill_exists", "required": true },
+      { "check": "disk_space", "target": "100", "required": false }
+    ],
+    "on_done": "quality_review",
+    "on_fail": "log_only"
+  },
+  "protocol": null
+}
+```
+
+### GET /api/departments/:name/blueprint
+
+单个部门的 Blueprint 配置。返回 YAML 解析后的 JSON。
+
+---
+
+## Policy Advisor
+
+### GET /api/policy-advisor/summary
+
+所有部门的策略否决事件统计。
+
+**响应**:
+```json
+{
+  "engineering": { "denials": 4, "has_suggestions": true },
+  "protocol": { "denials": 2, "has_suggestions": true },
+  "quality": { "denials": 0, "has_suggestions": false }
+}
+```
+
+### GET /api/departments/:name/policy-denials
+
+单个部门的策略否决事件列表。
+
+**查询参数**: `limit` (默认 50，最大 200)。
+
+**响应**: 数组，倒序排列。每条包含 `ts`, `type`（tool_blocked/timeout/max_turns/write_in_readonly），`detail`, `suggested_fix`。
+
+### GET /api/departments/:name/policy-suggestions
+
+Policy Advisor 为该部门生成的 Blueprint 调整建议（Markdown）。
+
+---
+
 ## 实时通道
 
 ### GET /api/logs
