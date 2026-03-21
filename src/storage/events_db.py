@@ -156,6 +156,50 @@ class EventsDB:
                 );
                 CREATE INDEX IF NOT EXISTS idx_run_logs_dept ON run_logs(department);
                 CREATE INDEX IF NOT EXISTS idx_run_logs_created ON run_logs(created_at);
+
+                CREATE TABLE IF NOT EXISTS sub_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    stage_name TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    started_at TEXT,
+                    finished_at TEXT,
+                    duration_ms INTEGER DEFAULT 0,
+                    cost_usd REAL DEFAULT 0,
+                    output_preview TEXT DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sub_runs_task ON sub_runs(task_id);
+
+                CREATE TABLE IF NOT EXISTS task_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT '',
+                    session_data TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(task_id, agent_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sessions_task ON task_sessions(task_id);
+
+                CREATE TABLE IF NOT EXISTS heartbeats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'alive',
+                    progress_pct INTEGER DEFAULT 0,
+                    message TEXT DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_heartbeats_task ON heartbeats(task_id);
+
+                CREATE TABLE IF NOT EXISTS file_index (
+                    path TEXT PRIMARY KEY,
+                    routing_hint TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    embedding TEXT,
+                    updated_at TEXT NOT NULL
+                );
             """)
             # Migrations: add columns to existing databases
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
@@ -587,3 +631,117 @@ class EventsDB:
                 "success_rate": round(d["success_count"] / d["total"], 2) if d["total"] > 0 else 0,
             }
         return stats
+
+    # ── Sub-runs (per-stage tracking) ──
+
+    def create_sub_run(self, task_id: int, stage_name: str) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO sub_runs (task_id, stage_name, status, started_at, created_at) "
+                "VALUES (?, ?, 'running', ?, ?)",
+                (task_id, stage_name, now, now)
+            )
+            return cursor.lastrowid
+
+    def finish_sub_run(self, sub_run_id: int, status: str,
+                       duration_ms: int = 0, cost_usd: float = 0,
+                       output_preview: str = ""):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE sub_runs SET status = ?, finished_at = ?, "
+                "duration_ms = ?, cost_usd = ?, output_preview = ? WHERE id = ?",
+                (status, now, duration_ms, cost_usd, output_preview[:500], sub_run_id)
+            )
+
+    def get_sub_runs(self, task_id: int) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM sub_runs WHERE task_id = ? ORDER BY id ASC",
+                (task_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── Task Sessions (cross-heartbeat context recovery) ──
+
+    def save_session(self, task_id: int, agent_id: str, session_data: dict):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO task_sessions "
+                "(task_id, agent_id, session_data, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (task_id, agent_id, json.dumps(session_data, ensure_ascii=False, default=str),
+                 now, now)
+            )
+
+    def get_session(self, task_id: int, agent_id: str = "") -> dict:
+        with self._connect() as conn:
+            if agent_id:
+                row = conn.execute(
+                    "SELECT session_data FROM task_sessions "
+                    "WHERE task_id = ? AND agent_id = ?",
+                    (task_id, agent_id)
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT session_data FROM task_sessions WHERE task_id = ? "
+                    "ORDER BY updated_at DESC LIMIT 1",
+                    (task_id,)
+                ).fetchone()
+        return json.loads(row["session_data"]) if row else {}
+
+    # ── Heartbeats ──
+
+    def record_heartbeat(self, task_id: int, agent_id: str = "",
+                         status: str = "alive", progress_pct: int = 0,
+                         message: str = "") -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO heartbeats (task_id, agent_id, status, progress_pct, message, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (task_id, agent_id, status, progress_pct, message, now)
+            )
+            return cursor.lastrowid
+
+    def get_last_heartbeat(self, task_id: int) -> dict:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM heartbeats WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+                (task_id,)
+            ).fetchone()
+        return dict(row) if row else {}
+
+    # ── File Index (CAFI) ──
+
+    def upsert_file_index(self, path: str, routing_hint: str,
+                          tags: list, embedding: list = None):
+        now = datetime.now(timezone.utc).isoformat()
+        emb_json = json.dumps(embedding) if embedding else None
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO file_index (path, routing_hint, tags, embedding, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (path, routing_hint, json.dumps(tags), emb_json, now)
+            )
+
+    def query_file_index(self, tags: list = None, limit: int = 20) -> list:
+        with self._connect() as conn:
+            if tags:
+                # 简单 tag 匹配（JSON 字符串包含检查）
+                placeholders = " OR ".join(["tags LIKE ?"] * len(tags))
+                params = [f"%{t}%" for t in tags] + [limit]
+                rows = conn.execute(
+                    f"SELECT path, routing_hint, tags FROM file_index "
+                    f"WHERE {placeholders} ORDER BY updated_at DESC LIMIT ?",
+                    params
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT path, routing_hint, tags FROM file_index "
+                    "ORDER BY updated_at DESC LIMIT ?",
+                    (limit,)
+                ).fetchall()
+        return [dict(r) for r in rows]
