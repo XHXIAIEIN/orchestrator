@@ -38,6 +38,7 @@ from src.governance.scratchpad import write_scratchpad, build_handoff_prompt
 from src.governance.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
 from src.governance.token_budget import TokenAccountant
 from src.governance.doom_loop import check_doom_loop
+from src.governance.prompt_canary import should_use_canary, get_canary_prompt
 from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
@@ -443,8 +444,19 @@ class Governor:
             reason=task.get("reason", ""),
         )
         # 优先从 SKILL.md 加载部门 prompt，fallback 到内置 dict
-        skill_content = load_department(dept_key)
-        dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
+        # Canary: 如果有 canary prompt 且该任务被分到 canary 组，用新 prompt
+        task_id_for_canary = task.get("id", 0)
+        if should_use_canary(task_id_for_canary, dept_key):
+            canary_prompt = get_canary_prompt(dept_key)
+            if canary_prompt:
+                dept_prompt = canary_prompt
+                log.info(f"Governor: task #{task_id_for_canary} using CANARY prompt for {dept_key}")
+            else:
+                skill_content = load_department(dept_key)
+                dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
+        else:
+            skill_content = load_department(dept_key)
+            dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
 
         # Authority ceiling 注入
         if blueprint:
