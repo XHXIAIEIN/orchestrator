@@ -26,7 +26,9 @@ MANAGEMENT_PATH = SOUL_DIR / 'management.md'
 RELATIONSHIP_PATH = PRIVATE_DIR / 'relationship.md'
 CALIBRATION_PATH = PRIVATE_DIR / 'calibration.jsonl'
 EXPERIENCES_PATH = PRIVATE_DIR / 'experiences.jsonl'
-BOOT_PATH = PRIVATE_DIR / 'boot.md'
+# 编译产物输出到 .claude/ 目录（本地文件，不入 git）
+PROJECT_ROOT = SOUL_DIR.parent
+BOOT_PATH = PROJECT_ROOT / '.claude' / 'boot.md'
 
 # Memory path (auto-discovered from Claude projects dir)
 def _encode_path_to_claude_dir(p: Path) -> str:

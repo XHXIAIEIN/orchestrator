@@ -6,6 +6,7 @@ SOUL/private/
 .claude/skills/persona/
 .claude/hooks/
 .claude/worktrees/
+.claude/boot.md
 .superpowers/
 __pycache__/
 *.pyc
