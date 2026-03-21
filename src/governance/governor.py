@@ -34,6 +34,7 @@ from src.governance.blueprint import (
     AuthorityCeiling,
 )
 from src.gateway.routing import resolve_route, get_policy_config
+from src.governance.scratchpad import write_scratchpad, build_handoff_prompt
 from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
@@ -569,8 +570,21 @@ class Governor:
 
     def _finalize_task(self, task_id: int, task: dict, dept_key: str,
                        status: str, output: str, task_cwd: str, project_name: str, now: str):
-        """Post-execution: visual verify, update status, write run log, dispatch collaboration."""
+        """Post-execution: visual verify, scratchpad, update status, write run log, dispatch collaboration."""
         spec = task.get("spec", {})
+
+        # ── Scratchpad: 长输出写文件，DB 只存摘要 ──
+        scratchpad_path = None
+        if len(output) > 500:
+            try:
+                sp_path = write_scratchpad(task_id, dept_key, output, metadata={
+                    "project": project_name, "status": status,
+                })
+                scratchpad_path = str(sp_path)
+                spec["scratchpad"] = scratchpad_path
+                self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+            except Exception as e:
+                log.warning(f"Governor: scratchpad write failed for task #{task_id}: {e}")
 
         # 视觉验证
         if status == "done":
@@ -759,7 +773,19 @@ class Governor:
         files_str = ", ".join(artifact["files_changed"]) if artifact["files_changed"] else "未检测到"
         commit_str = artifact["commit"] or "未检测到"
 
-        if artifact["commit"]:
+        # Scratchpad 交接：引用文件路径而非内联全文
+        scratchpad = parent_spec.get("scratchpad", "")
+        if scratchpad:
+            observation = build_handoff_prompt(
+                task_id=parent_id, department="engineering",
+                summary=artifact["done"],
+                scratchpad_path=scratchpad,
+            )
+            observation += (
+                f"\n\n改动文件：{files_str}\n"
+                f"Commit: {commit_str}\n"
+            )
+        elif artifact["commit"]:
             observation = (
                 f"工部执行摘要：{artifact['done']}\n"
                 f"改动文件：{files_str}\n"
@@ -776,6 +802,7 @@ class Governor:
 
         review_spec = {
             "department": "quality",
+            "intent": "quality_review",
             "project": project_name,
             "cwd": task_cwd,
             "problem": f"验收工部任务 #{parent_id} 的执行结果",
