@@ -33,6 +33,7 @@ from src.governance.blueprint import (
     load_blueprint, run_preflight, preflight_passed, get_allowed_tools,
     AuthorityCeiling,
 )
+from src.gateway.routing import resolve_route, get_policy_config
 from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
@@ -671,9 +672,15 @@ class Governor:
             tools_str = dept.get("tools", "")
             allowed_tools = [t.strip() for t in tools_str.split(",") if t.strip()]
 
-        # ── Apply Blueprint overrides ──
-        task_timeout = blueprint.timeout_s if blueprint else CLAUDE_TIMEOUT
-        task_max_turns = blueprint.max_turns if blueprint else MAX_AGENT_TURNS
+        # ── Apply Policy Profile (intent-based) → Blueprint → defaults ──
+        intent_key = spec.get("intent", "")
+        route = resolve_route(intent=intent_key, department=dept_key)
+        policy_cfg = get_policy_config(route)
+
+        task_timeout = blueprint.timeout_s if blueprint else policy_cfg.timeout_s
+        task_max_turns = blueprint.max_turns if blueprint else policy_cfg.max_turns
+        log.info(f"Governor: task #{task_id} policy={route.profile.value} "
+                 f"timeout={task_timeout}s max_turns={task_max_turns}")
 
         output = "(no output)"
         status = "failed"
