@@ -1300,6 +1300,52 @@ app.get('/api/departments/:name/guidelines', (req, res) => {
   res.json(result);
 });
 
+// ── 采集器声誉 & 手动触发 ──
+
+app.get('/api/collectors/reputation', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(503).json({ error: 'db not available' });
+  try {
+    const rows = dbAll(db, 'SELECT name, data, updated_at FROM collector_reputation ORDER BY name');
+    const result = rows.map(r => {
+      try { return { ...JSON.parse(r.data), updated_at: r.updated_at }; }
+      catch { return { name: r.name, error: 'parse failed' }; }
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  } finally { db.close(); }
+});
+
+app.post('/api/collectors/:name/trigger', (req, res) => {
+  const name = req.params.name;
+  const proc = spawn('python3', ['-c', `
+import sys, json
+sys.path.insert(0, '/orchestrator')
+from src.storage.events_db import EventsDB
+from src.collectors.registry import discover_collectors
+
+db = EventsDB('/orchestrator/data/events.db')
+registry = discover_collectors()
+name = '${name}'
+if name not in registry:
+    print(json.dumps({'error': f'collector {name} not found'}))
+    sys.exit(0)
+
+cls = registry[name]
+collector = cls(db=db)
+count = collector.collect_with_metrics()
+print(json.dumps({'name': name, 'count': count}))
+  `]);
+
+  let out = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.on('close', () => {
+    try { res.json(JSON.parse(out)); }
+    catch { res.status(500).json({ error: out }); }
+  });
+});
+
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'connected', message: 'Orchestrator Dashboard' }));
 });

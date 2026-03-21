@@ -16,15 +16,22 @@ log = logging.getLogger(__name__)
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
+MODEL_TIERS = {
+    "ollama/qwen3:32b":          {"cost": 0,    "capability": 0.6,  "multimodal": False},
+    "claude-haiku-4-5-20251001": {"cost": 0.25, "capability": 0.7,  "multimodal": False},
+    "ollama/gemma3:27b":         {"cost": 0,    "capability": 0.65, "multimodal": True},
+    "claude-sonnet-4-6":         {"cost": 3.0,  "capability": 0.9,  "multimodal": True},
+}
+
 ROUTES = {
-    "scrutiny":      {"backend": "ollama", "model": "qwen3:32b", "timeout": 45,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001", "no_think": True},
-    "debt_scan":     {"backend": "ollama", "model": "qwen3:32b", "timeout": 90,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001", "no_think": True},
+    "scrutiny":      {"cascade": ["ollama/qwen3:32b", "claude-haiku-4-5-20251001"], "timeout": 45, "no_think": True},
+    "debt_scan":     {"cascade": ["ollama/qwen3:32b", "claude-haiku-4-5-20251001"], "timeout": 90, "no_think": True},
     "summary":       {"backend": "claude", "model": "claude-haiku-4-5-20251001",  "timeout": 120},
-    "deep_analysis": {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
+    "deep_analysis": {"cascade": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"], "timeout": 120},
     "profile":       {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
-    # 多模态路由 — 仅 Ollama，无 Claude fallback
+    # 多模态路由 — 不适合 cascade
     "vision":        {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},
-    "ocr":           {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},  # glm-ocr 有兼容性问题，暂用 gemma3
+    "ocr":           {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},
     # GUI 自动化推理 — 多模态，优先 Ollama，fallback 到 Claude
     "gui_reason":    {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 60,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
 }
@@ -46,16 +53,25 @@ class LLMRouter:
         if not route:
             raise ValueError(f"Unknown task_type: {task_type}")
 
-        backend = route["backend"]
-
-        # 环境变量强制覆盖
+        # 环境变量强制覆盖（cascade 路由也受此影响：跳过 cascade 直接走 Claude）
         force_claude = os.environ.get("LLM_FORCE_CLAUDE", "")
         if force_claude and task_type in [t.strip() for t in force_claude.split(",")]:
-            backend = "claude"
             log.info(f"router: [force_claude] {task_type} overridden to claude")
+            model = route.get("model", route.get("cascade", ["claude-haiku-4-5-20251001"])[-1])
+            if model.startswith("ollama/"):
+                model = "claude-haiku-4-5-20251001"
+            return self._claude_generate(prompt, model, route["timeout"], max_tokens,
+                                         self._encode_images(images) if images else None)
 
         # 编码图片为 base64
         b64_images = self._encode_images(images) if images else None
+
+        # 有 cascade 字段 → 走级联
+        if "cascade" in route:
+            return self._generate_cascade(prompt, route, max_tokens, temperature, b64_images)
+
+        # 无 cascade → 走原有逻辑
+        backend = route["backend"]
 
         if backend == "ollama":
             # Qwen3 系列默认开 thinking，对简单任务追加 /no_think 关闭
@@ -82,6 +98,53 @@ class LLMRouter:
             else:
                 log.warning(f"router: image not found: {img}")
         return result
+
+    def _generate_cascade(self, prompt: str, route: dict,
+                           max_tokens: int, temperature: float,
+                           images: list[str] | None = None) -> str:
+        """级联尝试：从便宜到贵。"""
+        cascade = route["cascade"]
+        attempts = []
+
+        for model_id in cascade:
+            # 解析 model_id 格式: "ollama/xxx" 或 "claude-xxx"
+            if model_id.startswith("ollama/"):
+                model_name = model_id.split("/", 1)[1]
+                backend = "ollama"
+            else:
+                model_name = model_id
+                backend = "claude"
+
+            # 跳过不可达的 ollama
+            if backend == "ollama" and self._ollama_available is False:
+                attempts.append({"model": model_id, "reason": "ollama_unavailable"})
+                continue
+
+            try:
+                if backend == "ollama":
+                    # Qwen3 no_think
+                    p = prompt
+                    if route.get("no_think") and not p.rstrip().endswith("/no_think"):
+                        p = p.rstrip() + "\n\n/no_think"
+                    result = self._ollama_generate(p, model_name, route["timeout"],
+                                                   max_tokens, temperature, images)
+                else:
+                    result = self._claude_generate(prompt, model_name, route["timeout"],
+                                                   max_tokens, images)
+
+                if len(result.strip()) >= MIN_RESPONSE_LEN:
+                    tier = MODEL_TIERS.get(model_id, {})
+                    log.info(f"router: [cascade] {model_id} ok ({len(result)} chars, "
+                             f"cost_tier={tier.get('cost', '?')}, attempts={len(attempts)+1})")
+                    return result
+
+                attempts.append({"model": model_id, "reason": f"low_quality ({len(result.strip())} chars)"})
+            except Exception as e:
+                attempts.append({"model": model_id, "reason": str(e)})
+
+        # 全部失败
+        log.warning(f"router: [cascade] all models failed: {attempts}")
+        return ""
 
     def _ollama_with_fallback(self, prompt: str, task_type: str, route: dict,
                                max_tokens: int, temperature: float,
@@ -205,7 +268,7 @@ class LLMRouter:
             models = [m.get("name", "") for m in data.get("models", [])]
             log.info(f"router: Ollama reachable, models: {models}")
             # 检查路由表中需要的模型是否存在
-            needed = {r["model"] for r in ROUTES.values() if r["backend"] == "ollama"}
+            needed = {r["model"] for r in ROUTES.values() if r.get("backend") == "ollama"}
             for m in needed:
                 if not any(m in avail for avail in models):
                     log.warning(f"router: Ollama model '{m}' not found, run: ollama pull {m}")
