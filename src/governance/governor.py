@@ -39,6 +39,8 @@ from src.governance.eval_loop import parse_eval_output, format_eval_for_rework, 
 from src.governance.token_budget import TokenAccountant
 from src.governance.doom_loop import check_doom_loop
 from src.governance.prompt_canary import should_use_canary, get_canary_prompt
+from src.governance.verify_gate import run_gates, save_gate_record
+from src.governance.novelty_policy import check_novelty, get_recent_failures
 from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
@@ -289,6 +291,22 @@ class Governor:
                 log.info(f"Governor: task #{task_id} failed preflight: {pf_reason}")
                 return None
             log.info(f"Governor: task #{task_id} preflight passed ({len(pf_results)} checks)")
+
+        # ── Novelty Policy: 防止重试已失败路径 ──
+        if not spec.get("rework_count"):  # 返工任务跳过（有新反馈）
+            try:
+                failures = get_recent_failures(self.db, dept)
+                novel, novelty_reason = check_novelty(action, spec, failures)
+                if not novel:
+                    self.db.update_task(task_id, status="scrutiny_failed",
+                                        scrutiny_note=f"Novelty Policy: {novelty_reason}",
+                                        finished_at=datetime.now(timezone.utc).isoformat())
+                    self.db.write_log(f"任务 #{task_id} 被 Novelty Policy 拦截：{novelty_reason}",
+                                      "WARNING", "governor")
+                    log.info(f"Governor: task #{task_id} blocked by novelty policy")
+                    return None
+            except Exception as e:
+                log.warning(f"Governor: novelty check failed ({e}), continuing")
 
         # ── Scrutiny (门下省审查) ──
         self.db.update_task(task_id, status="scrutinizing")
@@ -613,6 +631,20 @@ class Governor:
                 self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
             except Exception as e:
                 log.warning(f"Governor: scratchpad write failed for task #{task_id}: {e}")
+
+        # ── Verify Gates: non-negotiable 质量门控 ──
+        if status == "done" and dept_key in ("engineering", "operations"):
+            try:
+                gate_record = run_gates(dept_key, task_id, task_cwd)
+                save_gate_record(gate_record, db=self.db)
+                if not gate_record.all_passed:
+                    failed_gates = [g for g in gate_record.gates if not g.passed]
+                    gate_msg = "; ".join(f"{g.gate_id}: {g.message}" for g in failed_gates)
+                    status = "gate_failed"
+                    output += f"\n\n[GATE FAILED] {gate_msg}"
+                    log.warning(f"Governor: task #{task_id} failed verify gates: {gate_msg}")
+            except Exception as e:
+                log.warning(f"Governor: verify gate error for task #{task_id}: {e}")
 
         # 视觉验证
         if status == "done":
