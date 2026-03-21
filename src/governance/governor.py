@@ -36,6 +36,7 @@ from src.governance.blueprint import (
 from src.gateway.routing import resolve_route, get_policy_config
 from src.governance.scratchpad import write_scratchpad, build_handoff_prompt
 from src.governance.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
+from src.governance.token_budget import TokenAccountant
 from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
@@ -138,6 +139,7 @@ class Governor:
 
     def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
         self.db = db or EventsDB(db_path)
+        self.accountant = TokenAccountant(db=self.db)
 
     def scrutinize(self, task_id: int, task: dict) -> tuple[bool, str]:
         """门下省审查。LOW/MEDIUM 单模型审查，HIGH 双模型交叉验证。"""
@@ -627,6 +629,17 @@ class Governor:
         except Exception as e:
             log.warning(f"Governor: failed to write run-log for task #{task_id}: {e}")
 
+        # ── TokenAccountant: 记录成本 ──
+        try:
+            agent_events = self.db.get_agent_events(task_id, limit=10)
+            for evt in reversed(agent_events):
+                data = json.loads(evt["data"]) if isinstance(evt.get("data"), str) else evt.get("data", {})
+                if data.get("cost_usd"):
+                    self.accountant.record_usage(task_id, dept_key, "agent_sdk", data["cost_usd"])
+                    break
+        except Exception:
+            pass
+
         # ── Policy Advisor: observe execution for denial patterns ──
         try:
             blueprint = load_blueprint(dept_key)
@@ -699,8 +712,15 @@ class Governor:
 
         task_timeout = blueprint.timeout_s if blueprint else policy_cfg.timeout_s
         task_max_turns = blueprint.max_turns if blueprint else policy_cfg.max_turns
+
+        # ── TokenAccountant: 预算检查 + 模型降级 ──
+        preferred_model = blueprint.model if blueprint else policy_cfg.model
+        effective_model = self.accountant.recommend_model(dept_key, preferred_model)
+        if effective_model != preferred_model:
+            log.info(f"Governor: task #{task_id} budget downgrade: {preferred_model} → {effective_model}")
+
         log.info(f"Governor: task #{task_id} policy={route.profile.value} "
-                 f"timeout={task_timeout}s max_turns={task_max_turns}")
+                 f"model={effective_model} timeout={task_timeout}s max_turns={task_max_turns}")
 
         output = "(no output)"
         status = "failed"
