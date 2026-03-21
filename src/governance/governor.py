@@ -37,6 +37,7 @@ from src.gateway.routing import resolve_route, get_policy_config
 from src.governance.scratchpad import write_scratchpad, build_handoff_prompt
 from src.governance.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
 from src.governance.token_budget import TokenAccountant
+from src.governance.doom_loop import check_doom_loop
 from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
@@ -546,6 +547,18 @@ class Governor:
                 if message.error:
                     event_data["error"] = message.error
                 self._log_agent_event(task_id, "agent_turn", event_data)
+
+                # ── Doom Loop Detection: 每 5 轮检查一次 ──
+                if turn % 5 == 0:
+                    events = self.db.get_agent_events(task_id, limit=30)
+                    doom = check_doom_loop(events)
+                    if doom.triggered:
+                        log.warning(f"Governor: DOOM LOOP task #{task_id}: {doom.reason}")
+                        self._log_agent_event(task_id, "doom_loop", {
+                            "reason": doom.reason, "details": doom.details,
+                        })
+                        result_text = f"[DOOM LOOP] 熔断：{doom.reason}"
+                        return result_text
 
             elif isinstance(message, TaskProgressMessage):
                 self._log_agent_event(task_id, "agent_progress", {
