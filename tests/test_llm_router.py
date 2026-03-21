@@ -70,11 +70,12 @@ def test_claude_task_types_always_use_claude():
     mock_claude.assert_called_once()
 
 def test_routes_have_required_keys():
-    """每条路由必须有 backend, model, timeout。"""
+    """每条路由必须有 timeout，以及 cascade 或 (backend + model)。"""
     for task_type, route in ROUTES.items():
-        assert "backend" in route, f"{task_type} missing backend"
-        assert "model" in route, f"{task_type} missing model"
         assert "timeout" in route, f"{task_type} missing timeout"
+        has_cascade = "cascade" in route
+        has_legacy = "backend" in route and "model" in route
+        assert has_cascade or has_legacy, f"{task_type} needs either 'cascade' or 'backend'+'model'"
 
 def test_unknown_task_type_raises():
     """未知的 task_type 应抛出 ValueError。"""
