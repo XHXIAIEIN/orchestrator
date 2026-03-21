@@ -4,6 +4,7 @@ version: "1"
 name_zh: 户部
 model: claude-sonnet-4-6
 description: "System operations: collector repairs, DB management, performance optimization"
+authority: MUTATE  # can modify files, cannot commit/push (APPROVE = human only)
 
 policy:
   allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]

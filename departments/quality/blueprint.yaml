@@ -4,6 +4,7 @@ version: "1"
 name_zh: 刑部
 model: claude-sonnet-4-6
 description: "Quality assurance: code review, test execution, regression detection"
+authority: READ  # review and test, never fix
 
 policy:
   allowed_tools: [Bash, Read, Glob, Grep]

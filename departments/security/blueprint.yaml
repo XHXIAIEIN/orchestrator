@@ -4,6 +4,7 @@ version: "1"
 name_zh: 兵部
 model: claude-haiku-4-5
 description: "Security defense: secret scanning, permission audit, dependency vulnerabilities"
+authority: READ  # scan and report, never modify
 
 policy:
   allowed_tools: [Bash, Read, Glob, Grep]

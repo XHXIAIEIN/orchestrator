@@ -31,6 +31,7 @@ from src.governance.prompts import (
 )
 from src.governance.blueprint import (
     load_blueprint, run_preflight, preflight_passed, get_allowed_tools,
+    AuthorityCeiling,
 )
 from src.governance.policy_advisor import observe_task_execution
 
@@ -422,8 +423,9 @@ class Governor:
         return t
 
     def _prepare_prompt(self, task: dict, dept_key: str, dept: dict,
-                        task_cwd: str, project_name: str) -> str:
-        """Assemble the full prompt: department identity + cognitive mode + task + context."""
+                        task_cwd: str, project_name: str,
+                        blueprint=None) -> str:
+        """Assemble the full prompt: department identity + authority + cognitive mode + task + context."""
         base_prompt = TASK_PROMPT_TEMPLATE.format(
             cwd=task_cwd,
             project=project_name,
@@ -437,6 +439,21 @@ class Governor:
         # 优先从 SKILL.md 加载部门 prompt，fallback 到内置 dict
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
+
+        # Authority ceiling 注入
+        if blueprint:
+            ceiling = blueprint.authority
+            authority_prompt = (
+                f"\n\n## Authority Ceiling: {ceiling.name}\n"
+                f"你的权限等级为 {ceiling.name}（{ceiling.value}/4）。"
+            )
+            if ceiling <= AuthorityCeiling.READ:
+                authority_prompt += "\n你只能观察和报告。不可修改任何文件。"
+            elif ceiling <= AuthorityCeiling.PROPOSE:
+                authority_prompt += "\n你可以写提案文件，不可修改已有源码。"
+            elif ceiling <= AuthorityCeiling.MUTATE:
+                authority_prompt += "\n你可以修改文件，但不可 git commit/push。提交由人类决定。"
+            dept_prompt += authority_prompt
 
         # 认知模式注入
         cognitive_mode = classify_cognitive_mode(task)
@@ -635,7 +652,7 @@ class Governor:
         # ── Blueprint resolution ──
         blueprint = load_blueprint(dept_key)
 
-        prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name)
+        prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name, blueprint=blueprint)
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
 

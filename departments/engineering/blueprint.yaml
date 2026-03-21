@@ -6,6 +6,7 @@ version: "1"
 name_zh: 工部
 model: claude-sonnet-4-6
 description: "Code engineering: writes code, fixes bugs, refactors, optimizes"
+authority: MUTATE  # can modify files, cannot commit/push (APPROVE = human only)
 
 policy:
   allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]

@@ -4,6 +4,7 @@ version: "1"
 name_zh: 礼部
 model: claude-haiku-4-5
 description: "Attention audit: scans for TODOs, unclosed issues, abandoned plans"
+authority: READ  # observe and report only
 
 policy:
   allowed_tools: [Read, Glob, Grep]

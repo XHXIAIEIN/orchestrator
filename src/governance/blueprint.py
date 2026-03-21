@@ -3,6 +3,7 @@ Blueprint — NemoClaw-inspired declarative department configuration.
 
 Each department has a blueprint.yaml that declares:
   - identity & model (machine-readable version of SKILL.md)
+  - authority_level (READ/PROPOSE/MUTATE — hard ceiling, APPROVE reserved for human)
   - policy (permission boundaries — what this dept CAN and CANNOT do)
   - preflight (pre-execution verification checklist)
   - lifecycle hooks (resolve → verify → plan → apply → status)
@@ -13,6 +14,7 @@ Two layers, two audiences, zero coupling.
 """
 import logging
 from dataclasses import dataclass, field
+from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,33 @@ log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEPT_ROOT = _REPO_ROOT / "departments"
+
+
+# ── Authority Ceiling ────────────────────────────────────────────
+# Four-level permission hierarchy. AI agents cap at MUTATE; APPROVE is human-only.
+
+class AuthorityCeiling(IntEnum):
+    READ = 1       # 只读：观察、审计、报告
+    PROPOSE = 2    # 建议：可写临时/提案文件，不可修改源码
+    MUTATE = 3     # 变更：可修改源码、配置、运行命令
+    APPROVE = 4    # 批准：可 commit、push、合并 — 仅人类
+
+    @classmethod
+    def from_str(cls, s: str) -> "AuthorityCeiling":
+        return cls[s.upper()] if s else cls.MUTATE
+
+
+# Each ceiling level defines maximum allowed tools (hard cap).
+# Blueprint allowed_tools can only be a SUBSET of these.
+# Note: Bash at READ level is intentional — security/quality need Bash
+# for read-only commands (grep, pytest, etc). The read_only flag in Policy
+# separately constrains what Bash can do via prompt instructions.
+CEILING_TOOL_CAPS: dict[AuthorityCeiling, set[str]] = {
+    AuthorityCeiling.READ: {"Read", "Glob", "Grep", "Bash"},
+    AuthorityCeiling.PROPOSE: {"Read", "Glob", "Grep", "Bash", "Write"},
+    AuthorityCeiling.MUTATE: {"Read", "Glob", "Grep", "Bash", "Write", "Edit"},
+    AuthorityCeiling.APPROVE: {"Read", "Glob", "Grep", "Bash", "Write", "Edit"},
+}
 
 
 @dataclass
@@ -57,7 +86,10 @@ class Blueprint:
     version: str = "1"
     description: str = ""
 
-    # Policy
+    # Authority ceiling — hard cap, AI max = MUTATE
+    authority: AuthorityCeiling = AuthorityCeiling.MUTATE
+
+    # Policy (must stay within authority ceiling)
     policy: Policy = field(default_factory=Policy)
 
     # Preflight checks
@@ -128,12 +160,15 @@ def load_blueprint(department: str) -> Blueprint | None:
     if not raw or not isinstance(raw, dict):
         return None
 
+    authority = AuthorityCeiling.from_str(raw.get("authority", "MUTATE"))
+
     return Blueprint(
         department=department,
         name_zh=raw.get("name_zh", ""),
         model=raw.get("model", "claude-sonnet-4-6"),
         version=str(raw.get("version", "1")),
         description=raw.get("description", ""),
+        authority=authority,
         policy=_parse_policy(raw.get("policy")),
         preflight=_parse_preflight(raw.get("preflight")),
         max_turns=raw.get("max_turns", 25),
@@ -288,5 +323,21 @@ def enforce_policy(blueprint: Blueprint, tool_name: str, file_path: str = "") ->
 
 
 def get_allowed_tools(blueprint: Blueprint) -> list[str]:
-    """Get the effective tool list from blueprint policy."""
-    return list(blueprint.policy.allowed_tools) if blueprint.policy.allowed_tools else []
+    """Get the effective tool list, capped by authority ceiling.
+
+    Even if blueprint.yaml declares extra tools, ceiling is the hard cap.
+    """
+    cap = CEILING_TOOL_CAPS.get(blueprint.authority, set())
+    requested = set(blueprint.policy.allowed_tools) if blueprint.policy.allowed_tools else cap.copy()
+
+    # Intersection: only tools within BOTH the cap and the request survive
+    effective = requested & cap
+
+    capped = requested - cap
+    if capped:
+        log.warning(
+            f"blueprint({blueprint.department}): tools {capped} exceed "
+            f"authority ceiling {blueprint.authority.name}, stripped"
+        )
+
+    return sorted(effective)

@@ -4,6 +4,7 @@ version: "1"
 name_zh: 吏部
 model: claude-haiku-4-5
 description: "Performance management: collector health, task success rates, trend analysis"
+authority: READ  # metrics and reports only
 
 policy:
   allowed_tools: [Read, Glob, Grep]
