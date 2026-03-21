@@ -36,7 +36,8 @@ class ICollector(ABC):
 
     def __init__(self, db: EventsDB, **kwargs):
         self.db = db
-        self.log = logging.getLogger(f"collector.{self.metadata().name}")
+        self._name = self.metadata().name
+        self._stderr = logging.getLogger(f"collector.{self._name}")
 
     @classmethod
     @abstractmethod
@@ -50,26 +51,34 @@ class ICollector(ABC):
     def preflight(self) -> tuple[bool, str]:
         return True, "ok"
 
+    def log(self, message: str, level: str = "INFO"):
+        """写日志：DB 为主，stderr 为安全网。
+
+        DB 挂了不能往 DB 写"DB 挂了"，所以 stderr 永远兜底。
+        """
+        self._stderr.log(
+            getattr(logging, level, logging.INFO), message,
+        )
+        try:
+            self.db.write_log(
+                f"[{self._name}] {message}",
+                level, f"collector.{self._name}",
+            )
+        except Exception:
+            # DB 写入失败 — stderr 已经记了，不再尝试
+            pass
+
     def collect_with_metrics(self) -> int:
         """带日志和计时的采集包装器。"""
-        meta = self.metadata()
-        self.log.info("starting collection")
+        self.log("starting collection")
         t0 = time.time()
 
         try:
             count = self.collect()
             elapsed = time.time() - t0
-            self.log.info(f"done: {count} events in {elapsed:.1f}s")
-            self.db.write_log(
-                f"[{meta.name}] {count} events, {elapsed:.1f}s",
-                "INFO", f"collector.{meta.name}",
-            )
+            self.log(f"done: {count} events in {elapsed:.1f}s")
             return count
         except Exception as e:
             elapsed = time.time() - t0
-            self.log.error(f"failed after {elapsed:.1f}s: {e}")
-            self.db.write_log(
-                f"[{meta.name}] FAILED: {e}",
-                "ERROR", f"collector.{meta.name}",
-            )
+            self.log(f"FAILED after {elapsed:.1f}s: {e}", "ERROR")
             return -1
