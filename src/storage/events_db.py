@@ -80,8 +80,11 @@ class EventsDB:
                     level TEXT NOT NULL DEFAULT 'INFO',
                     source TEXT NOT NULL DEFAULT 'system',
                     message TEXT NOT NULL,
+                    run_id TEXT,
+                    step TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id);
 
                 CREATE TABLE IF NOT EXISTS scheduler_status (
                     key TEXT PRIMARY KEY,
@@ -296,12 +299,13 @@ class EventsDB:
         d['spec'] = json.loads(d['spec'])
         return d
 
-    def write_log(self, message: str, level: str = 'INFO', source: str = 'system'):
+    def write_log(self, message: str, level: str = 'INFO', source: str = 'system',
+                  run_id: str = None, step: str = None):
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO logs (level, source, message, created_at) VALUES (?, ?, ?, ?)",
-                (level, source, message, now)
+                "INSERT INTO logs (level, source, message, run_id, step, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (level, source, message, run_id, step, now)
             )
 
     def get_logs(self, since_id: int = 0, limit: int = 100) -> list:

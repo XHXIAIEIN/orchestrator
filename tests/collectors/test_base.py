@@ -54,6 +54,29 @@ class TestICollector:
         # 不应抛异常 — stderr 兜底
         c.log("this should not crash")
 
+    def test_trace_writes_step(self):
+        """trace() 应写入 step 字段。"""
+        db = MagicMock(spec=EventsDB)
+        c = DummyCollector(db=db)
+        c._run_id = "test123"
+        c.trace("scan", "found 3 repos")
+        call_args = db.write_log.call_args
+        assert call_args[1]["step"] == "scan"
+        assert call_args[1]["run_id"] == "test123"
+
+    def test_collect_with_metrics_sets_run_id(self):
+        """collect_with_metrics() 应生成 run_id 并在完成后清除。"""
+        db = MagicMock(spec=EventsDB)
+        c = DummyCollector(db=db)
+        assert c._run_id is None
+        c.collect_with_metrics()
+        # 完成后 run_id 应被清除
+        assert c._run_id is None
+        # 但 log 调用时应该有 run_id
+        calls = db.write_log.call_args_list
+        assert len(calls) >= 2  # start + done
+        assert calls[0][1]["run_id"] is not None
+
     def test_preflight_default(self):
         db = MagicMock(spec=EventsDB)
         c = DummyCollector(db=db)
