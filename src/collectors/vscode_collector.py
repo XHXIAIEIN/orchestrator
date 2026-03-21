@@ -12,10 +12,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 
-class VSCodeCollector:
+class VSCodeCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="vscode", display_name="VS Code", category="core",
+            env_vars=["VSCODE_DATA_PATH"], requires=[],
+            event_sources=["vscode"], default_enabled=True,
+        )
+
     def __init__(self, db: EventsDB, vscode_path: str = None):
+        super().__init__(db)
         self.db = db
         if vscode_path:
             self.vscode_path = Path(vscode_path)

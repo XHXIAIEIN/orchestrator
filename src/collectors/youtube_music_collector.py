@@ -12,6 +12,7 @@ import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 CHROME_EPOCH_OFFSET = 11644473600 * 1_000_000
 MIN_LISTEN_SECONDS = 10
@@ -115,8 +116,17 @@ def update_unknown_titles(db: EventsDB) -> int:
     return updated
 
 
-class YouTubeMusicCollector:
+class YouTubeMusicCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="youtube_music", display_name="YouTube Music", category="optional",
+            env_vars=["CHROME_HISTORY_ROOT"], requires=[],
+            event_sources=["youtube_music"], default_enabled=False,
+        )
+
     def __init__(self, db: EventsDB, history_paths: list = None, resolve_titles: bool = True):
+        super().__init__(db)
         self.db = db
         self.history_paths = history_paths if history_paths is not None else _find_chrome_profiles()
         self.resolve_titles = resolve_titles

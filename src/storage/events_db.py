@@ -131,6 +131,12 @@ class EventsDB:
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_events_task ON agent_events(task_id);
+
+                CREATE TABLE IF NOT EXISTS collector_reputation (
+                    name TEXT PRIMARY KEY,
+                    data TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT NOT NULL
+                );
             """)
             # Migrations: add columns to existing databases
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:

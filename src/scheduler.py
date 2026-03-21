@@ -1,17 +1,12 @@
 import logging
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from apscheduler.schedulers.blocking import BlockingScheduler
 from src.storage.events_db import EventsDB
-from src.collectors.claude_collector import ClaudeCollector
-from src.collectors.browser_collector import BrowserCollector
-from src.collectors.git_collector import GitCollector
-from src.collectors.steam_collector import SteamCollector
-from src.collectors.youtube_music_collector import YouTubeMusicCollector
-from src.collectors.qqmusic_collector import QQMusicCollector
-from src.collectors.codebase_collector import CodebaseCollector
-from src.collectors.vscode_collector import VSCodeCollector
-from src.collectors.network_collector import NetworkCollector
+from src.collectors.registry import build_enabled_collectors
+from src.collectors.reputation import ReputationTracker
 from src.analysis.analyst import DailyAnalyst
 from src.analysis.insights import InsightEngine
 from src.governance.governor import Governor
@@ -32,8 +27,12 @@ BASE_DIR = Path(__file__).parent.parent
 DB_PATH = str(BASE_DIR / "data" / "events.db")
 
 
+MAX_COLLECTOR_WORKERS = int(os.environ.get("COLLECTOR_PARALLEL_WORKERS", "4"))
+COLLECTOR_RUN_TIMEOUT = int(os.environ.get("COLLECTOR_RUN_TIMEOUT", "60"))
+
+
 def _is_collector_enabled(name):
-    """Check COLLECTOR_<NAME> env var. Default: true for core, false for optional."""
+    """DEPRECATED: 由 registry.build_enabled_collectors() 替代。保留以防外部调用。"""
     default_on = {"claude", "browser", "git", "vscode", "network", "codebase"}
     env_key = f"COLLECTOR_{name.upper()}"
     val = os.environ.get(env_key)
@@ -42,53 +41,50 @@ def _is_collector_enabled(name):
     return name in default_on
 
 
-def _build_collectors(db):
-    """Build enabled collector instances from env config."""
-    git_paths_env = os.environ.get("GIT_PATHS")
-    git_paths = [p.strip() for p in git_paths_env.split(",")] if git_paths_env else None
-
-    all_collectors = {
-        "claude":        lambda: ClaudeCollector(db=db),
-        "browser":       lambda: BrowserCollector(db=db),
-        "git":           lambda: GitCollector(db=db, search_paths=git_paths),
-        "steam":         lambda: SteamCollector(db=db),
-        "youtube_music": lambda: YouTubeMusicCollector(db=db),
-        "qqmusic":       lambda: QQMusicCollector(db=db),
-        "codebase":      lambda: CodebaseCollector(db=db),
-        "vscode":        lambda: VSCodeCollector(db=db),
-        "network":       lambda: NetworkCollector(db=db),
-    }
-
-    enabled = []
-    for name, factory in all_collectors.items():
-        if _is_collector_enabled(name):
-            enabled.append((name, factory))
-    return enabled
-
-
 def run_collectors():
     db = EventsDB(DB_PATH)
     db.write_log("开始采集数据", "INFO", "collector")
+    enabled = build_enabled_collectors(db)
     results = {}
+    reputation = ReputationTracker(db)
 
-    for name, factory in _build_collectors(db):
+    def _run_one(name, collector):
+        skip, reason = reputation.should_skip(name)
+        if skip:
+            log.info(f"collector [{name}] skipped: {reason}")
+            return name, 0, reason
+        t0 = time.time()
         try:
-            collector = factory()
+            count = collector.collect_with_metrics()
+            return name, count, None
         except Exception as e:
-            log.error(f"Collector [{name}] init failed: {e}")
-            results[name] = -1
-            continue
-        try:
-            count = collector.collect()
-            results[name] = count
-        except Exception as e:
-            log.error(f"Collector [{name}] failed: {e}")
-            results[name] = -1
-    log.info(f"Collection done: {results}")
+            elapsed = time.time() - t0
+            log.error(f"collector [{name}] failed after {elapsed:.1f}s: {e}")
+            return name, -1, str(e)
+
+    with ThreadPoolExecutor(max_workers=MAX_COLLECTOR_WORKERS) as pool:
+        futures = {
+            pool.submit(_run_one, name, collector): name
+            for name, collector in enabled
+        }
+        for future in as_completed(futures, timeout=COLLECTOR_RUN_TIMEOUT):
+            fname = futures[future]
+            try:
+                name, count, error = future.result()
+                results[name] = count
+                reputation.update(name, count, error)
+            except Exception as e:
+                results[fname] = -1
+                reputation.update(fname, -1, str(e))
+
+    # 日志汇总
     ok = [k for k, v in results.items() if v >= 0]
     fail = [k for k, v in results.items() if v < 0]
-    msg = f"采集完成：{', '.join(ok)} 各 {[results[k] for k in ok]} 条" + (f"；失败：{', '.join(fail)}" if fail else "")
+    msg = f"采集完成：{', '.join(ok)} 各 {[results[k] for k in ok]} 条"
+    if fail:
+        msg += f"；失败：{', '.join(fail)}"
     db.write_log(msg, "INFO", "collector")
+    log.info(f"Collection done: {results}")
 
     # 每次采集后检测 burst session
     try:

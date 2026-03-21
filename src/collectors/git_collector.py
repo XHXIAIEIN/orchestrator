@@ -4,6 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 
 def find_git_repos(search_paths: list) -> list:
@@ -24,8 +25,17 @@ def find_git_repos(search_paths: list) -> list:
     return repos
 
 
-class GitCollector:
+class GitCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="git", display_name="Git", category="core",
+            env_vars=["GIT_REPOS_ROOT", "GIT_PATHS"], requires=["git"],
+            event_sources=["git"], default_enabled=True,
+        )
+
     def __init__(self, db: EventsDB, search_paths: list = None, days_back: int = 30):
+        super().__init__(db)
         self.db = db
         self.days_back = days_back
         if search_paths is None:

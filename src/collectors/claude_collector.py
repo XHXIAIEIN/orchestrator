@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 KEYWORD_PATTERNS = [
     r'\b(python|javascript|typescript|rust|go|java|bash|shell)\b',
@@ -35,8 +36,17 @@ def _get_text(content) -> str:
     return ""
 
 
-class ClaudeCollector:
+class ClaudeCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="claude", display_name="Claude", category="core",
+            env_vars=["CLAUDE_HOME"], requires=[],
+            event_sources=["claude"], default_enabled=True,
+        )
+
     def __init__(self, db: EventsDB, claude_home: str = None):
+        super().__init__(db)
         self.db = db
         if claude_home:
             self.claude_home = Path(claude_home)

@@ -9,13 +9,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 log = logging.getLogger(__name__)
 
 
-class CodebaseCollector:
+class CodebaseCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="codebase", display_name="Codebase", category="core",
+            env_vars=["ORCHESTRATOR_ROOT"], requires=["git"],
+            event_sources=["codebase"], default_enabled=True,
+        )
+
     def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
         self.db = db or EventsDB(db_path)
+        super().__init__(self.db)
         self.repo_path = os.environ.get(
             "ORCHESTRATOR_ROOT",
             str(Path(__file__).parent.parent.parent)

@@ -3,6 +3,7 @@ import re
 import time
 from pathlib import Path
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 
 def parse_vdf_simple(content: str) -> dict:
@@ -12,8 +13,17 @@ def parse_vdf_simple(content: str) -> dict:
     return result
 
 
-class SteamCollector:
+class SteamCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="steam", display_name="Steam", category="optional",
+            env_vars=["STEAM_PATH"], requires=["steam"],
+            event_sources=["steam"], default_enabled=False,
+        )
+
     def __init__(self, db: EventsDB, steam_path: str = None):
+        super().__init__(db)
         self.db = db
         if steam_path is None:
             import os

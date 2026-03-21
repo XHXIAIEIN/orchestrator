@@ -10,10 +10,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 
-class QQMusicCollector:
+class QQMusicCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="qqmusic", display_name="QQ Music", category="optional",
+            env_vars=["QQMUSIC_DATA_PATH"], requires=[],
+            event_sources=["qqmusic"], default_enabled=False,
+        )
+
     def __init__(self, db: EventsDB, qqmusic_path: str = None):
+        super().__init__(db)
         self.db = db
         home = Path.home()
         if qqmusic_path:

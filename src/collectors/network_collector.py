@@ -7,6 +7,7 @@ import subprocess
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from src.storage.events_db import EventsDB
+from src.collectors.base import ICollector, CollectorMeta
 
 # 常见端口 → 服务映射
 PORT_SERVICES = {
@@ -36,8 +37,17 @@ def categorize_process(name: str) -> str:
     return "other"
 
 
-class NetworkCollector:
+class NetworkCollector(ICollector):
+    @classmethod
+    def metadata(cls) -> CollectorMeta:
+        return CollectorMeta(
+            name="network", display_name="Network", category="core",
+            env_vars=[], requires=[],
+            event_sources=["network"], default_enabled=True,
+        )
+
     def __init__(self, db: EventsDB):
+        super().__init__(db)
         self.db = db
 
     def collect(self) -> int:
