@@ -24,7 +24,6 @@ class QQMusicCollector(ICollector):
 
     def __init__(self, db: EventsDB, qqmusic_path: str = None):
         super().__init__(db)
-        self.db = db
         home = Path.home()
         if qqmusic_path:
             self.data_path = Path(qqmusic_path)

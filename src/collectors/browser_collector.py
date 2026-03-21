@@ -37,7 +37,6 @@ class BrowserCollector(ICollector):
 
     def __init__(self, db: EventsDB, history_paths: dict = None):
         super().__init__(db)
-        self.db = db
         self.history_paths = history_paths if history_paths is not None else self._auto_detect()
 
     def _auto_detect(self) -> dict:

@@ -48,7 +48,6 @@ class NetworkCollector(ICollector):
 
     def __init__(self, db: EventsDB):
         super().__init__(db)
-        self.db = db
 
     def collect(self) -> int:
         """采集当前网络连接快照"""

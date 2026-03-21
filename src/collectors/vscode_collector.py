@@ -26,7 +26,6 @@ class VSCodeCollector(ICollector):
 
     def __init__(self, db: EventsDB, vscode_path: str = None):
         super().__init__(db)
-        self.db = db
         if vscode_path:
             self.vscode_path = Path(vscode_path)
         else:

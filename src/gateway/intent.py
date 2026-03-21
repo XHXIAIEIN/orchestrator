@@ -98,13 +98,12 @@ class IntentGateway:
         router = get_router()
         response = router.generate(prompt, task_type="scrutiny", max_tokens=512)
 
-        # 提取 JSON
+        # 提取 JSON（用正则避免多 code block 截断）
+        import re
         text = response.strip()
-        # 尝试找 JSON 块
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0].strip()
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0].strip()
+        m = re.search(r'```(?:json)?\s*(.*?)```', text, re.DOTALL)
+        if m:
+            text = m.group(1).strip()
 
         try:
             return json.loads(text)

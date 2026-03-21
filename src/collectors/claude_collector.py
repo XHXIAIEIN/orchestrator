@@ -47,7 +47,6 @@ class ClaudeCollector(ICollector):
 
     def __init__(self, db: EventsDB, claude_home: str = None):
         super().__init__(db)
-        self.db = db
         if claude_home:
             self.claude_home = Path(claude_home)
         else:

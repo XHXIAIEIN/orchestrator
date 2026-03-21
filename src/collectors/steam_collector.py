@@ -24,7 +24,6 @@ class SteamCollector(ICollector):
 
     def __init__(self, db: EventsDB, steam_path: str = None):
         super().__init__(db)
-        self.db = db
         if steam_path is None:
             import os
             env_path = os.environ.get("STEAM_PATH")

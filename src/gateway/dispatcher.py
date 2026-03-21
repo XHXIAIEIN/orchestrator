@@ -37,12 +37,14 @@ def dispatch_user_intent(intent: TaskIntent, db: EventsDB = None) -> dict:
     db = db or EventsDB(DB_PATH)
     spec = intent.to_governor_spec()
 
+    # source='auto' 让任务进入 pending → Governor 自动执行流程
+    # 如果用 'user_intent' 会变成 awaiting_approval，需要手动批准，不符合终端交互预期
     task_id = db.create_task(
         action=intent.action,
         reason=f"用户指令（终端）",
         priority=intent.priority,
         spec=spec,
-        source="user_intent",
+        source="auto",
     )
 
     db.write_log(
