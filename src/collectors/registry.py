@@ -36,6 +36,33 @@ def discover_collectors() -> dict[str, type[ICollector]]:
                     log.debug(f"registry: discovered {meta.name}")
                 except Exception as e:
                     log.warning(f"registry: {attr_name}.metadata() failed: {e}")
+
+    # 扫描 YAML 声明式采集器
+    yaml_dir = _COLLECTORS_DIR / "yaml"
+    if yaml_dir.exists():
+        try:
+            from src.collectors.yaml_runner import YAMLCollector
+            for yaml_file in sorted(yaml_dir.glob("*.yaml")):
+                try:
+                    meta = YAMLCollector.meta_from_yaml(yaml_file)
+                    # 创建一个绑定了 yaml_path 的工厂类
+                    # 这样 build_enabled_collectors 可以用 cls(db=db) 实例化
+                    bound_cls = type(
+                        f"YAML_{meta.name}",
+                        (YAMLCollector,),
+                        {
+                            "metadata": classmethod(lambda cls, m=meta: m),
+                            "_yaml_path_default": yaml_file,
+                            "__init__": lambda self, db, _path=yaml_file, **kw: YAMLCollector.__init__(self, db=db, yaml_path=_path, **kw),
+                        }
+                    )
+                    registry[meta.name] = bound_cls
+                    log.debug(f"registry: discovered YAML collector {meta.name} from {yaml_file.name}")
+                except Exception as e:
+                    log.warning(f"registry: failed to load YAML collector {yaml_file.name}: {e}")
+        except ImportError:
+            log.warning("registry: yaml_runner not available, skipping YAML collectors")
+
     return registry
 
 

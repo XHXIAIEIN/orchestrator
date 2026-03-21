@@ -1,0 +1,21 @@
+name: system_uptime
+display_name: 系统运行时间采集器
+category: experimental
+default_enabled: false
+
+source:
+  type: command
+  cmd: "python -c \"import time; print(time.time())\""
+  timeout: 5
+
+extract:
+  - field: timestamp
+    pattern: "([\\d.]+)"
+
+transform:
+  source: "system_uptime"
+  category: "system"
+  title: "System uptime check at ${timestamp}"
+  dedup_key: "uptime:${timestamp}"
+  score: 0.1
+  tags: ["system", "uptime"]
