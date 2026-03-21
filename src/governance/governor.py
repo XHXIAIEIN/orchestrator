@@ -35,6 +35,7 @@ from src.governance.blueprint import (
 )
 from src.gateway.routing import resolve_route, get_policy_config
 from src.governance.scratchpad import write_scratchpad, build_handoff_prompt
+from src.governance.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
 from src.governance.policy_advisor import observe_task_execution
 
 log = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ def _parse_scrutiny_verdict(text: str) -> tuple[bool, str]:
 
 
 class Governor:
-    MAX_REWORK = 1  # 最多打回重做 1 次，防止工部↔刑部死循环
+    MAX_REWORK = MAX_EVAL_ITERATIONS - 1  # EVAL 循环上限（3轮 EVAL = 2次返工）
 
     def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
         self.db = db or EventsDB(db_path)
@@ -639,13 +640,18 @@ class Governor:
         except Exception as e:
             log.warning(f"Governor: policy advisor observation failed for task #{task_id}: {e}")
 
-        # 部门协作
+        # 部门协作 — PLAN→ACT→EVAL 闭环
         if status == "done":
             if dept_key == "engineering":
                 task["output"] = output
                 self._dispatch_quality_review(task_id, task, task_cwd, project_name)
-            elif dept_key == "quality" and "VERDICT: FAIL" in output:
-                self._dispatch_rework(task_id, task, task_cwd, project_name, output)
+            elif dept_key == "quality":
+                eval_result = parse_eval_output(output)
+                log.info(f"Governor: EVAL task #{task_id}: passed={eval_result.passed} "
+                         f"critical={eval_result.critical_count} high={eval_result.high_count}")
+                if eval_result.should_rework:
+                    self._dispatch_rework(task_id, task, task_cwd, project_name, output,
+                                          eval_result=eval_result)
 
     def execute_task(self, task_id: int) -> dict:
         """Execute task by ID — routes to department based on spec.department.
@@ -826,8 +832,9 @@ class Governor:
         self.execute_task_async(review_id)
 
     def _dispatch_rework(self, review_task_id: int, review_task: dict,
-                         task_cwd: str, project_name: str, review_output: str):
-        """刑部验收失败，打回工部重做。追溯原始工部任务，携带刑部反馈。"""
+                         task_cwd: str, project_name: str, review_output: str,
+                         eval_result=None):
+        """刑部验收失败，打回工部重做。追溯原始工部任务，携带结构化反馈。"""
         parent_id = review_task.get("parent_task_id")
         if not parent_id:
             log.warning(f"Governor: review #{review_task_id} has no parent_task_id, skip rework")
@@ -839,28 +846,46 @@ class Governor:
         original_spec = original.get("spec", {})
         rework_count = original_spec.get("rework_count", 0)
         if rework_count >= self.MAX_REWORK:
+            # ── 达到上限，人类介入 ──
             self.db.write_log(
-                f"刑部验收任务 #{review_task_id} FAIL，但原任务 #{parent_id} 已重做 {rework_count} 次，不再打回",
+                f"EVAL 循环上限：任务 #{parent_id} 已返工 {rework_count} 次，仍有 "
+                f"CRITICAL={eval_result.critical_count if eval_result else '?'} "
+                f"HIGH={eval_result.high_count if eval_result else '?'} 问题。需要人类介入。",
                 "WARNING", "governor")
-            log.warning(f"Governor: task #{parent_id} hit max rework ({rework_count}), not dispatching")
+            log.warning(f"Governor: task #{parent_id} hit max rework ({rework_count}), escalating to human")
+            # 创建一个需要人工审批的任务
+            self.db.create_task(
+                action=f"人工介入：任务 #{parent_id} 经过 {rework_count} 轮返工仍未通过刑部验收",
+                reason=f"EVAL 循环达上限，CRITICAL={eval_result.critical_count if eval_result else '?'}",
+                priority="critical",
+                spec={"department": "engineering", "project": project_name, "cwd": task_cwd,
+                      "parent_task_id": parent_id, "escalation": True},
+                source="user_intent",  # awaiting_approval
+                parent_task_id=parent_id,
+            )
             return
 
-        issue_lines = [
-            l for l in review_output.splitlines()
-            if l.strip().startswith(('\U0001f534', '\U0001f7e1', '[CRITICAL]', '[BUG]', '[WARN]'))
-        ]
-        if issue_lines:
-            feedback = "\n".join(issue_lines[:10])
+        # ── 结构化反馈：优先用 EVAL 解析结果 ──
+        if eval_result:
+            feedback = format_eval_for_rework(eval_result, rework_count + 1)
         else:
-            feedback_lines = []
-            for line in review_output.splitlines():
-                if line.startswith("VERDICT:"):
-                    break
-                feedback_lines.append(line)
-            feedback = "\n".join(feedback_lines[-10:])
+            issue_lines = [
+                l for l in review_output.splitlines()
+                if l.strip().startswith(('\U0001f534', '\U0001f7e1', '[CRITICAL]', '[BUG]', '[WARN]'))
+            ]
+            if issue_lines:
+                feedback = "\n".join(issue_lines[:10])
+            else:
+                feedback_lines = []
+                for line in review_output.splitlines():
+                    if line.startswith("VERDICT:"):
+                        break
+                    feedback_lines.append(line)
+                feedback = "\n".join(feedback_lines[-10:])
 
         rework_spec = {
             "department": "engineering",
+            "intent": "code_fix",
             "project": project_name,
             "cwd": task_cwd,
             "problem": f"刑部验收任务 #{review_task_id} 驳回了工部任务 #{parent_id}，需要返工修复",
