@@ -84,8 +84,6 @@ class EventsDB:
                     step TEXT,
                     created_at TEXT NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id);
-
                 CREATE TABLE IF NOT EXISTS scheduler_status (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
@@ -140,6 +138,24 @@ class EventsDB:
                     data TEXT NOT NULL DEFAULT '{}',
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS run_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department TEXT NOT NULL,
+                    task_id INTEGER,
+                    mode TEXT NOT NULL DEFAULT 'auto',
+                    summary TEXT NOT NULL,
+                    files_changed TEXT NOT NULL DEFAULT '[]',
+                    commit_hash TEXT DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'done',
+                    duration_s INTEGER DEFAULT 0,
+                    notes TEXT DEFAULT '',
+                    hash TEXT NOT NULL,
+                    prev_hash TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_logs_dept ON run_logs(department);
+                CREATE INDEX IF NOT EXISTS idx_run_logs_created ON run_logs(created_at);
             """)
             # Migrations: add columns to existing databases
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
@@ -147,6 +163,16 @@ class EventsDB:
                     conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {typ}")
                 except sqlite3.OperationalError:
                     pass  # Column already exists
+            for col, typ in [("run_id", "TEXT"), ("step", "TEXT")]:
+                try:
+                    conn.execute(f"ALTER TABLE logs ADD COLUMN {col} {typ}")
+                except sqlite3.OperationalError:
+                    pass
+            # Deferred indexes (depend on migration columns)
+            try:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id)")
+            except sqlite3.OperationalError:
+                pass
 
     def get_tables(self) -> list:
         with self._connect() as conn:
@@ -471,3 +497,93 @@ class EventsDB:
                 (since_id, limit)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Run Logs (hash-chained) ──
+
+    def get_last_run_hash(self, department: str = None) -> str:
+        """获取最后一条 run_log 的 hash，用于构建哈希链。"""
+        with self._connect() as conn:
+            if department:
+                row = conn.execute(
+                    "SELECT hash FROM run_logs WHERE department = ? ORDER BY id DESC LIMIT 1",
+                    (department,)
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT hash FROM run_logs ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+        return row["hash"] if row else ""
+
+    def append_run_log(self, department: str, task_id: int, mode: str,
+                       summary: str, files_changed: list, commit_hash: str,
+                       status: str, duration_s: int, notes: str,
+                       entry_hash: str, prev_hash: str,
+                       created_at: str = None) -> int:
+        ts = created_at or datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO run_logs "
+                "(department, task_id, mode, summary, files_changed, commit_hash, "
+                " status, duration_s, notes, hash, prev_hash, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (department, task_id, mode, summary,
+                 json.dumps(files_changed, ensure_ascii=False),
+                 commit_hash, status, duration_s, notes,
+                 entry_hash, prev_hash, ts)
+            )
+            return cursor.lastrowid
+
+    def get_recent_run_logs(self, department: str, n: int = 5) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM run_logs WHERE department = ? "
+                "ORDER BY id DESC LIMIT ?",
+                (department, n)
+            ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            d["files_changed"] = json.loads(d["files_changed"])
+            result.append(d)
+        result.reverse()
+        return result
+
+    def get_all_run_logs(self, department: str = None,
+                         limit: int = 100) -> list:
+        with self._connect() as conn:
+            if department:
+                rows = conn.execute(
+                    "SELECT * FROM run_logs WHERE department = ? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (department, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM run_logs ORDER BY id DESC LIMIT ?",
+                    (limit,)
+                ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            d["files_changed"] = json.loads(d["files_changed"])
+            result.append(d)
+        return result
+
+    def get_department_run_stats(self) -> dict:
+        """返回每个部门的运行统计：总数、成功率、最近记录。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT department, COUNT(*) as total, "
+                "SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as success_count "
+                "FROM run_logs GROUP BY department"
+            ).fetchall()
+        stats = {}
+        for row in rows:
+            d = dict(row)
+            dept = d["department"]
+            stats[dept] = {
+                "total": d["total"],
+                "success_count": d["success_count"],
+                "success_rate": round(d["success_count"] / d["total"], 2) if d["total"] > 0 else 0,
+            }
+        return stats

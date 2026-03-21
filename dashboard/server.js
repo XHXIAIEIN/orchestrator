@@ -956,31 +956,47 @@ app.get('/api/pipeline/tasks', (req, res) => {
 
 app.get('/api/pipeline/departments', (req, res) => {
   const result = {};
+  const db = getDb();
+
   for (const dept of DEPT_KEYS) {
     const deptDir = path.join(DEPARTMENTS_DIR, dept);
-    const runLogPath = path.join(deptDir, 'run-log.jsonl');
     const suggestionsPath = path.join(deptDir, 'skill-suggestions.md');
 
-    let runs = [];
-    try {
-      const content = fs.readFileSync(runLogPath, 'utf8').trim();
-      if (content) {
-        runs = content.split('\n').filter(l => l.trim()).map(l => {
-          try { return JSON.parse(l); } catch { return null; }
-        }).filter(Boolean);
-      }
-    } catch { /* file doesn't exist */ }
+    let totalRuns = 0, doneRuns = 0, recentRuns = [];
 
-    const totalRuns = runs.length;
-    const recentRuns = runs.slice(-10).reverse().map(r => ({
-      ts: r.ts || null,
-      task_id: r.task_id || null,
-      mode: r.mode || null,
-      summary: r.summary || '',
-      status: r.status || 'unknown',
-    }));
+    if (db) {
+      try {
+        const statsRows = dbAll(db,
+          "SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count FROM run_logs WHERE department = ?",
+          [dept]);
+        if (statsRows.length) {
+          totalRuns = statsRows[0].total || 0;
+          doneRuns = statsRows[0].done_count || 0;
+        }
+        recentRuns = dbAll(db,
+          "SELECT created_at as ts, task_id, mode, summary, status FROM run_logs WHERE department = ? ORDER BY id DESC LIMIT 10",
+          [dept]);
+      } catch { /* table may not exist yet */ }
+    }
 
-    const doneRuns = runs.filter(r => r.status === 'done').length;
+    // Fallback: JSONL (for pre-migration data)
+    if (totalRuns === 0) {
+      try {
+        const content = fs.readFileSync(path.join(deptDir, 'run-log.jsonl'), 'utf8').trim();
+        if (content) {
+          const runs = content.split('\n').filter(l => l.trim()).map(l => {
+            try { return JSON.parse(l); } catch { return null; }
+          }).filter(Boolean);
+          totalRuns = runs.length;
+          doneRuns = runs.filter(r => r.status === 'done').length;
+          recentRuns = runs.slice(-10).reverse().map(r => ({
+            ts: r.ts || null, task_id: r.task_id || null,
+            mode: r.mode || null, summary: r.summary || '', status: r.status || 'unknown',
+          }));
+        }
+      } catch {}
+    }
+
     const successRate = totalRuns > 0 ? Math.round((doneRuns / totalRuns) * 100) / 100 : 0;
 
     let hasSuggestions = false;
@@ -993,6 +1009,8 @@ app.get('/api/pipeline/departments', (req, res) => {
       has_suggestions: hasSuggestions,
     };
   }
+
+  if (db) db.close();
   res.json(result);
 });
 
@@ -1203,12 +1221,23 @@ app.get('/api/departments/:name', (req, res) => {
     }
   } catch {}
 
-  // run-log (last 20)
+  // run-log (last 20) — DB-first, JSONL fallback
   let runs = [];
-  try {
-    const lines = fs.readFileSync(path.join(deptDir, 'run-log.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
-    runs = lines.slice(-20).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-  } catch {}
+  const rlDb = getDb();
+  if (rlDb) {
+    try {
+      runs = dbAll(rlDb,
+        "SELECT created_at as ts, task_id, mode, summary, status, duration_s, notes, commit_hash as commit, hash, prev_hash FROM run_logs WHERE department = ? ORDER BY id DESC LIMIT 20",
+        [dept]);
+    } catch {}
+    rlDb.close();
+  }
+  if (!runs.length) {
+    try {
+      const lines = fs.readFileSync(path.join(deptDir, 'run-log.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+      runs = lines.slice(-20).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    } catch {}
+  }
 
   // learned-skills
   let learnedSkills = '';
@@ -1240,6 +1269,21 @@ app.get('/api/departments/:name/runs', (req, res) => {
   const dept = req.params.name;
   if (!DEPT_KEYS.includes(dept)) return res.status(404).json({ error: 'unknown department' });
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+  // DB-first
+  const db = getDb();
+  if (db) {
+    try {
+      const runs = dbAll(db,
+        "SELECT created_at as ts, task_id, mode, summary, status, duration_s, notes, commit_hash as commit, hash, prev_hash FROM run_logs WHERE department = ? ORDER BY id DESC LIMIT ?",
+        [dept, limit]);
+      db.close();
+      return res.json(runs);
+    } catch {}
+    db.close();
+  }
+
+  // JSONL fallback
   try {
     const lines = fs.readFileSync(path.join(DEPARTMENTS_DIR, dept, 'run-log.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
     const runs = lines.slice(-limit).reverse().map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
