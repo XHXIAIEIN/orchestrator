@@ -120,6 +120,22 @@ def assemble_context(department: str, task: dict) -> str:
         except Exception:
             pass
 
+    # 4. Extended Memory（按需加载）
+    try:
+        from src.governance.memory_tier import (
+            resolve_tags_from_spec, load_extended_memory, format_extended_for_prompt,
+        )
+        spec = task.get("spec", {})
+        tags = resolve_tags_from_spec(spec)
+        if tags:
+            extended = load_extended_memory(tags)
+            if extended:
+                formatted = format_extended_for_prompt(extended)
+                if formatted:
+                    parts.append(formatted)
+    except Exception:
+        pass  # extended memory is optional
+
     if not parts:
         return ""
 
