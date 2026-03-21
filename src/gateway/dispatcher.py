@@ -1,8 +1,10 @@
 """
 Dispatcher — 终端对话直接调用 Governor 的桥梁。
 
-使用场景：在 Claude Code 终端里，Orchestrator 实例识别到用户想派活，
-直接调这个模块创建 Governor 任务。不走 Dashboard，不走 HTTP。
+三路分流 Gateway：
+  1. NO_TOKEN — 状态查询，直接返回 DB 数据，零 LLM 消耗
+  2. DIRECT   — 单轮问答，一次 LLM 调用
+  3. AGENT    — 多步任务，走完整 Governor → Agent SDK 流程
 
 用法：
     from src.gateway.dispatcher import dispatch_from_text
@@ -13,6 +15,8 @@ import logging
 from pathlib import Path
 
 from src.gateway.intent import IntentGateway, TaskIntent
+from src.gateway.classifier import classify, RequestTier
+from src.gateway.handlers import execute_no_token
 from src.storage.events_db import EventsDB
 
 log = logging.getLogger(__name__)
@@ -37,11 +41,9 @@ def dispatch_user_intent(intent: TaskIntent, db: EventsDB = None) -> dict:
     db = db or EventsDB(DB_PATH)
     spec = intent.to_governor_spec()
 
-    # source='auto' 让任务进入 pending → Governor 自动执行流程
-    # 如果用 'user_intent' 会变成 awaiting_approval，需要手动批准，不符合终端交互预期
     task_id = db.create_task(
         action=intent.action,
-        reason=f"用户指令（终端）",
+        reason="用户指令（终端）",
         priority=intent.priority,
         spec=spec,
         source="auto",
@@ -65,10 +67,28 @@ def dispatch_user_intent(intent: TaskIntent, db: EventsDB = None) -> dict:
 
 
 def dispatch_from_text(text: str, context: dict = None, db: EventsDB = None) -> dict:
-    """一步到位：自然语言 → 解析 → 派单。
+    """三路分流入口：自然语言 → 分类 → 路由。
 
-    终端对话里直接调用这个。
+    NO_TOKEN → 直接返回数据
+    DIRECT   → 单轮 LLM（TODO: 待实现，暂走 AGENT 路径）
+    AGENT    → IntentGateway 解析 → Governor 派单
     """
+    classified = classify(text)
+    log.info(f"dispatcher: classified '{text[:50]}' → {classified.tier.value} "
+             f"(handler={classified.handler}, confidence={classified.confidence})")
+
+    # ── NO_TOKEN: 零成本数据查询 ──
+    if classified.tier == RequestTier.NO_TOKEN:
+        result = execute_no_token(classified.handler, classified.extracted_params)
+        result["tier"] = "no_token"
+        return result
+
+    # ── DIRECT: 单轮 LLM（暂 fallthrough 到 AGENT） ──
+    # TODO Phase 2: 实现 direct handler，单次 LLM 调用无 agent 工具
+
+    # ── AGENT: 完整 Governor 流程 ──
     gateway = IntentGateway()
     intent = gateway.parse(text, context=context)
-    return dispatch_user_intent(intent, db=db)
+    result = dispatch_user_intent(intent, db=db)
+    result["tier"] = "agent"
+    return result
