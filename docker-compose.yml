@@ -24,6 +24,11 @@ services:
       - LANG=en_US.UTF-8
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - TTS_HOST=${TTS_HOST:-http://host.docker.internal:23715}
+      # Channel 层（可选，不设置则静默不启用）
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_MIN_PRIORITY=${TELEGRAM_MIN_PRIORITY:-HIGH}
+      - WECOM_WEBHOOK_URL=${WECOM_WEBHOOK_URL:-}
     volumes:
       # Source code — writable so claude edits persist to host
       - .:/orchestrator

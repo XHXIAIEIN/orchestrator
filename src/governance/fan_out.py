@@ -27,7 +27,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 class FanOutTarget:
     """输出目标。"""
     name: str
-    type: str          # "event_bus" | "webhook" | "file" | "db"
+    type: str          # "event_bus" | "webhook" | "file" | "db" | "channel"
     enabled: bool = True
     config: dict = field(default_factory=dict)
 
@@ -37,6 +37,7 @@ DEFAULT_TARGETS = [
     FanOutTarget("db", "db", True),
     FanOutTarget("event_bus", "event_bus", True),
     FanOutTarget("jsonl_backup", "file", True, {"dir": "departments/{department}"}),
+    FanOutTarget("channels", "channel", True),
 ]
 
 
@@ -59,6 +60,8 @@ class FanOutCollector:
                     self._emit_webhook(target, event_type, data)
                 elif target.type == "file":
                     self._emit_file(target, event_type, data, department)
+                elif target.type == "channel":
+                    self._emit_channel(event_type, data, department)
                 # db 由 run_logger 直接处理，这里不重复
             except Exception as e:
                 log.warning(f"fan_out: target '{target.name}' failed: {e}")
@@ -107,6 +110,15 @@ class FanOutCollector:
             urllib.request.urlopen(req, timeout=5)
         except urllib.error.URLError:
             pass  # webhook 不可达，静默失败
+
+    def _emit_channel(self, event_type: str, data: dict, department: str):
+        """推送到消息平台（Telegram、企业微信等）。"""
+        try:
+            from src.channels.registry import get_channel_registry
+            registry = get_channel_registry()
+            registry.broadcast_event(event_type, data, department)
+        except Exception as e:
+            log.debug(f"fan_out: channel unavailable: {e}")
 
     def _emit_file(self, target: FanOutTarget, event_type: str,
                     data: dict, department: str):

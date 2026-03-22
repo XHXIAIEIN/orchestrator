@@ -310,6 +310,20 @@ def start():
 
     scheduler.add_job(_weekly_audit, "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")
 
+    # 启动 Channel 层（Telegram polling 等）
+    try:
+        from src.channels.registry import get_channel_registry
+        channel_reg = get_channel_registry()
+        channel_reg.start_all()
+        channel_status = channel_reg.get_status()
+        if channel_status:
+            db.write_log(f"Channel 层已启动: {', '.join(channel_status.keys())}", "INFO", "channels")
+            log.info(f"Channels started: {list(channel_status.keys())}")
+        else:
+            log.info("No channels configured (set TELEGRAM_BOT_TOKEN or WECOM_WEBHOOK_URL)")
+    except Exception as e:
+        log.warning(f"Channel layer init failed (non-fatal): {e}")
+
     db.write_log("调度器已启动，采集：每小时，分析：每6小时，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00，策略建议：每日07:00，每周审计(兵部+吏部+礼部)：每周三10:00", "INFO", "scheduler")
 
     log.info("Scheduler started. Collectors: hourly. Analysis: every 6 hours. Debt scan: every 12 hours.")
@@ -325,6 +339,11 @@ def start():
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
+        try:
+            from src.channels.registry import get_channel_registry
+            get_channel_registry().stop_all()
+        except Exception:
+            pass
         log.info("Scheduler stopped.")
 
 
