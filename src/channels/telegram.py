@@ -173,6 +173,17 @@ class TelegramChannel(Channel):
             log.warning(f"telegram: rejected message from unauthorized chat_id={chat_id}")
             return
 
+        # 频率限制
+        now = time.time()
+        last = self._last_msg_time.get(chat_id, 0)
+        if now - last < self._RATE_LIMIT_WINDOW:
+            return  # 静默丢弃，不回复（防刷）
+        self._last_msg_time[chat_id] = now
+
+        # 消息长度截断
+        if len(text) > self._MAX_MSG_LEN:
+            text = text[:self._MAX_MSG_LEN]
+
         # 解析命令 vs 对话
         if text.startswith("/"):
             self._handle_command(chat_id, text)
@@ -276,11 +287,14 @@ class TelegramChannel(Channel):
         except Exception as e:
             self._send_text(chat_id, f"[ERR] 获取 channel 状态失败: {e}")
 
-    # ── 对话：Claude API ──
+    # ── 对话：Claude API + DB 持久化 + 摘要记忆 ──
 
-    # 每个 chat 保留最近 20 轮对话历史
-    _chat_history: dict[str, deque] = {}
-    _HISTORY_MAX = 20
+    _RECENT_TURNS = 20         # 最近 N 轮完整对话
+    _SUMMARIZE_THRESHOLD = 30  # 超过 N 条消息时触发摘要压缩
+    _MAX_MSG_LEN = 2000        # 单条消息最大长度（截断，防灌水）
+    _MAX_DB_MESSAGES = 500     # 单个 chat 最多存 500 条（硬上限，防撑爆 DB）
+    _RATE_LIMIT_WINDOW = 2     # 秒，同一 chat 的最小消息间隔（防刷）
+    _last_msg_time: dict[str, float] = {}  # chat_id → last message timestamp
 
     # SOUL 系统提示词（启动时加载一次）
     _system_prompt: Optional[str] = None
@@ -391,18 +405,23 @@ class TelegramChannel(Channel):
     def _do_chat(self, chat_id: str, text: str):
         """在后台线程执行对话（避免阻塞 polling）。"""
         try:
-            # 维护对话历史
-            if chat_id not in self._chat_history:
-                self._chat_history[chat_id] = deque(maxlen=self._HISTORY_MAX)
-            history = self._chat_history[chat_id]
-            history.append({"role": "user", "content": text})
-
+            import sqlite3
             from src.core.config import get_anthropic_client
+
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            db_path = str(repo_root / "data" / "events.db")
+
+            # 存入用户消息
+            self._save_message(db_path, chat_id, "user", text)
+
+            # 构建上下文：摘要记忆 + 最近对话
+            messages = self._build_context(db_path, chat_id)
+
             client = get_anthropic_client()
 
             # 对话循环：处理 tool use
-            messages = list(history)
-            max_rounds = 3  # 防止无限循环
+            max_rounds = 3
+            final_reply = ""
 
             for _ in range(max_rounds):
                 response = client.messages.create(
@@ -413,7 +432,6 @@ class TelegramChannel(Channel):
                     tools=self._TOOLS,
                 )
 
-                # 收集文本回复和 tool_use
                 text_parts = []
                 tool_calls = []
                 for block in response.content:
@@ -422,28 +440,17 @@ class TelegramChannel(Channel):
                     elif block.type == "tool_use":
                         tool_calls.append(block)
 
-                # 如果有文本回复，先发给用户
                 if text_parts:
                     reply = "\n".join(text_parts)
                     if len(reply) > 4000:
                         reply = reply[:4000] + "\n\n(...截断)"
                     self._send_text(chat_id, reply)
+                    final_reply = reply
 
-                # 如果没有 tool call，对话结束
                 if not tool_calls:
-                    # 记录到历史
-                    assistant_content = []
-                    for block in response.content:
-                        if block.type == "text":
-                            assistant_content.append({"type": "text", "text": block.text})
-                    if assistant_content:
-                        history.append({"role": "assistant", "content": assistant_content[0]["text"] if len(assistant_content) == 1 else assistant_content})
                     break
 
-                # 执行 tool calls
-                # 把 assistant 消息（含 tool_use）加入 messages
                 messages.append({"role": "assistant", "content": response.content})
-
                 tool_results = []
                 for tc in tool_calls:
                     result = self._execute_tool(tc.name, tc.input)
@@ -452,16 +459,191 @@ class TelegramChannel(Channel):
                         "tool_use_id": tc.id,
                         "content": result,
                     })
-
                 messages.append({"role": "user", "content": tool_results})
 
-            else:
-                # max_rounds 用完
-                history.append({"role": "assistant", "content": "(任务已派发)"})
+            # 存入 assistant 回复
+            if final_reply:
+                self._save_message(db_path, chat_id, "assistant", final_reply)
+
+            # 检查是否需要摘要压缩
+            self._maybe_summarize(db_path, chat_id, client)
 
         except Exception as e:
             log.error(f"telegram: chat failed: {e}")
             self._send_text(chat_id, f"[ERR] 对话失败: {e}")
+
+    # ── DB 持久化 ──
+
+    @classmethod
+    def _save_message(cls, db_path: str, chat_id: str, role: str, content: str):
+        """存一条消息到 DB。含硬上限保护。"""
+        import sqlite3
+        from datetime import datetime, timezone
+
+        # 内容截断（双保险，_handle_update 已截断 user，这里防 assistant）
+        content = content[:4000]
+
+        conn = sqlite3.connect(db_path)
+
+        # 硬上限：超过 _MAX_DB_MESSAGES 则删最旧的
+        count = conn.execute(
+            "SELECT COUNT(*) FROM chat_messages WHERE chat_id = ?", (chat_id,)
+        ).fetchone()[0]
+        if count >= cls._MAX_DB_MESSAGES:
+            excess = count - cls._MAX_DB_MESSAGES + 10  # 多删 10 条留余量
+            conn.execute(
+                "DELETE FROM chat_messages WHERE id IN "
+                "(SELECT id FROM chat_messages WHERE chat_id = ? ORDER BY id ASC LIMIT ?)",
+                (chat_id, excess),
+            )
+
+        conn.execute(
+            "INSERT INTO chat_messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+            (chat_id, role, content, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def _load_recent(db_path: str, chat_id: str, limit: int = 20) -> list[dict]:
+        """从 DB 加载最近 N 轮对话。"""
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT role, content FROM chat_messages "
+            "WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
+            (chat_id, limit),
+        ).fetchall()
+        conn.close()
+        # DB 返回的是倒序，翻转回来
+        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+
+    @staticmethod
+    def _load_memory(db_path: str, chat_id: str) -> str:
+        """加载摘要记忆。"""
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT summary FROM chat_memory WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+        conn.close()
+        return row[0] if row else ""
+
+    @staticmethod
+    def _save_memory(db_path: str, chat_id: str, summary: str):
+        """保存摘要记忆。"""
+        import sqlite3
+        from datetime import datetime, timezone
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO chat_memory (chat_id, summary, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET summary = ?, updated_at = ?",
+            (chat_id, summary, datetime.now(timezone.utc).isoformat(),
+             summary, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def _count_messages(db_path: str, chat_id: str) -> int:
+        """统计消息总数。"""
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM chat_messages WHERE chat_id = ?", (chat_id,)
+        ).fetchone()[0]
+        conn.close()
+        return count
+
+    def _build_context(self, db_path: str, chat_id: str) -> list[dict]:
+        """构建对话上下文：摘要记忆 + 最近消息。"""
+        messages = []
+
+        # 加载摘要记忆，作为第一条 user 消息注入
+        memory = self._load_memory(db_path, chat_id)
+        if memory:
+            messages.append({
+                "role": "user",
+                "content": f"[系统：以下是之前对话的摘要记忆，帮你回忆上下文]\n{memory}",
+            })
+            messages.append({
+                "role": "assistant",
+                "content": "明白，我记得这些。继续。",
+            })
+
+        # 加载最近对话
+        recent = self._load_recent(db_path, chat_id, self._RECENT_TURNS)
+        messages.extend(recent)
+
+        return messages
+
+    def _maybe_summarize(self, db_path: str, chat_id: str, client):
+        """消息数超过阈值时，压缩旧消息为摘要记忆。"""
+        total = self._count_messages(db_path, chat_id)
+        if total <= self._SUMMARIZE_THRESHOLD:
+            return
+
+        # 加载所有超出最近 N 条的旧消息
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT role, content FROM chat_messages "
+            "WHERE chat_id = ? ORDER BY id ASC",
+            (chat_id,),
+        ).fetchall()
+        conn.close()
+
+        # 保留最近 _RECENT_TURNS 条，压缩之前的
+        old_messages = rows[:-self._RECENT_TURNS]
+        if len(old_messages) < 10:
+            return  # 不值得压缩
+
+        # 加载现有记忆
+        existing_memory = self._load_memory(db_path, chat_id)
+
+        # 构建压缩 prompt
+        conversation_text = "\n".join(
+            f"[{r[0]}] {r[1][:200]}" for r in old_messages
+        )
+
+        compress_prompt = (
+            "你是 Orchestrator 的记忆管理器。把以下对话历史压缩成简洁的摘要记忆，"
+            "保留关键信息：主人的偏好、做过的决定、提到的项目/问题、重要上下文。"
+            "丢弃闲聊和重复内容。用中文，不超过 500 字。\n\n"
+        )
+        if existing_memory:
+            compress_prompt += f"现有记忆：\n{existing_memory}\n\n请将以下新对话合并进现有记忆：\n\n"
+        compress_prompt += conversation_text
+
+        try:
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=600,
+                messages=[{"role": "user", "content": compress_prompt}],
+            )
+            new_memory = next(
+                (b.text for b in response.content if b.type == "text"), ""
+            ).strip()
+
+            if new_memory:
+                self._save_memory(db_path, chat_id, new_memory)
+
+                # 删除已压缩的旧消息
+                import sqlite3
+                conn = sqlite3.connect(db_path)
+                # 保留最近 _RECENT_TURNS 条
+                conn.execute(
+                    "DELETE FROM chat_messages WHERE chat_id = ? AND id NOT IN "
+                    "(SELECT id FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?)",
+                    (chat_id, chat_id, self._RECENT_TURNS),
+                )
+                conn.commit()
+                conn.close()
+
+                log.info(f"telegram: summarized {len(old_messages)} messages for chat {chat_id}")
+
+        except Exception as e:
+            log.warning(f"telegram: summarize failed: {e}")
 
     def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
         """执行 tool call，返回结果字符串。"""

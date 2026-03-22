@@ -200,6 +200,21 @@ class EventsDB:
                     embedding TEXT,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_chat_msg_chat ON chat_messages(chat_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS chat_memory (
+                    chat_id TEXT PRIMARY KEY,
+                    summary TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                );
             """)
             # Migrations: add columns to existing databases
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
