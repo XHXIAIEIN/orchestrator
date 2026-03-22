@@ -66,14 +66,25 @@ class TelegramChannel(Channel):
         return self._send_text(self.chat_id, message.text)
 
     def _send_text(self, chat_id: str, text: str) -> bool:
-        """发送文本消息。"""
-        payload = json.dumps({
+        """发送文本消息。Markdown 失败自动 fallback 到纯文本。"""
+        # 先尝试 Markdown
+        ok = self._send_raw(chat_id, text, parse_mode="Markdown")
+        if not ok:
+            # Markdown 解析失败，去掉格式重发
+            ok = self._send_raw(chat_id, text, parse_mode=None)
+        return ok
+
+    def _send_raw(self, chat_id: str, text: str, parse_mode: str = None) -> bool:
+        """底层发送。"""
+        body = {
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": "Markdown",
             "disable_web_page_preview": True,
-        }).encode("utf-8")
+        }
+        if parse_mode:
+            body["parse_mode"] = parse_mode
 
+        payload = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
             f"{self._base_url}/sendMessage",
             data=payload,
