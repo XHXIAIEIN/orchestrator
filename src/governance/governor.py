@@ -907,11 +907,15 @@ class Governor:
         output = "(no output)"
         status = "failed"
         try:
-            run_fn = self._run_agent_session(
-                task_id, prompt, dept_prompt, allowed_tools, task_cwd,
-                max_turns=task_max_turns,
-            )
-            output = anyio.from_thread.run(run_fn) if _in_async_context() else anyio.run(run_fn)
+            async def _agent_coro():
+                return await self._run_agent_session(
+                    task_id, prompt, dept_prompt, allowed_tools, task_cwd,
+                    max_turns=task_max_turns,
+                )
+            if _in_async_context():
+                output = anyio.from_thread.run(_agent_coro)
+            else:
+                output = anyio.run(_agent_coro)
             output = output[:2000] if output else "(no output)"
             status = "done" if output and output != "(no output)" else "failed"
         except TimeoutError:
