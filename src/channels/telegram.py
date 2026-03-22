@@ -212,7 +212,14 @@ class TelegramChannel(Channel):
         if text.startswith("/"):
             self._handle_command(chat_id, text)
         else:
-            self._handle_chat(chat_id, text)
+            # 长消息 → 存文件，传路径
+            if len(text) > self._LONG_MSG_THRESHOLD:
+                file_path, char_count = self._save_to_inbox(text)
+                preview = text[:80].replace("\n", " ")
+                ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
+                self._handle_chat(chat_id, ref, original_text=text)
+            else:
+                self._handle_chat(chat_id, text)
 
     def _handle_command(self, chat_id: str, text: str):
         """解析并执行命令。"""
@@ -318,6 +325,7 @@ class TelegramChannel(Channel):
     _MAX_DB_MESSAGES = 500     # 单个 chat 最多存 500 条（硬上限，防撑爆 DB）
     _RATE_LIMIT_WINDOW = 2     # 秒，同一 chat 的最小消息间隔（防刷）
     _TG_MSG_LIMIT = 4096       # Telegram 单条消息字符上限
+    _LONG_MSG_THRESHOLD = 500  # 超过此长度的消息存文件，LLM 拿路径
     _last_msg_time: dict[str, float] = {}  # chat_id → last message timestamp
 
     # SOUL 系统提示词（启动时加载一次）
@@ -414,19 +422,64 @@ class TelegramChannel(Channel):
                 "required": ["query_type"],
             },
         },
+        {
+            "name": "read_file",
+            "description": (
+                "读取本地文件内容。用于读取用户发送的长消息（已保存为文件）。"
+                "路径通常类似 /orchestrator/tmp/chat-inbox/xxx.txt。"
+                "也可以读取项目中的任何文件来回答用户问题。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "文件路径",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "最多读取的字符数，默认 8000",
+                        "default": 8000,
+                    },
+                },
+                "required": ["path"],
+            },
+        },
     ]
 
-    def _handle_chat(self, chat_id: str, text: str):
-        """处理非命令消息 — 调 Claude API 对话（支持 tool use 派发任务）。"""
+    @staticmethod
+    def _save_to_inbox(text: str) -> tuple[str, int]:
+        """长消息存到本地文件，返回 (路径, 字符数)。"""
+        import hashlib
+        from datetime import datetime, timezone
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        inbox_dir = repo_root / "tmp" / "chat-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        short_hash = hashlib.md5(text.encode()).hexdigest()[:6]
+        filename = f"{ts}-{short_hash}.txt"
+        file_path = inbox_dir / filename
+
+        file_path.write_text(text, encoding="utf-8")
+
+        # 返回容器内路径（posix 格式，Docker mount 下）
+        return f"/orchestrator/tmp/chat-inbox/{filename}", len(text)
+
+    def _handle_chat(self, chat_id: str, text: str, original_text: str = ""):
+        """处理非命令消息 — 调 Claude API 对话（支持 tool use 派发任务）。
+        text: 给 LLM 看的内容（短消息=原文，长消息=路径引用）
+        original_text: 长消息时的原文（存 DB 用）
+        """
         thread = threading.Thread(
             target=self._do_chat,
-            args=(chat_id, text),
+            args=(chat_id, text, original_text),
             name="tg-chat",
             daemon=True,
         )
         thread.start()
 
-    def _do_chat(self, chat_id: str, text: str):
+    def _do_chat(self, chat_id: str, text: str, original_text: str = ""):
         """在后台线程执行对话（避免阻塞 polling）。"""
         try:
             import sqlite3
@@ -435,7 +488,7 @@ class TelegramChannel(Channel):
             repo_root = Path(__file__).resolve().parent.parent.parent
             db_path = str(repo_root / "data" / "events.db")
 
-            # 存入用户消息
+            # 存入用户消息（DB 存 LLM 看到的引用，不存大段原文）
             self._save_message(db_path, chat_id, "user", text)
 
             # 构建上下文：摘要记忆 + 最近对话
@@ -670,7 +723,47 @@ class TelegramChannel(Channel):
             return self._tool_dispatch_task(tool_input)
         elif tool_name == "query_status":
             return self._tool_query_status(tool_input)
+        elif tool_name == "read_file":
+            return self._tool_read_file(tool_input)
         return f"未知工具: {tool_name}"
+
+    @staticmethod
+    def _tool_read_file(params: dict) -> str:
+        """读取本地文件。"""
+        file_path = params.get("path", "")
+        max_chars = params.get("max_chars", 8000)
+
+        if not file_path:
+            return "path 不能为空"
+
+        # 安全检查：只允许读 /orchestrator 下的文件
+        from pathlib import PurePosixPath
+        normalized = str(PurePosixPath(file_path))
+        if not normalized.startswith("/orchestrator"):
+            return f"安全限制：只能读取 /orchestrator 下的文件"
+
+        # Docker 内路径直接读，本地开发时映射回 repo root
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        # 统一为 posix 风格比较
+        clean_path = file_path.replace("\\", "/")
+        if clean_path.startswith("/orchestrator"):
+            local_path = repo_root / clean_path[len("/orchestrator/"):]
+        else:
+            local_path = Path(file_path)
+
+        try:
+            if not local_path.exists():
+                return f"文件不存在: {file_path}"
+            if local_path.stat().st_size > 1_000_000:  # 1MB 硬上限
+                return f"文件过大 ({local_path.stat().st_size} bytes)，拒绝读取"
+
+            content = local_path.read_text(encoding="utf-8", errors="replace")
+            if len(content) > max_chars:
+                return content[:max_chars] + f"\n\n[...已截取前 {max_chars} 字符，共 {len(content)} 字符]"
+            return content
+
+        except Exception as e:
+            return f"读取失败: {e}"
 
     def _tool_dispatch_task(self, params: dict) -> str:
         """派发任务到 Governor。"""
