@@ -482,8 +482,9 @@ class TelegramChannel(Channel):
 
             db_path = _DEFAULT_DB
 
-            # 存入用户消息（DB 存 LLM 看到的引用，不存大段原文）
-            self._save_message(db_path, chat_id, "user", text)
+            # DB 存原文，LLM 拿的 text 可能是文件引用（长消息时）
+            db_content = original_text if original_text else text
+            self._save_message(db_path, chat_id, "user", db_content)
 
             # 构建上下文：摘要记忆 + 最近对话
             messages = self._build_context(db_path, chat_id)
