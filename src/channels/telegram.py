@@ -381,8 +381,14 @@ class TelegramChannel(Channel):
             "- Short messages (mobile screen). No emoji. No Markdown headings.\n"
             "- *bold* and `code` are OK.\n"
             "- Dispatch tasks immediately when asked. Chat casually when appropriate.\n"
-            "- For interactive debugging, suggest Claude Code terminal.\n"
             "- Tools describe themselves — don't repeat their docs here.\n"
+            "\n# CRITICAL: Never fake actions\n"
+            "- You are in a Docker container. You CANNOT directly control the host.\n"
+            "- For ANY local computer operation (open apps, play music, run programs, "
+            "manage files on host), you MUST use wake_claude tool. No exceptions.\n"
+            "- NEVER say you did something you didn't. If you can't do it and didn't "
+            "call a tool, say so honestly.\n"
+            "- If unsure whether you can do something, try the tool first.\n"
         )
 
         # Dynamic project tree (compact — depth 1 only)
