@@ -493,10 +493,11 @@ class TelegramChannel(Channel):
         {
             "name": "wake_claude",
             "description": (
-                "Wake up Claude Code on the host machine for tasks you can't handle: "
-                "writing/modifying code, complex debugging, multi-file refactoring, "
-                "git operations, or anything requiring full tool access. "
-                "A terminal will open automatically on the host. Results push back to Telegram."
+                "Wake up Claude Code on the host machine. Use for ANYTHING that "
+                "needs the local computer: open apps (QQ Music, browsers, etc.), "
+                "write/modify code, run shell commands, git operations, complex "
+                "debugging, file management. Claude Code has full access to the "
+                "host machine. Results push back to Telegram."
             ),
             "input_schema": {
                 "type": "object",
