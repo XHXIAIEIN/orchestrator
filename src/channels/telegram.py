@@ -66,13 +66,41 @@ class TelegramChannel(Channel):
         return self._send_text(self.chat_id, message.text)
 
     def _send_text(self, chat_id: str, text: str) -> bool:
-        """发送文本消息。Markdown 失败自动 fallback 到纯文本。"""
-        # 先尝试 Markdown
-        ok = self._send_raw(chat_id, text, parse_mode="Markdown")
-        if not ok:
-            # Markdown 解析失败，去掉格式重发
-            ok = self._send_raw(chat_id, text, parse_mode=None)
+        """发送文本消息。超长自动分段，Markdown 失败 fallback 纯文本。"""
+        chunks = self._split_message(text)
+        ok = True
+        for chunk in chunks:
+            sent = self._send_raw(chat_id, chunk, parse_mode="Markdown")
+            if not sent:
+                sent = self._send_raw(chat_id, chunk, parse_mode=None)
+            ok = ok and sent
         return ok
+
+    def _split_message(self, text: str) -> list[str]:
+        """按 Telegram 限制分段。优先在换行符处断开。"""
+        limit = self._TG_MSG_LIMIT
+        if len(text) <= limit:
+            return [text]
+
+        chunks = []
+        while text:
+            if len(text) <= limit:
+                chunks.append(text)
+                break
+
+            # 在 limit 以内找最后一个换行符
+            split_at = text.rfind("\n", 0, limit)
+            if split_at <= 0:
+                # 没有换行符，找最后一个空格
+                split_at = text.rfind(" ", 0, limit)
+            if split_at <= 0:
+                # 实在没有分割点，硬切
+                split_at = limit
+
+            chunks.append(text[:split_at])
+            text = text[split_at:].lstrip("\n")
+
+        return chunks
 
     def _send_raw(self, chat_id: str, text: str, parse_mode: str = None) -> bool:
         """底层发送。"""
@@ -179,10 +207,6 @@ class TelegramChannel(Channel):
         if now - last < self._RATE_LIMIT_WINDOW:
             return  # 静默丢弃，不回复（防刷）
         self._last_msg_time[chat_id] = now
-
-        # 消息长度截断
-        if len(text) > self._MAX_MSG_LEN:
-            text = text[:self._MAX_MSG_LEN]
 
         # 解析命令 vs 对话
         if text.startswith("/"):
@@ -291,9 +315,9 @@ class TelegramChannel(Channel):
 
     _RECENT_TURNS = 20         # 最近 N 轮完整对话
     _SUMMARIZE_THRESHOLD = 30  # 超过 N 条消息时触发摘要压缩
-    _MAX_MSG_LEN = 2000        # 单条消息最大长度（截断，防灌水）
     _MAX_DB_MESSAGES = 500     # 单个 chat 最多存 500 条（硬上限，防撑爆 DB）
     _RATE_LIMIT_WINDOW = 2     # 秒，同一 chat 的最小消息间隔（防刷）
+    _TG_MSG_LIMIT = 4096       # Telegram 单条消息字符上限
     _last_msg_time: dict[str, float] = {}  # chat_id → last message timestamp
 
     # SOUL 系统提示词（启动时加载一次）
@@ -442,8 +466,6 @@ class TelegramChannel(Channel):
 
                 if text_parts:
                     reply = "\n".join(text_parts)
-                    if len(reply) > 4000:
-                        reply = reply[:4000] + "\n\n(...截断)"
                     self._send_text(chat_id, reply)
                     final_reply = reply
 
@@ -479,9 +501,6 @@ class TelegramChannel(Channel):
         """存一条消息到 DB。含硬上限保护。"""
         import sqlite3
         from datetime import datetime, timezone
-
-        # 内容截断（双保险，_handle_update 已截断 user，这里防 assistant）
-        content = content[:4000]
 
         conn = sqlite3.connect(db_path)
 
