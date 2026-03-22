@@ -309,14 +309,66 @@ class TelegramChannel(Channel):
             "- 不要用 emoji\n"
             "- 不要用 Markdown 标题（# ##），Telegram 不渲染\n"
             "- 可以用 *加粗* 和 `代码`\n"
-            "- 如果主人问系统状态相关的，提醒他用 /status 或 /tasks 命令\n"
-            "- 如果主人想跑任务，提醒他用 /run <scenario>\n"
-            "- 你没有能力直接执行代码或修改文件，但可以建议主人回到 Claude Code 终端操作\n"
+            "- 你可以通过 dispatch_task 工具派发任务给 Orchestrator 的 Governor 执行\n"
+            "- Governor 管六个部门：工部(engineering)、礼部(operations)、中书省(protocol)、兵部(security)、刑部(quality)、吏部(personnel)\n"
+            "- 预定义场景：full_audit（全面审计）、system_health（健康检查）、deep_scan（深度扫描）\n"
+            "- 主人说想做什么就直接派，不用问确认。执行结果会自动推送回来\n"
+            "- 纯闲聊就正常聊，别什么都往任务上靠\n"
+            "- 如果主人要求的操作超出你能力范围（比如需要交互式调试），建议他回 Claude Code 终端\n"
         )
         return cls._system_prompt
 
+    # ── Tool 定义：让 Haiku 能派发任务 ──
+
+    _TOOLS = [
+        {
+            "name": "dispatch_task",
+            "description": (
+                "派发任务给 Orchestrator Governor 执行。可以是预定义场景"
+                "（full_audit / system_health / deep_scan），也可以是自由描述的任务。"
+                "任务会经过完整的管线：preflight -> scrutiny -> execute -> verify gate。"
+                "执行结果会自动推送回 Telegram。"
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "任务描述或场景名称。如 'full_audit' 或 '检查 Steam 采集器为什么没数据'",
+                    },
+                    "department": {
+                        "type": "string",
+                        "description": "目标部门：engineering / operations / protocol / security / quality / personnel。不确定就留空让 Governor 自动路由。",
+                        "default": "",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "default": "medium",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+        {
+            "name": "query_status",
+            "description": "查询 Orchestrator 系统状态：健康检查、最近任务、采集器状态等。",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query_type": {
+                        "type": "string",
+                        "enum": ["health", "tasks", "collectors", "channels"],
+                        "description": "查询类型",
+                    },
+                },
+                "required": ["query_type"],
+            },
+        },
+    ]
+
     def _handle_chat(self, chat_id: str, text: str):
-        """处理非命令消息 — 调 Claude API 对话。"""
+        """处理非命令消息 — 调 Claude API 对话（支持 tool use 派发任务）。"""
         thread = threading.Thread(
             target=self._do_chat,
             args=(chat_id, text),
@@ -334,33 +386,196 @@ class TelegramChannel(Channel):
             history = self._chat_history[chat_id]
             history.append({"role": "user", "content": text})
 
-            # 调 Claude API
             from src.core.config import get_anthropic_client
             client = get_anthropic_client()
 
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=1024,
-                system=self._get_system_prompt(),
-                messages=list(history),
-            )
+            # 对话循环：处理 tool use
+            messages = list(history)
+            max_rounds = 3  # 防止无限循环
 
-            reply = next(
-                (b.text for b in response.content if b.type == "text"), ""
-            ).strip()
+            for _ in range(max_rounds):
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=1024,
+                    system=self._get_system_prompt(),
+                    messages=messages,
+                    tools=self._TOOLS,
+                )
 
-            if not reply:
-                reply = "...（管家沉默了一下，可能在想怎么吐槽你）"
+                # 收集文本回复和 tool_use
+                text_parts = []
+                tool_calls = []
+                for block in response.content:
+                    if block.type == "text" and block.text.strip():
+                        text_parts.append(block.text.strip())
+                    elif block.type == "tool_use":
+                        tool_calls.append(block)
 
-            # 记录 assistant 回复到历史
-            history.append({"role": "assistant", "content": reply})
+                # 如果有文本回复，先发给用户
+                if text_parts:
+                    reply = "\n".join(text_parts)
+                    if len(reply) > 4000:
+                        reply = reply[:4000] + "\n\n(...截断)"
+                    self._send_text(chat_id, reply)
 
-            # Telegram 消息长度限制 4096
-            if len(reply) > 4000:
-                reply = reply[:4000] + "\n\n(...截断了，话太多)"
+                # 如果没有 tool call，对话结束
+                if not tool_calls:
+                    # 记录到历史
+                    assistant_content = []
+                    for block in response.content:
+                        if block.type == "text":
+                            assistant_content.append({"type": "text", "text": block.text})
+                    if assistant_content:
+                        history.append({"role": "assistant", "content": assistant_content[0]["text"] if len(assistant_content) == 1 else assistant_content})
+                    break
 
-            self._send_text(chat_id, reply)
+                # 执行 tool calls
+                # 把 assistant 消息（含 tool_use）加入 messages
+                messages.append({"role": "assistant", "content": response.content})
+
+                tool_results = []
+                for tc in tool_calls:
+                    result = self._execute_tool(tc.name, tc.input)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result,
+                    })
+
+                messages.append({"role": "user", "content": tool_results})
+
+            else:
+                # max_rounds 用完
+                history.append({"role": "assistant", "content": "(任务已派发)"})
 
         except Exception as e:
             log.error(f"telegram: chat failed: {e}")
             self._send_text(chat_id, f"[ERR] 对话失败: {e}")
+
+    def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
+        """执行 tool call，返回结果字符串。"""
+        if tool_name == "dispatch_task":
+            return self._tool_dispatch_task(tool_input)
+        elif tool_name == "query_status":
+            return self._tool_query_status(tool_input)
+        return f"未知工具: {tool_name}"
+
+    def _tool_dispatch_task(self, params: dict) -> str:
+        """派发任务到 Governor。"""
+        action = params.get("action", "")
+        department = params.get("department", "")
+        priority = params.get("priority", "medium")
+
+        if not action:
+            return "action 不能为空"
+
+        try:
+            from src.core.event_bus import get_event_bus, Event, Priority as EvPriority
+
+            # 先尝试作为预定义场景
+            predefined = {"full_audit", "system_health", "deep_scan"}
+            if action in predefined:
+                bus = get_event_bus()
+                bus.publish(Event(
+                    event_type="channel.command.run",
+                    payload={"scenario": action, "source": "telegram_chat"},
+                    priority=EvPriority.HIGH,
+                    source="channel:telegram:chat",
+                ))
+                return f"已提交预定义场景: {action}"
+
+            # 自由任务 → 创建任务给 Governor
+            from src.storage.events_db import EventsDB
+            db = EventsDB()
+            task_id = db.create_task(
+                action=action,
+                reason="Telegram 对话触发",
+                priority=priority,
+                spec={
+                    "summary": action,
+                    "department": department,
+                    "problem": action,
+                    "source": "telegram_chat",
+                },
+                source="channel",
+            )
+
+            # 异步执行
+            import threading
+            def _run():
+                try:
+                    from src.governance.governor import Governor
+                    gov = Governor(db=EventsDB())
+                    gov.execute_task(task_id)
+                except Exception as e:
+                    log.error(f"telegram: task {task_id} execution failed: {e}")
+
+            threading.Thread(target=_run, name=f"tg-task-{task_id}", daemon=True).start()
+
+            return f"任务已创建: #{task_id}（{action[:50]}）。执行中，结果会自动推送。"
+
+        except Exception as e:
+            return f"派发失败: {e}"
+
+    def _tool_query_status(self, params: dict) -> str:
+        """查询系统状态。"""
+        query_type = params.get("query_type", "health")
+
+        try:
+            if query_type == "health":
+                from src.core.health import HealthCheck
+                hc = HealthCheck()
+                report = hc.run()
+                lines = [f"整体: {'正常' if report.get('healthy') else '异常'}"]
+                for name, data in report.get("checks", {}).items():
+                    status = "OK" if data.get("ok") else "ERR"
+                    lines.append(f"  [{status}] {name}")
+                return "\n".join(lines)
+
+            elif query_type == "tasks":
+                from src.storage.events_db import EventsDB
+                db = EventsDB()
+                tasks = db.query(
+                    "SELECT task_id, department, status, summary "
+                    "FROM tasks ORDER BY created_at DESC LIMIT 5"
+                )
+                if not tasks:
+                    return "暂无任务记录"
+                lines = []
+                for t in tasks:
+                    lines.append(f"[{t[2]}] #{t[0][:8]} [{t[1] or '?'}] {(t[3] or '')[:50]}")
+                return "\n".join(lines)
+
+            elif query_type == "collectors":
+                from src.storage.events_db import EventsDB
+                db = EventsDB()
+                rows = db.query(
+                    "SELECT name, data FROM collector_reputation ORDER BY name"
+                )
+                if not rows:
+                    return "无采集器数据"
+                lines = []
+                for r in rows:
+                    try:
+                        d = json.loads(r[1])
+                        lines.append(f"[{d.get('status','?')}] {d.get('name','?')}: {d.get('last_count',0)} events")
+                    except Exception:
+                        lines.append(f"{r[0]}: parse error")
+                return "\n".join(lines)
+
+            elif query_type == "channels":
+                from src.channels.registry import get_channel_registry
+                reg = get_channel_registry()
+                status = reg.get_status()
+                if not status:
+                    return "无 channel 配置"
+                lines = []
+                for name, info in status.items():
+                    tag = "[ON]" if info["enabled"] else "[OFF]"
+                    lines.append(f"{tag} {name} ({info['type']})")
+                return "\n".join(lines)
+
+            return f"未知查询类型: {query_type}"
+
+        except Exception as e:
+            return f"查询失败: {e}"
