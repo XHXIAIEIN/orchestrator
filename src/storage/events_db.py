@@ -11,8 +11,11 @@ _ALLOWED_TASK_COLUMNS = {
 }
 
 
+_DEFAULT_DB = str(Path(__file__).resolve().parent.parent.parent / "data" / "events.db")
+
+
 class EventsDB:
-    def __init__(self, db_path: str = "events.db"):
+    def __init__(self, db_path: str = _DEFAULT_DB):
         self.db_path = db_path
         self._init_tables()
 
