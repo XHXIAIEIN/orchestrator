@@ -310,11 +310,13 @@ def start():
 
     scheduler.add_job(_weekly_audit, "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")
 
-    # 启动 Channel 层（Telegram polling 等）
+    # 启动 Channel 层（Telegram polling 等）+ 注册入站命令 handler
     try:
         from src.channels.registry import get_channel_registry
+        from src.channels.inbound import register_inbound_handlers
         channel_reg = get_channel_registry()
         channel_reg.start_all()
+        register_inbound_handlers(db_path=DB_PATH)
         channel_status = channel_reg.get_status()
         if channel_status:
             db.write_log(f"Channel 层已启动: {', '.join(channel_status.keys())}", "INFO", "channels")
