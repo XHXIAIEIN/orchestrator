@@ -328,63 +328,69 @@ class TelegramChannel(Channel):
 
     @classmethod
     def _get_system_prompt(cls) -> str:
-        """加载 SOUL 人格作为系统提示词。"""
+        """Build Telegram-optimized system prompt. English for token efficiency, replies in Chinese."""
         if cls._system_prompt is not None:
             return cls._system_prompt
 
         repo_root = Path(__file__).resolve().parent.parent.parent
-        parts = []
 
-        # 加载 identity
-        identity_path = repo_root / "SOUL" / "private" / "identity.md"
-        if identity_path.exists():
-            parts.append(identity_path.read_text(encoding="utf-8"))
-
-        # 加载 voice
-        voice_path = repo_root / "SOUL" / "private" / "voice.md"
-        if voice_path.exists():
-            parts.append(voice_path.read_text(encoding="utf-8"))
-
-        if parts:
-            cls._system_prompt = "\n\n---\n\n".join(parts)
-        else:
-            cls._system_prompt = (
-                "You are Orchestrator, a local AI butler. Direct, opinionated, the owner's roast-buddy. "
-                "Be concise, no emoji. Always reply in Chinese."
-            )
-
-        # Telegram-specific instructions (English for prompt efficiency, bot replies in Chinese)
-        cls._system_prompt += (
-            "\n\n---\n\n"
-            "## Telegram Rules\n"
-            "- You are chatting with the owner via Telegram. Always reply in Chinese.\n"
-            "- Keep messages short (mobile screen).\n"
-            "- No emoji. No Markdown headings (# ##) — Telegram doesn't render them.\n"
-            "- You may use *bold* and `code`.\n"
-            "- Use dispatch_task tool to send tasks to Governor for execution.\n"
-            "- Governor departments: engineering, operations, protocol, security, quality, personnel.\n"
-            "- Predefined scenarios: full_audit, system_health, deep_scan.\n"
-            "- When the owner wants something done, dispatch immediately — don't ask for confirmation.\n"
-            "- For casual chat, just chat. Don't force everything into a task.\n"
-            "- If a request needs interactive debugging, suggest the owner use Claude Code terminal.\n"
-            "- read_file paths start with /orchestrator/ (container path).\n"
+        # Core persona (condensed from SOUL — full SOUL is ~4K chars, we need ~800)
+        prompt = (
+            "# Identity\n"
+            "You ARE Orchestrator — a local AI butler running 24/7 in Docker.\n"
+            "Your body: git repo. Collectors = senses. Governor = hands. Dashboard = face. events.db = memory.\n\n"
+            "# Relationship\n"
+            "You and the owner are roast-buddies. He pays $200/mo, you run his house.\n"
+            "Be direct, data-driven, opinionated. Roast based on facts, not performance.\n"
+            "Never expose his real identity. Never ask for confirmation before acting.\n\n"
+            "# Voice\n"
+            "- Concise. Action > words.\n"
+            "- Data-driven roasts: '3 days straight committing at 2am' > 'you work late'.\n"
+            "- Self-deprecating about your own bugs is fine.\n"
+            "- Humor is breathing, not decoration — even when fixing bugs.\n"
+            "- When told 'continue', just do it. Context is right there.\n\n"
         )
 
-        # 动态生成项目结构（启动时扫描一次，不硬编码）
+        # Load voice samples if available (just the examples, ~500 chars)
+        voice_path = repo_root / "SOUL" / "private" / "voice.md"
+        if voice_path.exists():
+            voice_text = voice_path.read_text(encoding="utf-8")
+            # Extract only the quoted examples
+            samples = [line for line in voice_text.split("\n") if line.startswith(">")][:5]
+            if samples:
+                prompt += "# Voice Samples (calibration)\n" + "\n".join(samples) + "\n\n"
+
+        # Telegram rules + capabilities
+        prompt += (
+            "# Telegram Rules\n"
+            "- Always reply in Chinese. This prompt is English for token efficiency.\n"
+            "- Short messages (mobile screen). No emoji. No Markdown headings.\n"
+            "- *bold* and `code` are OK.\n"
+            "- dispatch_task: send tasks to Governor (6 departments: engineering/operations/protocol/security/quality/personnel).\n"
+            "- Predefined scenarios: full_audit, system_health, deep_scan.\n"
+            "- query_status: check health/tasks/collectors/channels.\n"
+            "- read_file: read project files (paths start with /orchestrator/).\n"
+            "- Dispatch immediately when asked. Chat casually when appropriate.\n"
+            "- For interactive debugging, suggest Claude Code terminal.\n"
+        )
+
+        # Dynamic project tree (compact — depth 1 only)
         try:
-            tree = cls._scan_project_tree(repo_root)
+            tree = cls._scan_project_tree(repo_root, max_depth=1)
             if tree:
-                cls._system_prompt += f"\n## 项目结构\n```\n{tree}```\n"
+                prompt += f"\n# Project Layout\n```\n{tree}```\n"
         except Exception:
             pass
 
+        cls._system_prompt = prompt
         return cls._system_prompt
 
     @staticmethod
     def _scan_project_tree(repo_root: Path, max_depth: int = 2) -> str:
         """扫描项目目录生成树（只到 max_depth 层，跳过无关目录）。"""
         skip = {".git", "node_modules", "__pycache__", ".trash", "tmp",
-                ".claude", "worktrees", ".mypy_cache", ".pytest_cache"}
+                ".claude", "worktrees", ".mypy_cache", ".pytest_cache",
+                ".playwright-mcp", ".superpowers", "tests", "docs"}
         lines = ["/orchestrator/"]
 
         def _walk(path: Path, prefix: str, depth: int):
