@@ -19,7 +19,6 @@ from typing import Optional
 
 from src.channels.base import Channel, ChannelMessage
 from src.channels import config as ch_cfg
-from src.channels import ascii_art
 
 log = logging.getLogger(__name__)
 
@@ -143,48 +142,11 @@ class TelegramChannel(Channel):
 
     # ── 入站：命令接收 ──
 
-    def _play_animation(self, chat_id: str, frames: list[str],
-                        interval: float = ascii_art.FRAME_INTERVAL) -> Optional[int]:
-        """Play an animation by editing a single message. Returns final message_id."""
-        if not frames:
-            return None
-        msg_id = self._send_and_get_id(chat_id, frames[0])
-        if not msg_id:
-            return None
-        for frame in frames[1:]:
-            time.sleep(interval)
-            self._edit_message(chat_id, msg_id, frame)
-        return msg_id
-
-    def _start_thinking_animation(self, chat_id: str, msg_id: int) -> threading.Event:
-        """Start a looping thinking animation on an existing message. Returns stop event."""
-        stop = threading.Event()
-
-        def _loop():
-            idx = 0
-            while not stop.is_set():
-                frame = ascii_art.THINKING_FRAMES[idx % len(ascii_art.THINKING_FRAMES)]
-                self._edit_message(chat_id, msg_id, frame)
-                idx += 1
-                stop.wait(timeout=ascii_art.FRAME_INTERVAL)
-
-        t = threading.Thread(target=_loop, name="tg-thinking", daemon=True)
-        t.start()
-        return stop
-
     def start(self):
         """启动 long polling 线程。"""
         if not self.chat_id:
             log.info("telegram: no chat_id, inbound commands disabled")
             return
-
-        # Boot animation
-        try:
-            boot_target = ch_cfg.get_admin_chat_ids() or ([self.chat_id] if self.chat_id else [])
-            for cid in boot_target:
-                self._play_animation(cid, ascii_art.BOOT_FRAMES, interval=0.5)
-        except Exception:
-            pass
 
         self._stop_event.clear()
         self._polling_thread = threading.Thread(
@@ -600,55 +562,7 @@ class TelegramChannel(Channel):
         except Exception:
             pass
 
-    def _send_and_get_id(self, chat_id: str, text: str) -> Optional[int]:
-        """Send a message and return its message_id (for later editing)."""
-        payload = json.dumps({
-            "chat_id": chat_id,
-            "text": text,
-            "disable_web_page_preview": True,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self._base_url}/sendMessage",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
-            result = json.loads(resp.read())
-            if result.get("ok"):
-                return result["result"]["message_id"]
-        except Exception:
-            pass
-        return None
 
-    def _edit_message(self, chat_id: str, message_id: int, text: str) -> bool:
-        """Edit an existing message. Falls back to plain text if Markdown fails."""
-        for parse_mode in ("Markdown", None):
-            body = {
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            }
-            if parse_mode:
-                body["parse_mode"] = parse_mode
-            payload = json.dumps(body).encode("utf-8")
-            req = urllib.request.Request(
-                f"{self._base_url}/editMessageText",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
-                result = json.loads(resp.read())
-                if result.get("ok"):
-                    return True
-            except Exception:
-                if parse_mode is None:
-                    return False  # Both attempts failed
-        return False
 
     def _keep_typing(self, chat_id: str) -> threading.Event:
         """Keep sending 'typing...' every 4s until stopped. Returns stop event."""
@@ -730,21 +644,6 @@ class TelegramChannel(Channel):
             log.error(f"telegram: chat failed: {e}")
             self._send_text(chat_id, f"出了点问题: {e}")
 
-    def _delete_message(self, chat_id: str, message_id: int):
-        """Delete a message (used when replacing placeholder with split messages)."""
-        try:
-            payload = json.dumps({
-                "chat_id": chat_id, "message_id": message_id,
-            }).encode("utf-8")
-            req = urllib.request.Request(
-                f"{self._base_url}/deleteMessage",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            urllib.request.urlopen(req, timeout=5)
-        except Exception:
-            pass
 
     # ── DB 持久化 ──
 
