@@ -650,17 +650,24 @@ class TelegramChannel(Channel):
                     return False  # Both attempts failed
         return False
 
+    def _keep_typing(self, chat_id: str) -> threading.Event:
+        """Keep sending 'typing...' every 4s until stopped. Returns stop event."""
+        stop = threading.Event()
+
+        def _loop():
+            while not stop.is_set():
+                self._send_typing(chat_id)
+                stop.wait(timeout=4)  # Telegram typing expires after 5s
+
+        t = threading.Thread(target=_loop, name="tg-typing", daemon=True)
+        t.start()
+        return stop
+
     def _do_chat(self, chat_id: str, text: str, original_text: str = ""):
-        """Chat with ASCII art animations for real-time feedback."""
-        # Send first thinking frame as placeholder
-        live_msg_id = self._send_and_get_id(chat_id, ascii_art.THINKING_FRAMES[0])
-        think_stop = None
+        """Chat with natural 'typing...' indicator — no placeholder messages."""
+        typing_stop = self._keep_typing(chat_id)
 
         try:
-            # Start thinking animation loop
-            if live_msg_id:
-                think_stop = self._start_thinking_animation(chat_id, live_msg_id)
-
             from src.core.config import get_anthropic_client
             from src.storage.events_db import _DEFAULT_DB
 
@@ -676,16 +683,6 @@ class TelegramChannel(Channel):
             final_reply = ""
 
             for round_i in range(max_rounds):
-                # Stop thinking animation before API call (to avoid edit conflicts)
-                if think_stop:
-                    think_stop.set()
-                    think_stop = None
-                    time.sleep(0.3)  # Let the animation thread finish
-
-                # Show static thinking for API call
-                if live_msg_id:
-                    self._edit_message(chat_id, live_msg_id, ascii_art.THINKING_FRAMES[0])
-
                 response = client.messages.create(
                     model=ch_cfg.CHAT_MODEL,
                     max_tokens=ch_cfg.CHAT_MAX_TOKENS,
@@ -708,13 +705,6 @@ class TelegramChannel(Channel):
                 if not tool_calls:
                     break
 
-                # Play tool animation
-                tool_name = tool_calls[0].name
-                if live_msg_id:
-                    for frame in ascii_art.tool_frames(tool_name):
-                        self._edit_message(chat_id, live_msg_id, frame)
-                        time.sleep(0.3)
-
                 messages.append({"role": "assistant", "content": response.content})
                 tool_results = []
                 for tc in tool_calls:
@@ -726,33 +716,19 @@ class TelegramChannel(Channel):
                     })
                 messages.append({"role": "user", "content": tool_results})
 
-            # Stop any lingering animation
-            if think_stop:
-                think_stop.set()
-                time.sleep(0.3)
+            # Stop typing, send reply
+            typing_stop.set()
 
-            # Replace placeholder with final reply
             if final_reply:
-                if live_msg_id and len(final_reply) <= self._TG_MSG_LIMIT:
-                    self._edit_message(chat_id, live_msg_id, final_reply)
-                else:
-                    if live_msg_id:
-                        self._delete_message(chat_id, live_msg_id)
-                    self._send_text(chat_id, final_reply)
+                self._send_text(chat_id, final_reply)
                 self._save_message(db_path, chat_id, "assistant", final_reply)
-            elif live_msg_id:
-                self._edit_message(chat_id, live_msg_id, "(no response)")
 
             self._maybe_summarize(db_path, chat_id, client)
 
         except Exception as e:
-            if think_stop:
-                think_stop.set()
+            typing_stop.set()
             log.error(f"telegram: chat failed: {e}")
-            if live_msg_id:
-                self._edit_message(chat_id, live_msg_id, f"出了点问题: {e}")
-            else:
-                self._send_text(chat_id, f"出了点问题: {e}")
+            self._send_text(chat_id, f"出了点问题: {e}")
 
     def _delete_message(self, chat_id: str, message_id: int):
         """Delete a message (used when replacing placeholder with split messages)."""
