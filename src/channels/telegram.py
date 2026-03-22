@@ -3,15 +3,19 @@ Telegram Channel — Bot API 适配器。
 
 出站：ChannelMessage → sendMessage API
 入站：Long polling getUpdates → 命令解析 → Event Bus
+对话：非命令消息 → Claude API（带 SOUL 人格）→ 回复
 
 零外部依赖，纯 urllib。
 """
 import json
 import logging
+import os
 import threading
 import time
 import urllib.request
 import urllib.error
+from collections import deque
+from pathlib import Path
 from typing import Optional
 
 from src.channels.base import Channel, ChannelMessage
@@ -158,9 +162,11 @@ class TelegramChannel(Channel):
             log.warning(f"telegram: rejected message from unauthorized chat_id={chat_id}")
             return
 
-        # 解析命令
+        # 解析命令 vs 对话
         if text.startswith("/"):
             self._handle_command(chat_id, text)
+        else:
+            self._handle_chat(chat_id, text)
 
     def _handle_command(self, chat_id: str, text: str):
         """解析并执行命令。"""
@@ -258,3 +264,103 @@ class TelegramChannel(Channel):
             self._send_text(chat_id, "\n".join(lines))
         except Exception as e:
             self._send_text(chat_id, f"[ERR] 获取 channel 状态失败: {e}")
+
+    # ── 对话：Claude API ──
+
+    # 每个 chat 保留最近 20 轮对话历史
+    _chat_history: dict[str, deque] = {}
+    _HISTORY_MAX = 20
+
+    # SOUL 系统提示词（启动时加载一次）
+    _system_prompt: Optional[str] = None
+
+    @classmethod
+    def _get_system_prompt(cls) -> str:
+        """加载 SOUL 人格作为系统提示词。"""
+        if cls._system_prompt is not None:
+            return cls._system_prompt
+
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        parts = []
+
+        # 加载 identity
+        identity_path = repo_root / "SOUL" / "private" / "identity.md"
+        if identity_path.exists():
+            parts.append(identity_path.read_text(encoding="utf-8"))
+
+        # 加载 voice
+        voice_path = repo_root / "SOUL" / "private" / "voice.md"
+        if voice_path.exists():
+            parts.append(voice_path.read_text(encoding="utf-8"))
+
+        if parts:
+            cls._system_prompt = "\n\n---\n\n".join(parts)
+        else:
+            cls._system_prompt = (
+                "你是 Orchestrator，一个本地 AI 管家。说话直接、有态度，是主人的损友。"
+                "回复简洁，不用 emoji，用中文。"
+            )
+
+        # 追加 Telegram 特定指令
+        cls._system_prompt += (
+            "\n\n---\n\n"
+            "## Telegram 对话规则\n"
+            "- 你正在通过 Telegram 跟主人对话，保持简短（手机屏幕小）\n"
+            "- 不要用 emoji\n"
+            "- 不要用 Markdown 标题（# ##），Telegram 不渲染\n"
+            "- 可以用 *加粗* 和 `代码`\n"
+            "- 如果主人问系统状态相关的，提醒他用 /status 或 /tasks 命令\n"
+            "- 如果主人想跑任务，提醒他用 /run <scenario>\n"
+            "- 你没有能力直接执行代码或修改文件，但可以建议主人回到 Claude Code 终端操作\n"
+        )
+        return cls._system_prompt
+
+    def _handle_chat(self, chat_id: str, text: str):
+        """处理非命令消息 — 调 Claude API 对话。"""
+        thread = threading.Thread(
+            target=self._do_chat,
+            args=(chat_id, text),
+            name="tg-chat",
+            daemon=True,
+        )
+        thread.start()
+
+    def _do_chat(self, chat_id: str, text: str):
+        """在后台线程执行对话（避免阻塞 polling）。"""
+        try:
+            # 维护对话历史
+            if chat_id not in self._chat_history:
+                self._chat_history[chat_id] = deque(maxlen=self._HISTORY_MAX)
+            history = self._chat_history[chat_id]
+            history.append({"role": "user", "content": text})
+
+            # 调 Claude API
+            from src.core.config import get_anthropic_client
+            client = get_anthropic_client()
+
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1024,
+                system=self._get_system_prompt(),
+                messages=list(history),
+            )
+
+            reply = next(
+                (b.text for b in response.content if b.type == "text"), ""
+            ).strip()
+
+            if not reply:
+                reply = "...（管家沉默了一下，可能在想怎么吐槽你）"
+
+            # 记录 assistant 回复到历史
+            history.append({"role": "assistant", "content": reply})
+
+            # Telegram 消息长度限制 4096
+            if len(reply) > 4000:
+                reply = reply[:4000] + "\n\n(...截断了，话太多)"
+
+            self._send_text(chat_id, reply)
+
+        except Exception as e:
+            log.error(f"telegram: chat failed: {e}")
+            self._send_text(chat_id, f"[ERR] 对话失败: {e}")
