@@ -236,6 +236,7 @@ class TelegramChannel(Channel):
 
     def _handle_command(self, chat_id: str, text: str):
         """解析并执行命令。"""
+        self._send_typing(chat_id)
         parts = text.split(maxsplit=1)
         cmd = parts[0].lower().split("@")[0]  # 去掉 @bot_name
         args = parts[1] if len(parts) > 1 else ""
@@ -523,28 +524,94 @@ class TelegramChannel(Channel):
         )
         thread.start()
 
+    def _send_typing(self, chat_id: str):
+        """Send 'typing...' indicator."""
+        try:
+            payload = json.dumps({"chat_id": chat_id, "action": "typing"}).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self._base_url}/sendChatAction",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            pass
+
+    def _send_and_get_id(self, chat_id: str, text: str) -> Optional[int]:
+        """Send a message and return its message_id (for later editing)."""
+        payload = json.dumps({
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self._base_url}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
+            result = json.loads(resp.read())
+            if result.get("ok"):
+                return result["result"]["message_id"]
+        except Exception:
+            pass
+        return None
+
+    def _edit_message(self, chat_id: str, message_id: int, text: str) -> bool:
+        """Edit an existing message. Falls back to plain text if Markdown fails."""
+        for parse_mode in ("Markdown", None):
+            body = {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text,
+                "disable_web_page_preview": True,
+            }
+            if parse_mode:
+                body["parse_mode"] = parse_mode
+            payload = json.dumps(body).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self._base_url}/editMessageText",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
+                result = json.loads(resp.read())
+                if result.get("ok"):
+                    return True
+            except Exception:
+                if parse_mode is None:
+                    return False  # Both attempts failed
+        return False
+
     def _do_chat(self, chat_id: str, text: str, original_text: str = ""):
-        """在后台线程执行对话（避免阻塞 polling）。"""
+        """Chat with live message editing — user sees status updates in real time."""
+        live_msg_id = self._send_and_get_id(chat_id, "...")
+
         try:
             from src.core.config import get_anthropic_client
             from src.storage.events_db import _DEFAULT_DB
 
             db_path = _DEFAULT_DB
 
-            # DB 存原文，LLM 拿的 text 可能是文件引用（长消息时）
             db_content = original_text if original_text else text
             self._save_message(db_path, chat_id, "user", db_content)
 
-            # 构建上下文：摘要记忆 + 最近对话
             messages = self._build_context(db_path, chat_id)
-
             client = get_anthropic_client()
 
-            # 对话循环：处理 tool use
             max_rounds = ch_cfg.TOOL_USE_MAX_ROUNDS
             final_reply = ""
 
-            for _ in range(max_rounds):
+            for round_i in range(max_rounds):
+                if round_i > 0 and live_msg_id:
+                    self._edit_message(chat_id, live_msg_id,
+                                       f"... (round {round_i + 1})")
+
                 response = client.messages.create(
                     model=ch_cfg.CHAT_MODEL,
                     max_tokens=ch_cfg.CHAT_MAX_TOKENS,
@@ -562,12 +629,16 @@ class TelegramChannel(Channel):
                         tool_calls.append(block)
 
                 if text_parts:
-                    reply = "\n".join(text_parts)
-                    self._send_text(chat_id, reply)
-                    final_reply = reply
+                    final_reply = "\n".join(text_parts)
 
                 if not tool_calls:
                     break
+
+                # Show which tools are running
+                tool_names = ", ".join(tc.name for tc in tool_calls)
+                if live_msg_id:
+                    self._edit_message(chat_id, live_msg_id,
+                                       f"[{tool_names}] ...")
 
                 messages.append({"role": "assistant", "content": response.content})
                 tool_results = []
@@ -580,16 +651,42 @@ class TelegramChannel(Channel):
                     })
                 messages.append({"role": "user", "content": tool_results})
 
-            # 存入 assistant 回复
+            # Replace placeholder with final reply
             if final_reply:
+                if live_msg_id and len(final_reply) <= self._TG_MSG_LIMIT:
+                    self._edit_message(chat_id, live_msg_id, final_reply)
+                else:
+                    if live_msg_id:
+                        self._delete_message(chat_id, live_msg_id)
+                    self._send_text(chat_id, final_reply)
                 self._save_message(db_path, chat_id, "assistant", final_reply)
+            elif live_msg_id:
+                self._edit_message(chat_id, live_msg_id, "(no response)")
 
-            # 检查是否需要摘要压缩
             self._maybe_summarize(db_path, chat_id, client)
 
         except Exception as e:
             log.error(f"telegram: chat failed: {e}")
-            self._send_text(chat_id, f"[ERR] 对话失败: {e}")
+            if live_msg_id:
+                self._edit_message(chat_id, live_msg_id, f"[ERR] {e}")
+            else:
+                self._send_text(chat_id, f"[ERR] {e}")
+
+    def _delete_message(self, chat_id: str, message_id: int):
+        """Delete a message (used when replacing placeholder with split messages)."""
+        try:
+            payload = json.dumps({
+                "chat_id": chat_id, "message_id": message_id,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self._base_url}/deleteMessage",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            pass
 
     # ── DB 持久化 ──
 
