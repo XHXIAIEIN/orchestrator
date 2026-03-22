@@ -736,16 +736,12 @@ class TelegramChannel(Channel):
         if not file_path:
             return "path 不能为空"
 
-        # 安全检查：白名单路径前缀
-        ALLOWED_PREFIXES = [
-            "/orchestrator",
-            "/git-repos",                                    # Docker mount
-            "D:/Users/Administrator/Documents/GitHub",       # 本地 GitHub
-            "D:/Users/Administrator/Desktop/bot",            # 本地 bot
-            "D:/Agent",                                      # 本地工作区
-        ]
+        # 安全检查：白名单路径前缀（从环境变量读取，逗号分隔）
+        default_prefixes = "/orchestrator,/git-repos"
+        allowed_str = os.environ.get("CHANNEL_READ_ALLOW_PATHS", default_prefixes)
+        allowed_prefixes = [p.strip().replace("\\", "/") for p in allowed_str.split(",") if p.strip()]
         clean_path = file_path.replace("\\", "/")
-        if not any(clean_path.startswith(p) for p in ALLOWED_PREFIXES):
+        if not any(clean_path.startswith(p) for p in allowed_prefixes):
             return f"安全限制：路径不在白名单中"
 
         # Docker 内路径映射回本地 repo root

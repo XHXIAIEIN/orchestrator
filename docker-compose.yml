@@ -29,6 +29,7 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - TELEGRAM_MIN_PRIORITY=${TELEGRAM_MIN_PRIORITY:-HIGH}
       - WECOM_WEBHOOK_URL=${WECOM_WEBHOOK_URL:-}
+      - CHANNEL_READ_ALLOW_PATHS=${CHANNEL_READ_ALLOW_PATHS:-/orchestrator,/git-repos}
     volumes:
       # Source code — writable so claude edits persist to host
       - .:/orchestrator
