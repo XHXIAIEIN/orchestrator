@@ -42,6 +42,16 @@ from src.governance.prompt_canary import should_use_canary, get_canary_prompt
 from src.governance.verify_gate import run_gates, save_gate_record
 from src.governance.novelty_policy import check_novelty, get_recent_failures
 from src.governance.policy_advisor import observe_task_execution
+from src.governance.agent_semaphore import AgentSemaphore
+from src.governance.punch_clock import get_punch_clock
+from src.governance.outcome_tracker import record_outcome
+from src.governance.fan_out import get_fan_out
+from src.governance.heartbeat import parse_progress, HEARTBEAT_PROMPT
+from src.governance.tiered_review import determine_review_tier, get_review_config
+from src.governance.intent_manifest import build_manifest
+from src.governance.deterministic_resolver import get_deterministic_fallback
+from src.governance.immutable_constraints import enforce_tool_constraint, enforce_timeout_constraint
+from src.gateway.complexity import classify_complexity, should_skip_scrutiny, get_recommended_turns
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +140,18 @@ def _resolve_project_cwd(project_name: str, fallback_cwd: str = "") -> str:
     return os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent))
 
 
+def _extract_target_files(spec: dict) -> list[str]:
+    """Extract likely target files from task spec for punch clock."""
+    files = []
+    for field in ("problem", "observation", "summary", "expected"):
+        text = spec.get(field, "")
+        if text:
+            import re as _re
+            found = _re.findall(r'(?:src|departments|SOUL|dashboard|tests)/[\w/.-]+\.\w+', text)
+            files.extend(found)
+    return list(set(files))[:10]
+
+
 def _parse_scrutiny_verdict(text: str) -> tuple[bool, str]:
     """Parse VERDICT and REASON from scrutiny model output."""
     approved = "VERDICT: APPROVE" in text
@@ -144,6 +166,8 @@ class Governor:
     def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
         self.db = db or EventsDB(db_path)
         self.accountant = TokenAccountant(db=self.db)
+        self.semaphore = AgentSemaphore()
+        self.punch_clock = get_punch_clock()
 
     def scrutinize(self, task_id: int, task: dict) -> tuple[bool, str]:
         """门下省审查。LOW/MEDIUM 单模型审查，HIGH 双模型交叉验证。"""
@@ -308,19 +332,55 @@ class Governor:
             except Exception as e:
                 log.warning(f"Governor: novelty check failed ({e}), continuing")
 
-        # ── Scrutiny (门下省审查) ──
-        self.db.update_task(task_id, status="scrutinizing")
-        self.db.write_log(f"门下省审查任务 #{task_id}：{summary[:50]}", "INFO", "governor")
-        approved, note = self.scrutinize(task_id, self.db.get_task(task_id))
+        # ── Complexity Classification ──
+        complexity = classify_complexity(action, spec)
+        spec["complexity"] = complexity.name
+        self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+        log.info(f"Governor: task #{task_id} complexity={complexity.name}")
 
-        if not approved:
-            self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=note,
+        # ── Semaphore: 分级并发控制 ──
+        acquired, sem_reason = self.semaphore.try_acquire(dept, task_id)
+        if not acquired:
+            self.db.update_task(task_id, status="blocked",
+                                scrutiny_note=f"并发限制：{sem_reason}",
                                 finished_at=datetime.now(timezone.utc).isoformat())
-            self.db.write_log(f"任务 #{task_id} 被门下省驳回：{note}", "WARNING", "governor")
-            log.info(f"Governor: task #{task_id} rejected by scrutiny")
+            self.db.write_log(f"任务 #{task_id} 被并发限制阻塞：{sem_reason}", "INFO", "governor")
+            log.info(f"Governor: task #{task_id} blocked by semaphore: {sem_reason}")
             return None
 
-        self.db.update_task(task_id, scrutiny_note=f"准奏：{note}")
+        # ── Scrutiny (门下省审查) ──
+        # TRIVIAL 任务跳过审查
+        if should_skip_scrutiny(complexity):
+            log.info(f"Governor: task #{task_id} TRIVIAL, skipping scrutiny")
+            self.db.update_task(task_id, scrutiny_note="免审：TRIVIAL 复杂度")
+        else:
+            self.db.update_task(task_id, status="scrutinizing")
+            self.db.write_log(f"门下省审查任务 #{task_id}：{summary[:50]}", "INFO", "governor")
+
+            # 尝试确定性 fallback（LLM 不可用时）
+            approved, note = None, ""
+            try:
+                approved, note = self.scrutinize(task_id, self.db.get_task(task_id))
+            except Exception as e:
+                log.warning(f"Governor: scrutiny LLM failed ({e}), trying deterministic fallback")
+                fb = get_deterministic_fallback("task.scrutiny", spec)
+                if fb:
+                    approved = fb["verdict"] == "APPROVE"
+                    note = fb["reason"]
+                else:
+                    approved = True
+                    note = f"审查异常，默认放行：{e}"
+
+            if not approved:
+                self.semaphore.release(dept, task_id)
+                self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=note,
+                                    finished_at=datetime.now(timezone.utc).isoformat())
+                self.db.write_log(f"任务 #{task_id} 被门下省驳回：{note}", "WARNING", "governor")
+                log.info(f"Governor: task #{task_id} rejected by scrutiny")
+                return None
+
+            self.db.update_task(task_id, scrutiny_note=f"准奏：{note}")
+
         self.execute_task_async(task_id)
         return self.db.get_task(task_id)
 
@@ -578,6 +638,17 @@ class Governor:
                     event_data["error"] = message.error
                 self._log_agent_event(task_id, "agent_turn", event_data)
 
+                # ── Heartbeat: 从 PROGRESS 标记提取进度 ──
+                if text_parts:
+                    full_text = " ".join(text_parts)
+                    pct = parse_progress(full_text)
+                    if pct > 0:
+                        try:
+                            self.db.record_heartbeat(task_id, f"agent-{task_id}",
+                                                      "alive", pct, full_text[:100])
+                        except Exception:
+                            pass
+
                 # ── Doom Loop Detection: 每 5 轮检查一次 ──
                 if turn % 5 == 0:
                     events = self.db.get_agent_events(task_id, limit=30)
@@ -710,6 +781,23 @@ class Governor:
         except Exception as e:
             log.warning(f"Governor: policy advisor observation failed for task #{task_id}: {e}")
 
+        # ── Outcome Tracker: planned vs actual ──
+        try:
+            record_outcome(task, output, dept_key)
+        except Exception as e:
+            log.debug(f"Governor: outcome tracking failed ({e})")
+
+        # ── Fan-out: 多路输出 ──
+        try:
+            fan = get_fan_out()
+            fan.emit(f"task.{status}", {
+                "task_id": task_id, "department": dept_key,
+                "status": status, "project": project_name,
+                "summary": task.get("action", "")[:100],
+            }, department=dept_key)
+        except Exception:
+            pass
+
         # 部门协作 — PLAN→ACT→EVAL 闭环
         if status == "done":
             if dept_key == "engineering":
@@ -776,8 +864,45 @@ class Governor:
         if effective_model != preferred_model:
             log.info(f"Governor: task #{task_id} budget downgrade: {preferred_model} → {effective_model}")
 
+        # ── Complexity-based turns override ──
+        complexity = spec.get("complexity", "")
+        if complexity:
+            from src.gateway.complexity import Complexity as _C
+            try:
+                rec_turns = get_recommended_turns(_C[complexity])
+                task_max_turns = min(task_max_turns, rec_turns)
+            except (KeyError, ValueError):
+                pass
+
+        # ── Immutable Constraints: timeout cap ──
+        ok, reason = enforce_timeout_constraint(task_timeout)
+        if not ok:
+            log.warning(f"Governor: {reason}, capping to 900s")
+            task_timeout = 900
+
+        # ── Immutable Constraints: tool check ──
+        allowed_tools = [t for t in allowed_tools if enforce_tool_constraint(t)[0]]
+
         log.info(f"Governor: task #{task_id} policy={route.profile.value} "
                  f"model={effective_model} timeout={task_timeout}s max_turns={task_max_turns}")
+
+        # ── Punch Clock: 声明操作区域 ──
+        punch_files = _extract_target_files(spec)
+        if punch_files:
+            ok, conflict = self.punch_clock.checkout(task_id, punch_files, dept_key)
+            if not ok:
+                log.warning(f"Governor: task #{task_id} file conflict: {conflict}")
+                # 不阻塞，只记录警告
+
+        # ── Sub-run: 记录执行阶段 ──
+        sub_run_id = None
+        try:
+            sub_run_id = self.db.create_sub_run(task_id, "execute")
+        except Exception:
+            pass
+
+        # ── Heartbeat prompt injection ──
+        prompt += "\n" + HEARTBEAT_PROMPT
 
         output = "(no output)"
         status = "failed"
@@ -795,6 +920,26 @@ class Governor:
             output = str(e)[:2000]
             log.error(f"Governor: Agent SDK error for task #{task_id}: {e}")
         finally:
+            # Sub-run finish
+            if sub_run_id:
+                try:
+                    duration_ms = 0
+                    try:
+                        d = (datetime.now(timezone.utc) - datetime.fromisoformat(now)).total_seconds()
+                        duration_ms = int(d * 1000)
+                    except Exception:
+                        pass
+                    self.db.finish_sub_run(sub_run_id, status, duration_ms=duration_ms,
+                                            output_preview=output[:200])
+                except Exception:
+                    pass
+
+            # Punch out
+            self.punch_clock.punch_out(task_id)
+
+            # Semaphore release
+            self.semaphore.release(dept_key, task_id)
+
             self._finalize_task(task_id, task, dept_key, status, output, task_cwd, project_name, now)
 
         return self.db.get_task(task_id)
@@ -883,19 +1028,32 @@ class Governor:
                 f"未检测到 commit hash，请运行 git log --oneline -3 查看最近提交，然后用 git diff 查看实际改动。"
             )
 
+        # ── Tiered Review: 根据任务复杂度选择审查深度 ──
+        review_tier = determine_review_tier(parent_task)
+        review_cfg = get_review_config(review_tier)
+        log.info(f"Governor: quality review for #{parent_id}: tier={review_tier}")
+
+        # ── Intent Manifest: 按意图分组审查 ──
+        manifest = build_manifest(parent_task)
+        manifest_prompt = manifest.to_review_prompt()
+
+        observation += f"\n\n{manifest_prompt}"
+        observation += f"\n\n{review_cfg['instructions']}"
+
         review_spec = {
             "department": "quality",
-            "intent": "quality_review",
+            "intent": "quality_review" if review_tier == "quick" else "quality_regression",
             "project": project_name,
             "cwd": task_cwd,
             "problem": f"验收工部任务 #{parent_id} 的执行结果",
             "observation": observation,
             "expected": parent_spec.get("expected", "任务正确完成，无引入新问题"),
             "summary": f"刑部验收：{parent_action[:40]}",
+            "review_tier": review_tier,
         }
         review_id = self.db.create_task(
             action=f"Review 工部任务 #{parent_id} 的代码改动：检查 git diff、跑测试（如有）、确认无逻辑错误",
-            reason=f"工部任务 #{parent_id} 已完成，需刑部验收",
+            reason=f"工部任务 #{parent_id} 已完成，需刑部验收（{review_tier}）",
             priority="medium",
             spec=review_spec,
             source="auto",
