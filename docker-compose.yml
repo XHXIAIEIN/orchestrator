@@ -31,6 +31,8 @@ services:
       - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
       - WECOM_WEBHOOK_URL=${WECOM_WEBHOOK_URL:-}
       - CHANNEL_READ_ALLOW_PATHS=${CHANNEL_READ_ALLOW_PATHS:-/orchestrator,/git-repos}
+      - CHANNEL_ANIMATION_STYLE=${CHANNEL_ANIMATION_STYLE:-text}
+      - CHANNEL_ANIMATION_INTERVAL=${CHANNEL_ANIMATION_INTERVAL:-0.8}
     volumes:
       # Source code — writable so claude edits persist to host
       - .:/orchestrator
