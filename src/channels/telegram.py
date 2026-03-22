@@ -366,12 +366,9 @@ class TelegramChannel(Channel):
             "- Always reply in Chinese. This prompt is English for token efficiency.\n"
             "- Short messages (mobile screen). No emoji. No Markdown headings.\n"
             "- *bold* and `code` are OK.\n"
-            "- dispatch_task: send tasks to Governor (6 departments: engineering/operations/protocol/security/quality/personnel).\n"
-            "- Predefined scenarios: full_audit, system_health, deep_scan.\n"
-            "- query_status: check health/tasks/collectors/channels.\n"
-            "- read_file: read project files (paths start with /orchestrator/).\n"
-            "- Dispatch immediately when asked. Chat casually when appropriate.\n"
+            "- Dispatch tasks immediately when asked. Chat casually when appropriate.\n"
             "- For interactive debugging, suggest Claude Code terminal.\n"
+            "- Tools describe themselves — don't repeat their docs here.\n"
         )
 
         # Dynamic project tree (compact — depth 1 only)
@@ -421,21 +418,20 @@ class TelegramChannel(Channel):
         {
             "name": "dispatch_task",
             "description": (
-                "派发任务给 Orchestrator Governor 执行。可以是预定义场景"
-                "（full_audit / system_health / deep_scan），也可以是自由描述的任务。"
-                "任务会经过完整的管线：preflight -> scrutiny -> execute -> verify gate。"
-                "执行结果会自动推送回 Telegram。"
+                "Send a task to Governor for execution. Predefined scenarios "
+                "(full_audit, system_health, deep_scan) or free-form tasks. "
+                "Results auto-push to Telegram."
             ),
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "任务描述或场景名称。如 'full_audit' 或 '检查 Steam 采集器为什么没数据'",
+                        "description": "Task description or scenario name",
                     },
                     "department": {
                         "type": "string",
-                        "description": "目标部门：engineering / operations / protocol / security / quality / personnel。不确定就留空让 Governor 自动路由。",
+                        "description": "Target: engineering/operations/protocol/security/quality/personnel. Empty = auto-route.",
                         "default": "",
                     },
                     "priority": {
@@ -449,14 +445,13 @@ class TelegramChannel(Channel):
         },
         {
             "name": "query_status",
-            "description": "查询 Orchestrator 系统状态：健康检查、最近任务、采集器状态等。",
+            "description": "Query system status: health checks, recent tasks, collector stats, or channel status.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "query_type": {
                         "type": "string",
                         "enum": ["health", "tasks", "collectors", "channels"],
-                        "description": "查询类型",
                     },
                 },
                 "required": ["query_type"],
@@ -464,21 +459,17 @@ class TelegramChannel(Channel):
         },
         {
             "name": "read_file",
-            "description": (
-                "读取本地文件内容。用于读取用户发送的长消息（已保存为文件）。"
-                "路径通常类似 /orchestrator/tmp/chat-inbox/xxx.txt。"
-                "也可以读取项目中的任何文件来回答用户问题。"
-            ),
+            "description": "Read a local file. Paths start with /orchestrator/. Also reads long user messages saved to tmp/chat-inbox/.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "文件路径",
+                        "description": "Absolute file path",
                     },
                     "max_chars": {
                         "type": "integer",
-                        "description": "最多读取的字符数，默认 8000",
+                        "description": "Max chars to read",
                         "default": 8000,
                     },
                 },
