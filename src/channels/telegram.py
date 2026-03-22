@@ -736,18 +736,24 @@ class TelegramChannel(Channel):
         if not file_path:
             return "path 不能为空"
 
-        # 安全检查：只允许读 /orchestrator 下的文件
-        from pathlib import PurePosixPath
-        normalized = str(PurePosixPath(file_path))
-        if not normalized.startswith("/orchestrator"):
-            return f"安全限制：只能读取 /orchestrator 下的文件"
-
-        # Docker 内路径直接读，本地开发时映射回 repo root
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        # 统一为 posix 风格比较
+        # 安全检查：白名单路径前缀
+        ALLOWED_PREFIXES = [
+            "/orchestrator",
+            "/git-repos",                                    # Docker mount
+            "D:/Users/Administrator/Documents/GitHub",       # 本地 GitHub
+            "D:/Users/Administrator/Desktop/bot",            # 本地 bot
+            "D:/Agent",                                      # 本地工作区
+        ]
         clean_path = file_path.replace("\\", "/")
+        if not any(clean_path.startswith(p) for p in ALLOWED_PREFIXES):
+            return f"安全限制：路径不在白名单中"
+
+        # Docker 内路径映射回本地 repo root
+        repo_root = Path(__file__).resolve().parent.parent.parent
         if clean_path.startswith("/orchestrator"):
             local_path = repo_root / clean_path[len("/orchestrator/"):]
+        elif clean_path.startswith("/git-repos"):
+            local_path = Path("D:/Users/Administrator/Documents/GitHub") / clean_path[len("/git-repos/"):]
         else:
             local_path = Path(file_path)
 
