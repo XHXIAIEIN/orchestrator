@@ -544,13 +544,21 @@ class TelegramChannel(Channel):
 
     # ── DB 持久化 ──
 
+    @staticmethod
+    def _db_conn(db_path: str):
+        """WAL 模式连接，支持并发读写。"""
+        import sqlite3
+        conn = sqlite3.connect(db_path, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
+
     @classmethod
     def _save_message(cls, db_path: str, chat_id: str, role: str, content: str):
         """存一条消息到 DB。含硬上限保护。"""
-        import sqlite3
         from datetime import datetime, timezone
 
-        conn = sqlite3.connect(db_path)
+        conn = TelegramChannel._db_conn(db_path)
 
         # 硬上限：超过 _MAX_DB_MESSAGES 则删最旧的
         count = conn.execute(
@@ -574,8 +582,7 @@ class TelegramChannel(Channel):
     @staticmethod
     def _load_recent(db_path: str, chat_id: str, limit: int = 20) -> list[dict]:
         """从 DB 加载最近 N 轮对话。"""
-        import sqlite3
-        conn = sqlite3.connect(db_path)
+        conn = TelegramChannel._db_conn(db_path)
         rows = conn.execute(
             "SELECT role, content FROM chat_messages "
             "WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
@@ -588,8 +595,7 @@ class TelegramChannel(Channel):
     @staticmethod
     def _load_memory(db_path: str, chat_id: str) -> str:
         """加载摘要记忆。"""
-        import sqlite3
-        conn = sqlite3.connect(db_path)
+        conn = TelegramChannel._db_conn(db_path)
         row = conn.execute(
             "SELECT summary FROM chat_memory WHERE chat_id = ?", (chat_id,)
         ).fetchone()
@@ -599,9 +605,8 @@ class TelegramChannel(Channel):
     @staticmethod
     def _save_memory(db_path: str, chat_id: str, summary: str):
         """保存摘要记忆。"""
-        import sqlite3
         from datetime import datetime, timezone
-        conn = sqlite3.connect(db_path)
+        conn = TelegramChannel._db_conn(db_path)
         conn.execute(
             "INSERT INTO chat_memory (chat_id, summary, updated_at) VALUES (?, ?, ?) "
             "ON CONFLICT(chat_id) DO UPDATE SET summary = ?, updated_at = ?",
@@ -614,8 +619,7 @@ class TelegramChannel(Channel):
     @staticmethod
     def _count_messages(db_path: str, chat_id: str) -> int:
         """统计消息总数。"""
-        import sqlite3
-        conn = sqlite3.connect(db_path)
+        conn = TelegramChannel._db_conn(db_path)
         count = conn.execute(
             "SELECT COUNT(*) FROM chat_messages WHERE chat_id = ?", (chat_id,)
         ).fetchone()[0]
@@ -651,8 +655,7 @@ class TelegramChannel(Channel):
             return
 
         # 加载所有超出最近 N 条的旧消息
-        import sqlite3
-        conn = sqlite3.connect(db_path)
+        conn = TelegramChannel._db_conn(db_path)
         rows = conn.execute(
             "SELECT role, content FROM chat_messages "
             "WHERE chat_id = ? ORDER BY id ASC",
@@ -696,8 +699,7 @@ class TelegramChannel(Channel):
                 self._save_memory(db_path, chat_id, new_memory)
 
                 # 删除已压缩的旧消息
-                import sqlite3
-                conn = sqlite3.connect(db_path)
+                conn = TelegramChannel._db_conn(db_path)
                 # 保留最近 _RECENT_TURNS 条
                 conn.execute(
                     "DELETE FROM chat_messages WHERE chat_id = ? AND id NOT IN "

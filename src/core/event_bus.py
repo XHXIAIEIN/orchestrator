@@ -90,9 +90,16 @@ class EventBus:
         self._lock = threading.Lock()
         self._init_db()
 
+    def _conn(self):
+        """创建 WAL 模式连接，支持并发读写。"""
+        conn = sqlite3.connect(self._db_path, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
+
     def _init_db(self):
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._db_path)
+        conn = self._conn()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS event_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,7 +139,7 @@ class EventBus:
 
         # 持久化到 DB
         try:
-            conn = sqlite3.connect(self._db_path)
+            conn = self._conn()
             conn.execute(
                 "INSERT OR IGNORE INTO event_queue "
                 "(event_id, event_type, priority, payload, source, coalesce_key, status, created_at) "
@@ -176,7 +183,7 @@ class EventBus:
         # 规则执行是声明式的，实际动作由外部注册
         # 这里只记录，具体执行由 handler 负责
         try:
-            conn = sqlite3.connect(self._db_path)
+            conn = self._conn()
             conn.execute(
                 "UPDATE event_queue SET status = 'processed', processed_at = ? WHERE event_id = ?",
                 (datetime.now(timezone.utc).isoformat(), event.event_id)
@@ -198,7 +205,7 @@ class EventBus:
 
     def get_pending_events(self, priority: Priority = None, limit: int = 50) -> list[dict]:
         """获取待处理事件（按优先级排序）。"""
-        conn = sqlite3.connect(self._db_path)
+        conn = self._conn()
         conn.row_factory = sqlite3.Row
         if priority is not None:
             rows = conn.execute(
@@ -217,7 +224,7 @@ class EventBus:
 
     def get_stats(self) -> dict:
         """获取事件总线统计。"""
-        conn = sqlite3.connect(self._db_path)
+        conn = self._conn()
         pending = conn.execute(
             "SELECT priority, COUNT(*) as cnt FROM event_queue "
             "WHERE status = 'pending' GROUP BY priority"
