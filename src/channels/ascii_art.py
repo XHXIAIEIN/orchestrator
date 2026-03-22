@@ -13,7 +13,7 @@ Telegram 限流 ~30 edits/sec，我们用 0.8s/frame 安全间隔。
 import os
 
 FRAME_INTERVAL = float(os.environ.get("CHANNEL_ANIMATION_INTERVAL", "0.8"))
-STYLE = os.environ.get("CHANNEL_ANIMATION_STYLE", "text")  # "block" or "text"
+STYLE = os.environ.get("CHANNEL_ANIMATION_STYLE", "minimal")  # "block", "text", or "minimal"
 
 
 # ══════════════════════════════════════
@@ -127,19 +127,65 @@ def _tool_text(tool_name: str) -> list[str]:
 
 
 # ══════════════════════════════════════
+# Minimal 风格（最简 ... 动画）
+# ══════════════════════════════════════
+
+_BOOT_MINIMAL = [
+    "ORCHESTRATOR",
+    "ORCHESTRATOR .",
+    "ORCHESTRATOR ..",
+    "ORCHESTRATOR ...",
+    "ORCHESTRATOR ready",
+]
+
+_THINKING_MINIMAL = [
+    ".",
+    "..",
+    "...",
+]
+
+
+def _tool_minimal(tool_name: str) -> list[str]:
+    return [f"{tool_name} .", f"{tool_name} ..", f"{tool_name} ..."]
+
+
+# ══════════════════════════════════════
 # Public API — 根据 STYLE 自动选择
 # ══════════════════════════════════════
 
+_STYLES = {
+    "block": {
+        "boot": lambda: _BOOT_BLOCK,
+        "thinking": lambda: _THINKING_BLOCK,
+        "tool": _tool_block,
+    },
+    "text": {
+        "boot": lambda: _BOOT_TEXT,
+        "thinking": lambda: _THINKING_TEXT,
+        "tool": _tool_text,
+    },
+    "minimal": {
+        "boot": lambda: _BOOT_MINIMAL,
+        "thinking": lambda: _THINKING_MINIMAL,
+        "tool": _tool_minimal,
+    },
+}
+
+
+def _get(key: str):
+    return _STYLES.get(STYLE, _STYLES["minimal"])[key]
+
+
 def get_boot_frames() -> list[str]:
-    return _BOOT_BLOCK if STYLE == "block" else _BOOT_TEXT
+    return _get("boot")()
 
 
 def get_thinking_frames() -> list[str]:
-    return _THINKING_BLOCK if STYLE == "block" else _THINKING_TEXT
+    return _get("thinking")()
 
 
 def get_tool_frames(tool_name: str) -> list[str]:
-    return _tool_block(tool_name) if STYLE == "block" else _tool_text(tool_name)
+    return _get("tool")(tool_name)
 
 
 def progress(pct: int, label: str = "") -> str:
