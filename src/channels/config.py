@@ -48,6 +48,49 @@ WEBHOOK_TIMEOUT = _int("CHANNEL_WEBHOOK_TIMEOUT", 5)
 READ_ALLOW_PATHS = _list("CHANNEL_READ_ALLOW_PATHS", "/orchestrator,/git-repos")
 RATE_LIMIT_WINDOW = 2  # 秒，防刷，不可配置
 
+# ── 用户权限 ──
+# 格式: "chat_id:role,chat_id:role" — role: admin (full) / viewer (query+chat only)
+# 向后兼容: 如果只设了 TELEGRAM_CHAT_ID 没设 ALLOWED_USERS，自动当 admin
+ALLOWED_USERS: dict[str, str] = {}
+_raw_users = _str("TELEGRAM_ALLOWED_USERS", "")
+if _raw_users:
+    for pair in _raw_users.split(","):
+        pair = pair.strip()
+        if ":" in pair:
+            uid, role = pair.split(":", 1)
+            ALLOWED_USERS[uid.strip()] = role.strip()
+        elif pair:
+            ALLOWED_USERS[pair] = "admin"  # no role = admin
+else:
+    # Fallback: legacy single TELEGRAM_CHAT_ID
+    _legacy_id = _str("TELEGRAM_CHAT_ID", "")
+    if _legacy_id:
+        ALLOWED_USERS[_legacy_id] = "admin"
+
+# Role permissions
+ROLE_PERMISSIONS: dict[str, set[str]] = {
+    "admin": {"chat", "query_status", "dispatch_task", "read_file"},
+    "viewer": {"chat", "query_status"},
+}
+
+
+def user_can(chat_id: str, action: str) -> bool:
+    """Check if a chat_id has permission for an action."""
+    role = ALLOWED_USERS.get(chat_id, "")
+    if not role:
+        return False
+    return action in ROLE_PERMISSIONS.get(role, set())
+
+
+def get_admin_chat_ids() -> list[str]:
+    """Return all admin chat_ids (for broadcast notifications)."""
+    return [uid for uid, role in ALLOWED_USERS.items() if role == "admin"]
+
+
+def get_all_chat_ids() -> list[str]:
+    """Return all allowed chat_ids."""
+    return list(ALLOWED_USERS.keys())
+
 # ── 预定义场景 ──
 PREDEFINED_SCENARIOS = _list(
     "CHANNEL_PREDEFINED_SCENARIOS",

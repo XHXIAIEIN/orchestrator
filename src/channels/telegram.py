@@ -59,11 +59,20 @@ class TelegramChannel(Channel):
         if msg_priority > self.min_priority:
             return False
 
-        if not self.chat_id:
-            log.warning("telegram: no chat_id configured, skip send")
+        # Broadcast to all allowed users (admin gets everything, viewer gets HIGH+)
+        targets = ch_cfg.get_all_chat_ids() if ch_cfg.ALLOWED_USERS else ([self.chat_id] if self.chat_id else [])
+        if not targets:
+            log.warning("telegram: no recipients configured, skip send")
             return False
 
-        return self._send_text(self.chat_id, message.text)
+        ok = True
+        for target_id in targets:
+            # Viewers only get HIGH and CRITICAL
+            role = ch_cfg.ALLOWED_USERS.get(target_id, "admin")
+            if role == "viewer" and msg_priority > 1:  # > HIGH
+                continue
+            ok = self._send_text(target_id, message.text) and ok
+        return ok
 
     def _send_text(self, chat_id: str, text: str) -> bool:
         """发送文本消息。超长自动分段，Markdown 失败 fallback 纯文本。"""
@@ -196,8 +205,12 @@ class TelegramChannel(Channel):
         if not text or not chat_id:
             return
 
-        # 白名单鉴权
-        if self.chat_id and chat_id != self.chat_id:
+        # 白名单鉴权（优先用 ALLOWED_USERS，fallback 到 legacy chat_id）
+        if ch_cfg.ALLOWED_USERS:
+            if not ch_cfg.user_can(chat_id, "chat"):
+                log.warning(f"telegram: rejected message from unauthorized chat_id={chat_id}")
+                return
+        elif self.chat_id and chat_id != self.chat_id:
             log.warning(f"telegram: rejected message from unauthorized chat_id={chat_id}")
             return
 
@@ -559,7 +572,7 @@ class TelegramChannel(Channel):
                 messages.append({"role": "assistant", "content": response.content})
                 tool_results = []
                 for tc in tool_calls:
-                    result = self._execute_tool(tc.name, tc.input)
+                    result = self._execute_tool(tc.name, tc.input, chat_id)
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": tc.id,
@@ -750,15 +763,18 @@ class TelegramChannel(Channel):
         except Exception as e:
             log.warning(f"telegram: summarize failed: {e}")
 
-    def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
-        """执行 tool call，返回结果字符串。"""
+    def _execute_tool(self, tool_name: str, tool_input: dict, chat_id: str = "") -> str:
+        """Execute tool call with permission check."""
+        if chat_id and not ch_cfg.user_can(chat_id, tool_name):
+            role = ch_cfg.ALLOWED_USERS.get(chat_id, "unknown")
+            return f"Permission denied: {role} role cannot use {tool_name}"
         if tool_name == "dispatch_task":
             return self._tool_dispatch_task(tool_input)
         elif tool_name == "query_status":
             return self._tool_query_status(tool_input)
         elif tool_name == "read_file":
             return self._tool_read_file(tool_input)
-        return f"未知工具: {tool_name}"
+        return f"Unknown tool: {tool_name}"
 
     @staticmethod
     def _tool_read_file(params: dict) -> str:
