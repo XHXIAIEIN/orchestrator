@@ -927,6 +927,7 @@ class TelegramChannel(Channel):
             role = ch_cfg.ALLOWED_USERS.get(chat_id, "unknown")
             return f"Permission denied: {role} role cannot use {tool_name}"
         if tool_name == "dispatch_task":
+            tool_input["_chat_id"] = chat_id
             return self._tool_dispatch_task(tool_input)
         elif tool_name == "query_status":
             return self._tool_query_status(tool_input)
@@ -1012,19 +1013,37 @@ class TelegramChannel(Channel):
                 source="channel",
             )
 
-            # 异步执行
+            # 异步执行，完成后回调通知
             import threading
+            chat_id_for_callback = params.get("_chat_id", "")
+
             def _run():
                 try:
                     from src.governance.governor import Governor
                     gov = Governor(db=EventsDB())
                     gov.execute_task(task_id)
+
+                    # 查结果回调
+                    result_db = EventsDB()
+                    row = result_db.query(
+                        f"SELECT status, output FROM tasks WHERE id={task_id}"
+                    )
+                    if row:
+                        status, output = row[0][0], (row[0][1] or "")[:300]
+                        if status == "done":
+                            self._send_text(chat_id_for_callback or self.chat_id,
+                                            f"任务 #{task_id} 完成: {output}")
+                        elif status == "failed":
+                            self._send_text(chat_id_for_callback or self.chat_id,
+                                            f"任务 #{task_id} 失败: {output}")
                 except Exception as e:
                     log.error(f"telegram: task {task_id} execution failed: {e}")
+                    self._send_text(chat_id_for_callback or self.chat_id,
+                                    f"任务 #{task_id} 执行出错: {e}")
 
             threading.Thread(target=_run, name=f"tg-task-{task_id}", daemon=True).start()
 
-            return f"任务已创建: #{task_id}（{action[:50]}）。执行中，结果会自动推送。"
+            return f"任务 #{task_id} 已提交（{action[:50]}）"
 
         except Exception as e:
             return f"派发失败: {e}"

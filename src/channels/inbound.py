@@ -2,12 +2,13 @@
 入站命令路由 — 把 Channel 层收到的命令接到 Governor / Health 等系统。
 
 Telegram /run 命令 → publish channel.command.run 事件 → 这里订阅并调用 Governor。
-闭环：命令结果通过 Fan-out → Channel 层推回给用户。
+执行完成/失败后通过 Channel registry 广播结果。
 """
 import logging
 import threading
 
 from src.core.event_bus import get_event_bus, Event
+from src.channels.base import ChannelMessage
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,6 @@ def register_inbound_handlers(db_path: str = ""):
 
         log.info(f"inbound: /run '{scenario}' from {source}")
 
-        # 在后台线程执行，避免阻塞 Event Bus
         thread = threading.Thread(
             target=_execute_run,
             args=(scenario, db_path),
@@ -38,8 +38,18 @@ def register_inbound_handlers(db_path: str = ""):
     log.info("inbound: registered handler for channel.command.run")
 
 
+def _notify(text: str):
+    """通过 Channel registry 广播通知。"""
+    try:
+        from src.channels.registry import get_channel_registry
+        reg = get_channel_registry()
+        reg.broadcast(ChannelMessage(text=text, event_type="inbound.result", priority="HIGH"))
+    except Exception:
+        pass
+
+
 def _execute_run(scenario: str, db_path: str):
-    """执行场景（在后台线程）。"""
+    """执行场景（在后台线程），完成后通知。"""
     try:
         from src.storage.events_db import EventsDB
         from src.governance.governor import Governor
@@ -54,6 +64,7 @@ def _execute_run(scenario: str, db_path: str):
                 f"Channel 触发场景 '{scenario}': 派发 {len(results)} 个任务",
                 "INFO", "channels",
             )
+            _notify(f"场景 {scenario} 已派发 {len(results)} 个任务")
             return
 
         # 不是预定义 scenario → 当作单任务执行
@@ -69,13 +80,21 @@ def _execute_run(scenario: str, db_path: str):
             source="channel",
         )
         gov.execute_task(task_id)
-        db.write_log(
-            f"Channel 触发任务 #{task_id}: {scenario}",
-            "INFO", "channels",
-        )
+
+        # 查结果通知
+        row = db.query(f"SELECT status, output FROM tasks WHERE id={task_id}")
+        if row:
+            status, output = row[0][0], (row[0][1] or "")[:200]
+            if status == "done":
+                _notify(f"任务 #{task_id} 完成: {output}")
+            else:
+                _notify(f"任务 #{task_id} {status}: {output}")
+        else:
+            db.write_log(f"Channel 触发任务 #{task_id}: {scenario}", "INFO", "channels")
 
     except Exception as e:
         log.error(f"inbound: /run '{scenario}' failed: {e}")
+        _notify(f"场景 {scenario} 执行失败: {e}")
         try:
             from src.storage.events_db import EventsDB
             db = EventsDB(db_path) if db_path else EventsDB()
