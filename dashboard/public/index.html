@@ -1062,7 +1062,7 @@ async function loadSystem(){
       if(chNames.length){
         chEl.innerHTML=chNames.map(n=>{
           const info=ch[n];const dotCls=info.enabled?'approved':'rejected';
-          return`<div class='gov-entry'><div class='gov-entry-dot ${dotCls}'></div><span class='gov-entry-text'>📡 ${esc(n)}</span><span class='gov-entry-tag'>${info.type}</span></div>`;
+          return`<div class='gov-entry'><div class='gov-entry-dot ${dotCls}'></div><span class='gov-entry-text'>${esc(n)}</span><span class='gov-entry-tag'>${info.type}</span></div>`;
         }).join('');
       }else{chEl.innerHTML=''}
     }catch{}

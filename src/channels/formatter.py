@@ -15,17 +15,17 @@ DEPT_NAMES = {
     "personnel": "吏部",
 }
 
-# 事件类型 → (emoji, 模板)
+# 事件类型 → (标签, 模板)
 _TEMPLATES: dict[str, tuple[str, str]] = {
-    "task.completed":    ("✅", "[{dept}] 任务完成: {summary}"),
-    "task.failed":       ("❌", "[{dept}] 任务失败: {error}"),
-    "task.gate_failed":  ("🚫", "[门下省] 质量门禁未通过: {reason}"),
-    "task.escalated":    ("🔺", "任务升级需人工介入: {summary}"),
-    "task.started":      ("🔄", "[{dept}] 任务开始: {summary}"),
-    "health.degraded":   ("⚠️", "系统健康异常: {details}"),
-    "health.recovered":  ("💚", "系统恢复正常"),
-    "collector.failed":  ("📡", "采集器故障: {collector}"),
-    "doom_loop.detected": ("🔁", "Doom Loop 检测: {task_id} 已被终止"),
+    "task.completed":    ("[DONE]", "[{dept}] 任务完成: {summary}"),
+    "task.failed":       ("[FAIL]", "[{dept}] 任务失败: {error}"),
+    "task.gate_failed":  ("[GATE]", "[门下省] 质量门禁未通过: {reason}"),
+    "task.escalated":    ("[ESCALATE]", "任务升级需人工介入: {summary}"),
+    "task.started":      ("[START]", "[{dept}] 任务开始: {summary}"),
+    "health.degraded":   ("[WARN]", "系统健康异常: {details}"),
+    "health.recovered":  ("[OK]", "系统恢复正常"),
+    "collector.failed":  ("[COLLECTOR]", "采集器故障: {collector}"),
+    "doom_loop.detected": ("[DOOM]", "Doom Loop 检测: {task_id} 已被终止"),
 }
 
 
@@ -39,7 +39,7 @@ def format_event(event_type: str, data: dict, department: str = "") -> ChannelMe
     # 查找模板
     template_info = _TEMPLATES.get(event_type)
     if template_info:
-        emoji, template = template_info
+        tag, template = template_info
         # 安全格式化：缺少的字段用 "?" 替代
         format_data = {
             "dept": dept_display,
@@ -50,11 +50,11 @@ def format_event(event_type: str, data: dict, department: str = "") -> ChannelMe
             "collector": data.get("collector", "?"),
             "task_id": data.get("task_id", "?"),
         }
-        text = f"{emoji} {template.format(**format_data)}"
+        text = f"{tag} {template.format(**format_data)}"
     else:
         # 未知事件类型 — 通用格式
         summary = data.get("summary") or data.get("message") or str(data)[:200]
-        text = f"📋 [{dept_display or '系统'}] {event_type}: {summary}"
+        text = f"[{dept_display or 'SYS'}] {event_type}: {summary}"
 
     return ChannelMessage(
         text=text,

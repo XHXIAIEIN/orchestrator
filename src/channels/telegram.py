@@ -193,13 +193,13 @@ class TelegramChannel(Channel):
             hc = HealthCheck()
             report = hc.run()
             lines = ["*系统状态*\n"]
-            lines.append(f"整体: {'🟢 正常' if report.get('healthy') else '🔴 异常'}")
+            lines.append(f"整体: {'[OK] 正常' if report.get('healthy') else '[ERR] 异常'}")
             for check_name, check_data in report.get("checks", {}).items():
-                status = "✅" if check_data.get("ok") else "❌"
+                status = "[OK]" if check_data.get("ok") else "[ERR]"
                 lines.append(f"{status} {check_name}")
             self._send_text(chat_id, "\n".join(lines))
         except Exception as e:
-            self._send_text(chat_id, f"❌ 获取状态失败: {e}")
+            self._send_text(chat_id, f"[ERR] 获取状态失败: {e}")
 
     def _cmd_tasks(self, chat_id: str):
         try:
@@ -210,23 +210,23 @@ class TelegramChannel(Channel):
                 "FROM tasks ORDER BY created_at DESC LIMIT 5"
             )
             if not tasks:
-                self._send_text(chat_id, "📋 暂无任务记录")
+                self._send_text(chat_id, "暂无任务记录")
                 return
 
             lines = ["*最近任务*\n"]
-            status_icons = {
-                "done": "✅", "failed": "❌", "running": "🔄",
-                "pending": "⏳", "scrutiny_failed": "🚫",
+            status_tags = {
+                "done": "[DONE]", "failed": "[FAIL]", "running": "[RUN]",
+                "pending": "[WAIT]", "scrutiny_failed": "[GATE]",
             }
             for t in tasks:
-                icon = status_icons.get(t[2], "📋")
+                tag = status_tags.get(t[2], f"[{t[2]}]")
                 dept = t[1] or "?"
                 summary = (t[3] or "")[:60]
-                lines.append(f"{icon} `{t[0][:8]}` [{dept}] {summary}")
+                lines.append(f"{tag} `{t[0][:8]}` [{dept}] {summary}")
 
             self._send_text(chat_id, "\n".join(lines))
         except Exception as e:
-            self._send_text(chat_id, f"❌ 获取任务失败: {e}")
+            self._send_text(chat_id, f"[ERR] 获取任务失败: {e}")
 
     def _cmd_run(self, chat_id: str, scenario: str):
         if not scenario.strip():
@@ -242,9 +242,9 @@ class TelegramChannel(Channel):
                 priority=Priority.HIGH,
                 source="channel:telegram",
             ))
-            self._send_text(chat_id, f"🚀 已提交场景执行: `{scenario.strip()}`")
+            self._send_text(chat_id, f"[OK] 已提交场景执行: `{scenario.strip()}`")
         except Exception as e:
-            self._send_text(chat_id, f"❌ 提交失败: {e}")
+            self._send_text(chat_id, f"[ERR] 提交失败: {e}")
 
     def _cmd_channels(self, chat_id: str):
         try:
@@ -253,8 +253,8 @@ class TelegramChannel(Channel):
             status = reg.get_status()
             lines = ["*Channel 状态*\n"]
             for name, info in status.items():
-                icon = "🟢" if info["enabled"] else "🔴"
-                lines.append(f"{icon} {name} ({info['type']})")
+                tag = "[ON]" if info["enabled"] else "[OFF]"
+                lines.append(f"{tag} {name} ({info['type']})")
             self._send_text(chat_id, "\n".join(lines))
         except Exception as e:
-            self._send_text(chat_id, f"❌ 获取 channel 状态失败: {e}")
+            self._send_text(chat_id, f"[ERR] 获取 channel 状态失败: {e}")

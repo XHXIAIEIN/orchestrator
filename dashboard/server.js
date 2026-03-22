@@ -1415,7 +1415,7 @@ sys.path.insert(0, '/orchestrator')
 from src.channels.registry import get_channel_registry
 from src.channels.base import ChannelMessage
 reg = get_channel_registry()
-msg = ChannelMessage(text="🔔 Orchestrator Channel 测试消息", event_type="test", priority="HIGH")
+msg = ChannelMessage(text="[TEST] Orchestrator Channel 测试消息", event_type="test", priority="HIGH")
 status = reg.get_status()
 if not status:
     print(json.dumps({"ok": False, "error": "no channels configured"}))
