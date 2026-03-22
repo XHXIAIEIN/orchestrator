@@ -10,6 +10,7 @@ import urllib.request
 import urllib.error
 
 from src.channels.base import Channel, ChannelMessage
+from src.channels import config as ch_cfg
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class WeComChannel(Channel):
         )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=10)
+            resp = urllib.request.urlopen(req, timeout=ch_cfg.WEBHOOK_TIMEOUT)
             result = json.loads(resp.read())
             if result.get("errcode") != 0:
                 log.warning(f"wecom: send failed: {result}")

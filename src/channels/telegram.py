@@ -14,11 +14,11 @@ import threading
 import time
 import urllib.request
 import urllib.error
-from collections import deque
 from pathlib import Path
 from typing import Optional
 
 from src.channels.base import Channel, ChannelMessage
+from src.channels import config as ch_cfg
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ class TelegramChannel(Channel):
         )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=10)
+            resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
             result = json.loads(resp.read())
             if not result.get("ok"):
                 log.warning(f"telegram: sendMessage failed: {result}")
@@ -170,14 +170,14 @@ class TelegramChannel(Channel):
 
     def _get_updates(self) -> list:
         """获取新消息。"""
-        params = f"offset={self._last_update_id + 1}&timeout=30&allowed_updates=[\"message\"]"
+        params = f"offset={self._last_update_id + 1}&timeout={ch_cfg.POLL_TIMEOUT}&allowed_updates=[\"message\"]"
         req = urllib.request.Request(
             f"{self._base_url}/getUpdates?{params}",
             method="GET",
         )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=35)
+            resp = urllib.request.urlopen(req, timeout=ch_cfg.POLL_TIMEOUT + 5)
             result = json.loads(resp.read())
             if result.get("ok"):
                 return result.get("result", [])
@@ -204,7 +204,7 @@ class TelegramChannel(Channel):
         # 频率限制
         now = time.time()
         last = self._last_msg_time.get(chat_id, 0)
-        if now - last < self._RATE_LIMIT_WINDOW:
+        if now - last < ch_cfg.RATE_LIMIT_WINDOW:
             return  # 静默丢弃，不回复（防刷）
         self._last_msg_time[chat_id] = now
 
@@ -213,7 +213,7 @@ class TelegramChannel(Channel):
             self._handle_command(chat_id, text)
         else:
             # 长消息 → 存文件，传路径
-            if len(text) > self._LONG_MSG_THRESHOLD:
+            if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
                 file_path, char_count = self._save_to_inbox(text)
                 preview = text[:80].replace("\n", " ")
                 ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
@@ -266,7 +266,7 @@ class TelegramChannel(Channel):
             db = EventsDB()
             tasks = db.query(
                 "SELECT task_id, department, status, summary "
-                "FROM tasks ORDER BY created_at DESC LIMIT 5"
+                f"FROM tasks ORDER BY created_at DESC LIMIT {ch_cfg.TASKS_DISPLAY_LIMIT}"
             )
             if not tasks:
                 self._send_text(chat_id, "暂无任务记录")
@@ -320,12 +320,7 @@ class TelegramChannel(Channel):
 
     # ── 对话：Claude API + DB 持久化 + 摘要记忆 ──
 
-    _RECENT_TURNS = 20         # 最近 N 轮完整对话
-    _SUMMARIZE_THRESHOLD = 30  # 超过 N 条消息时触发摘要压缩
-    _MAX_DB_MESSAGES = 500     # 单个 chat 最多存 500 条（硬上限，防撑爆 DB）
-    _RATE_LIMIT_WINDOW = 2     # 秒，同一 chat 的最小消息间隔（防刷）
-    _TG_MSG_LIMIT = 4096       # Telegram 单条消息字符上限
-    _LONG_MSG_THRESHOLD = 500  # 超过此长度的消息存文件，LLM 拿路径
+    _TG_MSG_LIMIT = 4096  # Telegram 平台常量，不可配置
     _last_msg_time: dict[str, float] = {}  # chat_id → last message timestamp
 
     # SOUL 系统提示词（启动时加载一次）
@@ -497,13 +492,13 @@ class TelegramChannel(Channel):
             client = get_anthropic_client()
 
             # 对话循环：处理 tool use
-            max_rounds = 3
+            max_rounds = ch_cfg.TOOL_USE_MAX_ROUNDS
             final_reply = ""
 
             for _ in range(max_rounds):
                 response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=1024,
+                    model=ch_cfg.CHAT_MODEL,
+                    max_tokens=ch_cfg.CHAT_MAX_TOKENS,
                     system=self._get_system_prompt(),
                     messages=messages,
                     tools=self._TOOLS,
@@ -561,8 +556,8 @@ class TelegramChannel(Channel):
         count = conn.execute(
             "SELECT COUNT(*) FROM chat_messages WHERE chat_id = ?", (chat_id,)
         ).fetchone()[0]
-        if count >= cls._MAX_DB_MESSAGES:
-            excess = count - cls._MAX_DB_MESSAGES + 10  # 多删 10 条留余量
+        if count >= ch_cfg.MAX_DB_MESSAGES:
+            excess = count - ch_cfg.MAX_DB_MESSAGES + ch_cfg.DB_PRUNE_EXTRA
             conn.execute(
                 "DELETE FROM chat_messages WHERE id IN "
                 "(SELECT id FROM chat_messages WHERE chat_id = ? ORDER BY id ASC LIMIT ?)",
@@ -644,7 +639,7 @@ class TelegramChannel(Channel):
             })
 
         # 加载最近对话
-        recent = self._load_recent(db_path, chat_id, self._RECENT_TURNS)
+        recent = self._load_recent(db_path, chat_id, ch_cfg.RECENT_TURNS)
         messages.extend(recent)
 
         return messages
@@ -652,7 +647,7 @@ class TelegramChannel(Channel):
     def _maybe_summarize(self, db_path: str, chat_id: str, client):
         """消息数超过阈值时，压缩旧消息为摘要记忆。"""
         total = self._count_messages(db_path, chat_id)
-        if total <= self._SUMMARIZE_THRESHOLD:
+        if total <= ch_cfg.SUMMARIZE_THRESHOLD:
             return
 
         # 加载所有超出最近 N 条的旧消息
@@ -666,8 +661,8 @@ class TelegramChannel(Channel):
         conn.close()
 
         # 保留最近 _RECENT_TURNS 条，压缩之前的
-        old_messages = rows[:-self._RECENT_TURNS]
-        if len(old_messages) < 10:
+        old_messages = rows[:-ch_cfg.RECENT_TURNS]
+        if len(old_messages) < ch_cfg.SUMMARIZE_MIN_MESSAGES:
             return  # 不值得压缩
 
         # 加载现有记忆
@@ -681,7 +676,7 @@ class TelegramChannel(Channel):
         compress_prompt = (
             "你是 Orchestrator 的记忆管理器。把以下对话历史压缩成简洁的摘要记忆，"
             "保留关键信息：主人的偏好、做过的决定、提到的项目/问题、重要上下文。"
-            "丢弃闲聊和重复内容。用中文，不超过 500 字。\n\n"
+            f"丢弃闲聊和重复内容。用中文，不超过 {ch_cfg.SUMMARIZE_MAX_CHARS} 字。\n\n"
         )
         if existing_memory:
             compress_prompt += f"现有记忆：\n{existing_memory}\n\n请将以下新对话合并进现有记忆：\n\n"
@@ -689,8 +684,8 @@ class TelegramChannel(Channel):
 
         try:
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=600,
+                model=ch_cfg.CHAT_MODEL,
+                max_tokens=ch_cfg.SUMMARIZE_MAX_TOKENS,
                 messages=[{"role": "user", "content": compress_prompt}],
             )
             new_memory = next(
@@ -707,7 +702,7 @@ class TelegramChannel(Channel):
                 conn.execute(
                     "DELETE FROM chat_messages WHERE chat_id = ? AND id NOT IN "
                     "(SELECT id FROM chat_messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?)",
-                    (chat_id, chat_id, self._RECENT_TURNS),
+                    (chat_id, chat_id, ch_cfg.RECENT_TURNS),
                 )
                 conn.commit()
                 conn.close()
@@ -731,15 +726,13 @@ class TelegramChannel(Channel):
     def _tool_read_file(params: dict) -> str:
         """读取本地文件。"""
         file_path = params.get("path", "")
-        max_chars = params.get("max_chars", 8000)
+        max_chars = params.get("max_chars", ch_cfg.MAX_FILE_READ_CHARS)
 
         if not file_path:
             return "path 不能为空"
 
-        # 安全检查：白名单路径前缀（从环境变量读取，逗号分隔）
-        default_prefixes = "/orchestrator,/git-repos"
-        allowed_str = os.environ.get("CHANNEL_READ_ALLOW_PATHS", default_prefixes)
-        allowed_prefixes = [p.strip().replace("\\", "/") for p in allowed_str.split(",") if p.strip()]
+        # 安全检查：白名单路径前缀
+        allowed_prefixes = [p.replace("\\", "/") for p in ch_cfg.READ_ALLOW_PATHS]
         clean_path = file_path.replace("\\", "/")
         if not any(clean_path.startswith(p) for p in allowed_prefixes):
             return f"安全限制：路径不在白名单中"
@@ -756,7 +749,7 @@ class TelegramChannel(Channel):
         try:
             if not local_path.exists():
                 return f"文件不存在: {file_path}"
-            if local_path.stat().st_size > 1_000_000:  # 1MB 硬上限
+            if local_path.stat().st_size > ch_cfg.MAX_FILE_READ_BYTES:
                 return f"文件过大 ({local_path.stat().st_size} bytes)，拒绝读取"
 
             content = local_path.read_text(encoding="utf-8", errors="replace")
@@ -780,7 +773,7 @@ class TelegramChannel(Channel):
             from src.core.event_bus import get_event_bus, Event, Priority as EvPriority
 
             # 先尝试作为预定义场景
-            predefined = {"full_audit", "system_health", "deep_scan"}
+            predefined = set(ch_cfg.PREDEFINED_SCENARIOS)
             if action in predefined:
                 bus = get_event_bus()
                 bus.publish(Event(
@@ -844,7 +837,7 @@ class TelegramChannel(Channel):
                 db = EventsDB()
                 tasks = db.query(
                     "SELECT task_id, department, status, summary "
-                    "FROM tasks ORDER BY created_at DESC LIMIT 5"
+                    f"FROM tasks ORDER BY created_at DESC LIMIT {ch_cfg.TASKS_DISPLAY_LIMIT}"
                 )
                 if not tasks:
                     return "暂无任务记录"

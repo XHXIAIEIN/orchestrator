@@ -107,7 +107,8 @@ class FanOutCollector:
         )
 
         try:
-            urllib.request.urlopen(req, timeout=5)
+            from src.channels.config import WEBHOOK_TIMEOUT
+            urllib.request.urlopen(req, timeout=WEBHOOK_TIMEOUT)
         except urllib.error.URLError:
             pass  # webhook 不可达，静默失败
 
