@@ -19,7 +19,7 @@
   --shadow-lg: 0 10px 32px rgba(0,0,0,.08), 0 4px 8px rgba(0,0,0,.04);
   --radius: 6px;
 }
-html { font-size: 15px; }
+html { font-size: 15px; scroll-behavior: smooth; }
 body { font-family: var(--mono); background: var(--bg); color: var(--text); line-height: 1.7; -webkit-font-smoothing: antialiased; }
 ::selection { background: #635bff22; }
 
@@ -49,7 +49,7 @@ nav {
 .status-dot.off { background: var(--red); }
 
 /* ── Layout ── */
-.container { max-width: 1200px; margin: 0 auto; padding: 0 32px 80px; }
+.container { max-width: 1200px; margin: 0 auto; padding: 0 32px 32px; }
 
 /* ── Hero ── */
 .hero { padding: 56px 0 48px; border-bottom: 1px solid var(--border); }
@@ -131,11 +131,12 @@ section:last-of-type { border-bottom: none; }
 .gov-stat-num.red { color: var(--red); }
 .gov-stat-num.blue { color: #1a56db; }
 
-.gov-layout { display: flex; flex-direction: column; gap: 0; }
+.gov-layout { display: flex; flex-direction: column; gap: 8px; }
 
-.gov-block { padding: 14px 0; border-bottom: 1px solid #f0f0ec; }
-.gov-block:first-child { padding-top: 0; }
-.gov-block:last-child { border-bottom: none; }
+.gov-block {
+  padding: 14px 18px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
 .gov-block-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
 .gov-block-title { font-family: var(--serif); font-size: .95rem; color: var(--text); }
 .gov-block-count { font-size: .62rem; color: var(--text-dim); }
@@ -169,7 +170,10 @@ section:last-of-type { border-bottom: none; }
 
 /* 最近任务（全宽，三省下方） */
 .gov-sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
-.gov-recent-block { padding-top: 14px; border-top: 1px solid #f0f0ec; }
+.gov-recent-block {
+  padding: 14px 18px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
 .gov-task-list { display: flex; flex-direction: column; }
 .gov-task-item {
   display: grid; grid-template-columns: 5px 32px 1fr auto auto;
@@ -242,6 +246,8 @@ section:last-of-type { border-bottom: none; }
 .insight-daily {
   font-family: var(--serif); font-size: .95rem; line-height: 1.9;
   color: var(--text); margin-bottom: 24px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 20px;
 }
 .insight-daily .tags { font-family: var(--mono); font-size: .7rem; color: var(--accent); margin-top: 8px; letter-spacing: .3px; }
 .insight-overview {
@@ -250,7 +256,7 @@ section:last-of-type { border-bottom: none; }
   padding: 0; margin-bottom: 32px;
 }
 .sub-label { font-size: .62rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text); font-weight: 500; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-.insight-columns { display: grid; grid-template-columns: 1fr 280px; gap: 48px; }
+.insight-columns { display: grid; grid-template-columns: 1fr 320px; gap: 48px; }
 @media (max-width: 860px) { .insight-columns { grid-template-columns: 1fr; } }
 
 .pattern-item {
@@ -259,8 +265,11 @@ section:last-of-type { border-bottom: none; }
 }
 .pattern-item:last-child { border-bottom: none; }
 
-.rec-item { padding: 16px 0; border-bottom: 1px solid #f0f0ec; }
-.rec-item:last-child { border-bottom: none; }
+.rec-item {
+  padding: 14px 18px; margin-bottom: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.rec-item:last-child { margin-bottom: 0; }
 .rec-action { font-family: var(--serif); font-size: .9rem; color: var(--text); line-height: 1.7; }
 .rec-reason { font-family: var(--serif); font-size: .8rem; color: var(--text-dim); margin-top: 6px; line-height: 1.65; font-style: italic; }
 .rec-priority { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; margin-left: 8px; vertical-align: middle; letter-spacing: .5px; text-transform: uppercase; }
@@ -270,12 +279,16 @@ section:last-of-type { border-bottom: none; }
 .collapsed { display: none; }
 
 /* ── Debts ── */
-.debt-group { margin-bottom: 4px; }
+.debt-group {
+  margin-bottom: 8px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0 14px;
+}
 .debt-proj-row {
   display: flex; align-items: center; gap: 10px; padding: 8px 0;
   border-bottom: 1px solid #f0f0ec; cursor: pointer; transition: background .1s;
 }
-.debt-proj-row:hover { background: #f8f8f5; margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 3px; }
+.debt-proj-row:hover { background: #f8f8f5; border-radius: 3px; }
 .debt-proj-arrow { font-size: .6rem; color: var(--text-dim); transition: transform .2s; width: 12px; text-align: center; }
 .debt-proj-arrow.open { transform: rotate(90deg); }
 .debt-proj-name { font-family: var(--mono); font-size: .75rem; font-weight: 500; color: var(--text); flex: 1; }
@@ -357,18 +370,28 @@ section:last-of-type { border-bottom: none; }
 }
 .logs-btn:hover { background:var(--text); color:var(--bg); border-color: var(--text); }
 .logs-body {
-  max-height: 280px; overflow-y: auto; margin-top: 14px;
+  max-height: 400px; overflow-y: auto; margin-top: 14px;
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 14px; box-shadow: var(--shadow-sm);
+  border-radius: var(--radius); padding: 6px 0;
 }
 .logs-body.collapsed { display: none; }
-.log-line { font-size: .65rem; padding: 3px 0; display: flex; gap: 8px; border-bottom: 1px solid #f8f8f5; }
+.log-line {
+  font-size: .65rem; padding: 5px 14px; display: flex; gap: 8px;
+  border-bottom: 1px solid #f8f8f5; border-left: 3px solid transparent;
+}
 .log-line:last-child { border-bottom: none; }
-.log-ts { color: var(--text-dim); min-width: 62px; }
-.log-src { color: var(--accent); min-width: 58px; }
+.log-ts { color: var(--text-dim); min-width: 62px; flex-shrink: 0; }
+.log-src {
+  font-size: .55rem; color: var(--text-dim); background: #f0f0ec;
+  padding: 1px 6px; border-radius: 3px; min-width: 58px; text-align: center; flex-shrink: 0;
+}
 .log-msg { color: var(--text-mid); flex: 1; word-break: break-word; }
+.log-ERROR { border-left-color: var(--red); background: #fdf8f8; }
 .log-ERROR .log-msg { color: var(--red); }
+.log-ERROR .log-src { background: #fde8e8; color: var(--red); }
+.log-WARNING { border-left-color: var(--amber); background: #fdfbf6; }
 .log-WARNING .log-msg { color: var(--amber); }
+.log-WARNING .log-src { background: #fef3e0; color: var(--amber); }
 
 /* ── Modal ── */
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:100; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
@@ -389,9 +412,20 @@ section:last-of-type { border-bottom: none; }
 @media (max-width: 860px) {
   .gov-grid { grid-template-columns: 1fr; gap: 12px; }
   nav { padding: 0 16px; }
-  .container { padding: 0 16px 60px; }
+  .container { padding: 0 16px 24px; }
   .hero-title { font-size: 2rem; }
 }
+
+/* ── Cards & Glance ── */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 18px;
+}
+.glance-link {
+  font-size: .62rem; color: var(--text-dim); text-decoration: none;
+  letter-spacing: .5px; flex-shrink: 0;
+}
+.glance-link:hover { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -429,8 +463,19 @@ section:last-of-type { border-bottom: none; }
     <button class="roast-history-toggle" id="roast-history-btn" onclick="toggleRoastHistory()" style="display:none">往期语录</button>
   </div>
 
+  <!-- 一览 -->
+  <section id="section-glance">
+    <div class="section-head">
+      <span class="section-label">一览</span>
+    </div>
+    <div class="card">
+      <div class="gov-stats" id="page-stats"></div>
+      <div id="glance-entries" style="margin-top:8px"></div>
+    </div>
+  </section>
+
   <!-- 三省六部 -->
-  <section>
+  <section id="section-gov">
     <div class="section-head">
       <span class="section-label">三省六部</span>
       <span class="section-meta" id="gov-meta"></span>
@@ -448,7 +493,7 @@ section:last-of-type { border-bottom: none; }
   </section>
 
   <!-- Insights -->
-  <section>
+  <section id="section-insights">
     <div class="section-head">
       <span class="section-label">/ 洞察</span>
       <span class="section-meta" id="event-count"></span>
@@ -471,12 +516,33 @@ section:last-of-type { border-bottom: none; }
           <button class="cat-btn" onclick="loadCats(30,this)">30d</button>
         </div>
         <div id="cat-list"></div>
+
+        <div class="sub-label" style="margin-top:28px">活动 <button class="logs-btn" onclick="document.getElementById('activity-detail').classList.toggle('collapsed')" style="margin-left:8px">展开/收起</button></div>
+        <div class="heatmap" id="heatmap"></div>
+        <div class="hm-labels"><span id="hm-start"></span><span id="hm-end"></span></div>
+        <div id="activity-detail" class="collapsed" style="margin-top:12px">
+          <div class="ev-search">
+            <input id="ev-search" placeholder="搜索..." oninput="filterEvents()">
+            <select id="ev-filter" onchange="filterEvents()"><option value="">全部</option></select>
+          </div>
+          <div id="events"></div>
+        </div>
+
+        <div class="sub-label" style="margin-top:28px" id="section-sys">系统 <span class="section-meta" id="sys-meta" style="margin-left:8px"></span></div>
+        <div class="logs-controls" style="margin-bottom:10px">
+          <button class="logs-btn" onclick="runScenario('full_audit',this)">全面审计</button>
+          <button class="logs-btn" onclick="runScenario('system_health',this)">健康检查</button>
+          <button class="logs-btn" onclick="runScenario('deep_scan',this)">深度扫描</button>
+        </div>
+        <div id="sys-collectors"></div>
+        <div id="sys-channels"></div>
+        <div class="sys-agents" id="sys-agents"></div>
       </div>
     </div>
   </section>
 
   <!-- Attention Debts -->
-  <section>
+  <section id="section-debt">
     <div class="section-head">
       <span class="section-label">/ 注意力债务</span>
       <span class="section-meta" id="debt-count"></span>
@@ -485,54 +551,13 @@ section:last-of-type { border-bottom: none; }
     <button class="logs-btn debt-dismissed-toggle" id="debt-toggle-dismissed" style="display:none" onclick="toggleDismissedDebts()"></button>
   </section>
 
-  <!-- Burst Sessions -->
-  <section>
-    <div class="section-head">
-      <span class="section-label">/ 爆发式会话</span>
-      <span class="section-meta" id="burst-count"></span>
-    </div>
-    <div id="burst-list"></div>
-  </section>
-
-  <!-- Activity -->
-  <section>
-    <div class="section-head">
-      <span class="section-label">/ 活动</span>
-      <span class="section-meta"><button class="logs-btn" onclick="document.getElementById('activity-detail').classList.toggle('collapsed')">展开/收起</button></span>
-    </div>
-    <div class="heatmap" id="heatmap"></div>
-    <div class="hm-labels"><span id="hm-start"></span><span id="hm-end"></span></div>
-    <div id="activity-detail" class="collapsed" style="margin-top:16px">
-      <div class="ev-search">
-        <input id="ev-search" placeholder="搜索..." oninput="filterEvents()">
-        <select id="ev-filter" onchange="filterEvents()"><option value="">全部</option></select>
-      </div>
-      <div id="events"></div>
-    </div>
-  </section>
-
   <!-- Tasks -->
-  <section>
+  <section id="section-tasks">
     <div class="section-head">
       <span class="section-label">/ 任务</span>
       <span id="task-stats" class="task-stats"></span>
     </div>
     <div id="task-list"></div>
-  </section>
-
-  <!-- System -->
-  <section>
-    <div class="section-head">
-      <span class="section-label">/ 系统</span>
-      <span class="section-meta" id="sys-meta"></span>
-      <div class="logs-controls">
-        <button class="logs-btn" onclick="runScenario('full_audit',this)">全面审计</button>
-        <button class="logs-btn" onclick="runScenario('system_health',this)">健康检查</button>
-        <button class="logs-btn" onclick="runScenario('deep_scan',this)">深度扫描</button>
-      </div>
-    </div>
-    <div id="sys-collectors"></div>
-    <div class="sys-agents" id="sys-agents"></div>
   </section>
 
   <!-- Logs -->
@@ -771,19 +796,21 @@ function renderTasks(tasks){
   const counts={};tasks.forEach(t=>{counts[t.status]=(counts[t.status]||0)+1});
   $('task-stats').innerHTML=Object.entries(counts).map(([s,c])=>`<span class='t-badge ${SC[s]||'t-pending'}'>${SZ[s]||s} ${c}</span>`).join('');
   if(!tasks.length){$('task-list').innerHTML="<div style='color:var(--text-dim);font-size:.75rem;padding:8px 0'>暂无任务</div>";return}
-  $('task-list').innerHTML=tasks.map(t=>{
+  const activeS=['running','pending','awaiting_approval','scrutinizing'];
+  const active=tasks.filter(t=>activeS.includes(t.status));
+  const history=tasks.filter(t=>!activeS.includes(t.status));
+  function taskRow(t,dim){
     const ts=t.created_at?relTime(t.created_at):'';
     const dept=deptMap[t.spec?.department]||'';
     const dur=t.started_at&&t.finished_at?Math.round((new Date(t.finished_at)-new Date(t.started_at))/1000)+'s':'';
     const approve=t.status==='awaiting_approval'?`<button class='btn-approve' onclick='event.stopPropagation();openModal(${t.id})'>执行</button>`:'';
-    // Detail panel — uses same gov-entry style
     let detail='';
     if(t.spec?.problem)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>问题</span><span class='gov-entry-text'>${esc(t.spec.problem)}</span></div>`;
     if(t.spec?.observation)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>观察</span><span class='gov-entry-text'>${esc(t.spec.observation)}</span></div>`;
     if(t.scrutiny_note)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>审查</span><span class='gov-entry-text'>${esc(t.scrutiny_note)}</span></div>`;
     if(t.output)detail+=`<div style='margin-top:8px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);font-size:.68rem;color:var(--text-mid);white-space:pre-wrap;word-break:break-word;max-height:160px;overflow-y:auto'>${esc((t.output||'').slice(0,500))}</div>`;
     const hasDetail=detail?`<div class='task-detail'>${detail}</div>`:'';
-    return`<div class='task-row' onclick="this.nextElementSibling?.classList.toggle('open')">
+    return`<div class='task-row'${dim?' style="opacity:.5"':''} onclick="this.nextElementSibling?.classList.toggle('open')">
       <div class='task-dot s-${t.status}'></div>
       <span class='task-id'>#${t.id}</span>
       <span class='task-dept'>${dept}</span>
@@ -793,7 +820,22 @@ function renderTasks(tasks){
       </div>
       <span class='task-status'>${SZ[t.status]||t.status}</span>
       ${approve}
-    </div>${hasDetail}`}).join('');
+    </div>${hasDetail}`}
+  let html='';
+  if(active.length){
+    html+=`<div class='gov-sub-label'>进行中 · ${active.length}</div>`;
+    html+=active.map(t=>taskRow(t,false)).join('');
+  }
+  if(history.length){
+    html+=`<div class='gov-sub-label'${active.length?' style="margin-top:16px"':''}>历史 · ${history.length}</div>`;
+    const vis=history.slice(0,10);
+    html+=vis.map(t=>taskRow(t,true)).join('');
+    if(history.length>10){
+      html+=`<div id="task-rest" style="display:none">${history.slice(10).map(t=>taskRow(t,true)).join('')}</div>`;
+      html+=`<button class='logs-btn' style='margin-top:8px' onclick='$("task-rest").style.display="";this.style.display="none"'>显示全部 ${history.length} 条</button>`;
+    }
+  }
+  $('task-list').innerHTML=html||"<div style='color:var(--text-dim);font-size:.75rem;padding:8px 0'>暂无任务</div>";
 }
 
 /* ── Modal ── */
@@ -882,9 +924,16 @@ function renderDailySummary(summary) {
 /* ── Debts ── */
 function renderDebts(debts){
   const el=$('debt-list');
-  const open=debts.filter(d=>(d.status||'open')==='open').length;
+  const openArr=debts.filter(d=>(d.status||'open')==='open');
+  const open=openArr.length;
+  const highOpen=openArr.filter(d=>d.severity==='high');
   $('debt-count').textContent=debts.length?`${open} 未解决 / ${debts.length} 总计`:'';
   if(!debts.length){el.innerHTML="<div style='color:var(--text-dim);font-size:.8rem;padding:8px 0'>暂无债务</div>";return}
+  let alertHtml='';
+  if(highOpen.length>0){
+    const names=highOpen.slice(0,3).map(d=>esc((d.summary||'').slice(0,35))).join('、');
+    alertHtml=`<div class="gov-entry" style="padding:6px 0 12px;border-bottom:1px solid var(--border);margin-bottom:4px"><div class="gov-entry-dot rejected"></div><span class="gov-entry-text"><strong>${highOpen.length} 个高优先级</strong>待处理：${names}${highOpen.length>3?'…':''}</span></div>`;
+  }
 
   // Group by project
   const groups={};debts.forEach(d=>{const p=d.project||'未分类';if(!groups[p])groups[p]=[];groups[p].push(d)});
@@ -942,7 +991,7 @@ function renderDebts(debts){
 
     html+=`</div></div>`;
   });
-  el.innerHTML=html;
+  el.innerHTML=alertHtml+html;
 
   // Toggle button for dismissed projects
   const doneCount=sorted.filter(([,items])=>items.every(d=>(d.status||'open')!=='open')).length;
@@ -1005,6 +1054,18 @@ async function loadSystem(){
         return`<div class='gov-entry'><div class='gov-entry-dot ${dotCls}'></div><span class='gov-entry-text'>${esc(n)}</span><span class='gov-entry-tag'>${cnt} 事件</span></div>`;
       }).join('');
     }
+    // Channel 状态
+    try{
+      const ch=await fetch('/api/channels').then(r=>r.json()).catch(()=>({}));
+      const chEl=$('sys-channels');
+      const chNames=Object.keys(ch);
+      if(chNames.length){
+        chEl.innerHTML=chNames.map(n=>{
+          const info=ch[n];const dotCls=info.enabled?'approved':'rejected';
+          return`<div class='gov-entry'><div class='gov-entry-dot ${dotCls}'></div><span class='gov-entry-text'>📡 ${esc(n)}</span><span class='gov-entry-tag'>${info.type}</span></div>`;
+        }).join('');
+      }else{chEl.innerHTML=''}
+    }catch{}
     const deptStats=pipeline.departments||{};
     const running=Object.values(deptStats).reduce((s,d)=>s+(d.tasks_running||0),0);
     $('sys-meta').textContent=running?`${running} 执行中`:'空闲';
@@ -1025,6 +1086,56 @@ async function runScenario(name,btn){
   }catch{btn.textContent='失败';setTimeout(()=>{btn.textContent=label;btn.disabled=false},2000)}
 }
 
+/* ── Glance ── */
+function renderGlance(stats,events,tasks,debts,summary,insights){
+  const el=$('glance-entries');
+  const openArr=debts.filter(d=>(d.status||'open')==='open');
+  const highDebts=openArr.filter(d=>d.severity==='high');
+  const done=tasks.filter(t=>t.status==='done').length;
+  const failed=tasks.filter(t=>t.status==='failed').length;
+  const running=tasks.filter(t=>t.status==='running').length;
+  const pending=tasks.filter(t=>t.status==='pending'||t.status==='awaiting_approval').length;
+  const passRate=(done+failed)>0?Math.round(done/(done+failed)*100):null;
+  let dailyLine='';
+  const latest=summary.summaries?.[0];
+  if(latest){try{const d=JSON.parse(latest.summary||'{}');dailyLine=d.summary||''}catch{dailyLine=latest.summary||''}}
+  const items=[];
+  const wsOn=!$('h-dot').classList.contains('off');
+  items.push(`<div class="gov-entry"><div class="gov-entry-dot ${wsOn?'approved':'rejected'}"></div><span class="gov-entry-text">${wsOn?'在线':'离线'}，已采集 <strong>${(stats.total||0).toLocaleString()}</strong> 条数据</span><a class="glance-link" href="#section-sys">系统 →</a></div>`);
+  if(openArr.length>0){
+    items.push(`<div class="gov-entry"><div class="gov-entry-dot rejected"></div><span class="gov-entry-text"><strong>${openArr.length}</strong> 个未解决债务${highDebts.length>0?'，<strong>'+highDebts.length+' 个高优先</strong>':''}${pending>0?'；<strong>'+pending+'</strong> 个任务待处理':''}</span><a class="glance-link" href="#section-debt">债务 →</a></div>`);
+  }else{
+    items.push(`<div class="gov-entry"><div class="gov-entry-dot approved"></div><span class="gov-entry-text">无未解决债务${pending>0?'　<strong>'+pending+'</strong> 个任务待处理':''}</span></div>`);
+  }
+  if(passRate!==null){
+    const dotCls=passRate>=70?'approved':passRate>=50?'manual':'rejected';
+    items.push(`<div class="gov-entry"><div class="gov-entry-dot ${dotCls}"></div><span class="gov-entry-text">通过率 <strong>${passRate}%</strong>（${done} 完成 / ${failed} 失败）${running>0?'，<strong>'+running+'</strong> 执行中':''}</span><a class="glance-link" href="#section-tasks">任务 →</a></div>`);
+  }
+  if(dailyLine){
+    const short=dailyLine.length>60?dailyLine.slice(0,60)+'…':dailyLine;
+    items.push(`<div class="gov-entry"><div class="gov-entry-dot auto"></div><span class="gov-entry-text">${esc(short)}</span><a class="glance-link" href="#section-insights">洞察 →</a></div>`);
+  }
+  el.innerHTML=items.join('');
+}
+
+function renderPageStats(stats,tasks,debts){
+  const el=$('page-stats');
+  const openDebts=debts.filter(d=>(d.status||'open')==='open').length;
+  const done=tasks.filter(t=>t.status==='done').length;
+  const failed=tasks.filter(t=>t.status==='failed').length;
+  const passRate=(done+failed)>0?Math.round(done/(done+failed)*100):null;
+  const running=tasks.filter(t=>t.status==='running').length;
+  const debtCls=openDebts>0?'red':'green';
+  const rateCls=passRate===null?'':passRate>=70?'green':passRate>=50?'':'red';
+  el.innerHTML=[
+    `<div class="gov-stat"><span class="gov-stat-num">${(stats.total||0).toLocaleString()}</span><span class="gov-stat-label">事件</span></div>`,
+    `<div class="gov-stat"><span class="gov-stat-num ${debtCls}">${openDebts}</span><span class="gov-stat-label">未解决债务</span></div>`,
+    passRate!==null?`<div class="gov-stat"><span class="gov-stat-num ${rateCls}">${passRate}%</span><span class="gov-stat-label">通过率</span></div>`:'',
+    `<div class="gov-stat"><span class="gov-stat-num">${tasks.length}</span><span class="gov-stat-label">任务</span></div>`,
+    running>0?`<div class="gov-stat"><span class="gov-stat-num blue">${running}</span><span class="gov-stat-label">执行中</span></div>`:'',
+  ].filter(Boolean).join('');
+}
+
 /* ── Main ── */
 async function loadAll(){
   const[stats,events,tasks,heatmap,summary,insights,debts,profile]=await Promise.all([
@@ -1043,6 +1154,8 @@ async function loadAll(){
   $('roast').textContent=llmText||generateRoast(stats,events,tasks);
   $('roast-date').textContent=`(${new Date().toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})})`;
   $('event-count').textContent=`${(stats.total||0).toLocaleString()} events`;
+  renderGlance(stats,events,tasks,debts,summary,insights);
+  renderPageStats(stats,tasks,debts);
   renderDailySummary(summary);
   renderInsightsSection(insights);
   renderDebts(debts);

@@ -1390,6 +1390,47 @@ print(json.dumps({'name': name, 'count': count}))
   });
 });
 
+// ── Channel 层 API ──
+
+app.get('/api/channels', (req, res) => {
+  const proc = spawn('python3', ['-c', `
+import sys, json
+sys.path.insert(0, '/orchestrator')
+from src.channels.registry import get_channel_registry
+reg = get_channel_registry()
+print(json.dumps(reg.get_status()))
+  `]);
+  let out = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.on('close', () => {
+    try { res.json(JSON.parse(out)); }
+    catch { res.json({}); }
+  });
+});
+
+app.post('/api/channels/test', (req, res) => {
+  const proc = spawn('python3', ['-c', `
+import sys, json
+sys.path.insert(0, '/orchestrator')
+from src.channels.registry import get_channel_registry
+from src.channels.base import ChannelMessage
+reg = get_channel_registry()
+msg = ChannelMessage(text="🔔 Orchestrator Channel 测试消息", event_type="test", priority="HIGH")
+status = reg.get_status()
+if not status:
+    print(json.dumps({"ok": False, "error": "no channels configured"}))
+else:
+    reg.broadcast(msg)
+    print(json.dumps({"ok": True, "channels": list(status.keys())}))
+  `]);
+  let out = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.on('close', () => {
+    try { res.json(JSON.parse(out)); }
+    catch { res.status(500).json({ error: out }); }
+  });
+});
+
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'connected', message: 'Orchestrator Dashboard' }));
 });
