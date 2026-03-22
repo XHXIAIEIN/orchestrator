@@ -19,6 +19,7 @@ from typing import Optional
 
 from src.channels.base import Channel, ChannelMessage
 from src.channels import config as ch_cfg
+from src.channels import ascii_art
 
 log = logging.getLogger(__name__)
 
@@ -142,11 +143,48 @@ class TelegramChannel(Channel):
 
     # ── 入站：命令接收 ──
 
+    def _play_animation(self, chat_id: str, frames: list[str],
+                        interval: float = ascii_art.FRAME_INTERVAL) -> Optional[int]:
+        """Play an animation by editing a single message. Returns final message_id."""
+        if not frames:
+            return None
+        msg_id = self._send_and_get_id(chat_id, frames[0])
+        if not msg_id:
+            return None
+        for frame in frames[1:]:
+            time.sleep(interval)
+            self._edit_message(chat_id, msg_id, frame)
+        return msg_id
+
+    def _start_thinking_animation(self, chat_id: str, msg_id: int) -> threading.Event:
+        """Start a looping thinking animation on an existing message. Returns stop event."""
+        stop = threading.Event()
+
+        def _loop():
+            idx = 0
+            while not stop.is_set():
+                frame = ascii_art.THINKING_FRAMES[idx % len(ascii_art.THINKING_FRAMES)]
+                self._edit_message(chat_id, msg_id, frame)
+                idx += 1
+                stop.wait(timeout=ascii_art.FRAME_INTERVAL)
+
+        t = threading.Thread(target=_loop, name="tg-thinking", daemon=True)
+        t.start()
+        return stop
+
     def start(self):
         """启动 long polling 线程。"""
         if not self.chat_id:
             log.info("telegram: no chat_id, inbound commands disabled")
             return
+
+        # Boot animation
+        try:
+            boot_target = ch_cfg.get_admin_chat_ids() or ([self.chat_id] if self.chat_id else [])
+            for cid in boot_target:
+                self._play_animation(cid, ascii_art.BOOT_FRAMES, interval=0.5)
+        except Exception:
+            pass
 
         self._stop_event.clear()
         self._polling_thread = threading.Thread(
@@ -589,10 +627,16 @@ class TelegramChannel(Channel):
         return False
 
     def _do_chat(self, chat_id: str, text: str, original_text: str = ""):
-        """Chat with live message editing — user sees status updates in real time."""
-        live_msg_id = self._send_and_get_id(chat_id, "...")
+        """Chat with ASCII art animations for real-time feedback."""
+        # Send first thinking frame as placeholder
+        live_msg_id = self._send_and_get_id(chat_id, ascii_art.THINKING_FRAMES[0])
+        think_stop = None
 
         try:
+            # Start thinking animation loop
+            if live_msg_id:
+                think_stop = self._start_thinking_animation(chat_id, live_msg_id)
+
             from src.core.config import get_anthropic_client
             from src.storage.events_db import _DEFAULT_DB
 
@@ -608,9 +652,15 @@ class TelegramChannel(Channel):
             final_reply = ""
 
             for round_i in range(max_rounds):
-                if round_i > 0 and live_msg_id:
-                    self._edit_message(chat_id, live_msg_id,
-                                       f"... (round {round_i + 1})")
+                # Stop thinking animation before API call (to avoid edit conflicts)
+                if think_stop:
+                    think_stop.set()
+                    think_stop = None
+                    time.sleep(0.3)  # Let the animation thread finish
+
+                # Show static thinking for API call
+                if live_msg_id:
+                    self._edit_message(chat_id, live_msg_id, ascii_art.THINKING_FRAMES[0])
 
                 response = client.messages.create(
                     model=ch_cfg.CHAT_MODEL,
@@ -634,11 +684,12 @@ class TelegramChannel(Channel):
                 if not tool_calls:
                     break
 
-                # Show which tools are running
-                tool_names = ", ".join(tc.name for tc in tool_calls)
+                # Play tool animation
+                tool_name = tool_calls[0].name
                 if live_msg_id:
-                    self._edit_message(chat_id, live_msg_id,
-                                       f"[{tool_names}] ...")
+                    for frame in ascii_art.tool_frames(tool_name):
+                        self._edit_message(chat_id, live_msg_id, frame)
+                        time.sleep(0.3)
 
                 messages.append({"role": "assistant", "content": response.content})
                 tool_results = []
@@ -650,6 +701,11 @@ class TelegramChannel(Channel):
                         "content": result,
                     })
                 messages.append({"role": "user", "content": tool_results})
+
+            # Stop any lingering animation
+            if think_stop:
+                think_stop.set()
+                time.sleep(0.3)
 
             # Replace placeholder with final reply
             if final_reply:
@@ -666,6 +722,8 @@ class TelegramChannel(Channel):
             self._maybe_summarize(db_path, chat_id, client)
 
         except Exception as e:
+            if think_stop:
+                think_stop.set()
             log.error(f"telegram: chat failed: {e}")
             if live_msg_id:
                 self._edit_message(chat_id, live_msg_id, f"出了点问题: {e}")
