@@ -28,6 +28,11 @@ EXPOSE 23714
 COPY bin/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
+# Ensure data dir exists with correct ownership before volume mount
+RUN mkdir -p /orchestrator/data /orchestrator/tmp && \
+    touch /orchestrator/data/events.db-wal /orchestrator/data/events.db-shm \
+          /orchestrator/data/event_bus.db-wal /orchestrator/data/event_bus.db-shm
+
 # Use existing non-root 'node' user (uid 1000) so claude --dangerously-skip-permissions works
 RUN chown -R node:node /orchestrator
 
