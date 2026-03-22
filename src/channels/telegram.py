@@ -477,11 +477,10 @@ class TelegramChannel(Channel):
     def _do_chat(self, chat_id: str, text: str, original_text: str = ""):
         """在后台线程执行对话（避免阻塞 polling）。"""
         try:
-            import sqlite3
             from src.core.config import get_anthropic_client
+            from src.storage.events_db import _DEFAULT_DB
 
-            repo_root = Path(__file__).resolve().parent.parent.parent
-            db_path = str(repo_root / "data" / "events.db")
+            db_path = _DEFAULT_DB
 
             # 存入用户消息（DB 存 LLM 看到的引用，不存大段原文）
             self._save_message(db_path, chat_id, "user", text)
