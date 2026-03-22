@@ -167,23 +167,11 @@ def start():
     db = EventsDB(DB_PATH)
     scheduler = BlockingScheduler()
 
-    def _update_next_run(job_id: str, status_key: str):
-        """Safely update next run time for a scheduler job."""
-        try:
-            job = scheduler.get_job(job_id)
-            nrt = getattr(job, "next_run_time", None) if job else None
-            if nrt:
-                EventsDB(DB_PATH).set_scheduler_status(status_key, nrt.isoformat())
-        except Exception:
-            pass  # Non-critical, dashboard convenience only
-
     def _collectors():
         run_collectors()
-        _update_next_run("collectors", "next_collectors")
 
     def _analysis():
         run_analysis()
-        _update_next_run("analysis", "next_analysis")
 
     def _profile_periodic():
         db = EventsDB(DB_PATH)

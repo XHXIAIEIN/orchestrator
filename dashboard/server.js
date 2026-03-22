@@ -265,12 +265,24 @@ app.get('/api/schedule-status', (req, res) => {
   const db = getDb();
   if (!db) return res.json({ next_collectors: null, next_analysis: null, running_task: false });
   try {
-    const statusRows = dbAll(db, "SELECT key, value FROM scheduler_status");
-    const status = Object.fromEntries(statusRows.map(r => [r.key, r.value]));
+    // Calculate next run from last log timestamp + interval (no scheduler DB dependency)
+    const COLLECTOR_INTERVAL_MS = 3600_000;  // 1 hour
+    const ANALYSIS_INTERVAL_MS = 21600_000;  // 6 hours
+
+    const lastCollect = dbAll(db, "SELECT created_at FROM logs WHERE source='collector' ORDER BY id DESC LIMIT 1");
+    const lastAnalysis = dbAll(db, "SELECT created_at FROM logs WHERE source='analyst' ORDER BY id DESC LIMIT 1");
     const running = dbAll(db, "SELECT id FROM tasks WHERE status = 'running' LIMIT 1");
+
+    const nextCollectors = lastCollect.length
+      ? new Date(new Date(lastCollect[0].created_at).getTime() + COLLECTOR_INTERVAL_MS).toISOString()
+      : null;
+    const nextAnalysis = lastAnalysis.length
+      ? new Date(new Date(lastAnalysis[0].created_at).getTime() + ANALYSIS_INTERVAL_MS).toISOString()
+      : null;
+
     res.json({
-      next_collectors: status.next_collectors || null,
-      next_analysis: status.next_analysis || null,
+      next_collectors: nextCollectors,
+      next_analysis: nextAnalysis,
       running_task: running.length > 0
     });
   } catch {
