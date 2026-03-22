@@ -4,21 +4,88 @@ ASCII Motion Art — Telegram 等宽字体动画。
 通过 editMessageText 逐帧更新实现动画效果。
 Telegram 限流 ~30 edits/sec，我们用 0.8s/frame 安全间隔。
 
-两种风格：
-  - "block": 代码块 + 方块字符（需要等宽字体支持）
-  - "text":  纯文字百分比（任何字体都能看）
+风格 (CHANNEL_ANIMATION_STYLE):
+  - "minimal": 最简 ... 动画（默认）
+  - "text":    纯文字百分比
+  - "block":   代码块 + 方块字符
 
-通过 CHANNEL_ANIMATION_STYLE 环境变量切换。
+思考动画 (CHANNEL_THINKING_STYLE):
+  - "dots":  . .. ...（出现，默认）
+  - "wave":  .   . .   . . .（位移）
 """
 import os
 
 FRAME_INTERVAL = float(os.environ.get("CHANNEL_ANIMATION_INTERVAL", "0.8"))
-STYLE = os.environ.get("CHANNEL_ANIMATION_STYLE", "minimal")  # "block", "text", or "minimal"
+STYLE = os.environ.get("CHANNEL_ANIMATION_STYLE", "minimal")
+THINKING_STYLE = os.environ.get("CHANNEL_THINKING_STYLE", "dots")
 
 
-# ══════════════════════════════════════
-# Block 风格（代码块 + ▓░ 字符）
-# ══════════════════════════════════════
+# ── Thinking 动画（独立于主风格）──
+
+_THINKING_DOTS = [
+    ".",
+    "..",
+    "...",
+]
+
+_THINKING_WAVE = [
+    ".",
+    ". .",
+    ". . .",
+    "  . . .",
+    "    . . .",
+    "      . .",
+    "        .",
+]
+
+_THINKING_DOTS_BLOCK = [
+    "```\n  .       \n```",
+    "```\n  ..      \n```",
+    "```\n  ...     \n```",
+]
+
+_THINKING_WAVE_BLOCK = [
+    "```\n  .         \n```",
+    "```\n  . .       \n```",
+    "```\n  . . .     \n```",
+    "```\n    . . .   \n```",
+    "```\n      . . . \n```",
+    "```\n        . . \n```",
+    "```\n          . \n```",
+]
+
+
+# ── Minimal 风格 ──
+
+_BOOT_MINIMAL = [
+    "ORCHESTRATOR",
+    "ORCHESTRATOR .",
+    "ORCHESTRATOR ..",
+    "ORCHESTRATOR ...",
+    "ORCHESTRATOR ready",
+]
+
+
+def _tool_minimal(tool_name: str) -> list[str]:
+    return [f"{tool_name} .", f"{tool_name} ..", f"{tool_name} ..."]
+
+
+# ── Text 风格 ──
+
+_BOOT_TEXT = [
+    "ORCHESTRATOR",
+] + [
+    f"ORCHESTRATOR — {label}  {pct}%"
+    for label, pct in [("loading", 0), ("collectors", 25), ("governor", 50),
+                        ("channels", 75), ("ready", 100)]
+]
+
+
+def _tool_text(tool_name: str) -> list[str]:
+    return [f"{tool_name}  {pct}%" for pct in range(0, 100, 12)]
+
+
+# ── Block 风格 ──
 
 _BOOT_BLOCK = [
     "```\n"
@@ -75,16 +142,6 @@ _BOOT_BLOCK = [
     "```",
 ]
 
-_THINKING_BLOCK = [
-    "```\n  .         \n```",
-    "```\n  . .       \n```",
-    "```\n  . . .     \n```",
-    "```\n    . . .   \n```",
-    "```\n      . . . \n```",
-    "```\n        . . \n```",
-    "```\n          . \n```",
-]
-
 
 def _tool_block(tool_name: str) -> list[str]:
     bar_states = ["░░░░░░░░", "▓░░░░░░░", "▓▓░░░░░░", "▓▓▓░░░░░",
@@ -93,99 +150,33 @@ def _tool_block(tool_name: str) -> list[str]:
 
 
 # ══════════════════════════════════════
-# Text 风格（纯文字百分比，无代码块）
+# Public API
 # ══════════════════════════════════════
 
-_BOOT_STEPS = [
-    ("loading", 0),
-    ("collectors", 25),
-    ("governor", 50),
-    ("channels", 75),
-    ("ready", 100),
-]
+_BOOTS = {"minimal": _BOOT_MINIMAL, "text": _BOOT_TEXT, "block": _BOOT_BLOCK}
+_TOOLS = {"minimal": _tool_minimal, "text": _tool_text, "block": _tool_block}
 
-_BOOT_TEXT = [
-    "ORCHESTRATOR",
-] + [
-    f"ORCHESTRATOR — {label}  {pct}%"
-    for label, pct in _BOOT_STEPS
-]
-
-_THINKING_TEXT = [
-    ".",
-    ". .",
-    ". . .",
-    "  . . .",
-    "    . . .",
-    "      . .",
-    "        .",
-]
-
-
-def _tool_text(tool_name: str) -> list[str]:
-    return [f"{tool_name}  {pct}%" for pct in range(0, 100, 12)]
-
-
-# ══════════════════════════════════════
-# Minimal 风格（最简 ... 动画）
-# ══════════════════════════════════════
-
-_BOOT_MINIMAL = [
-    "ORCHESTRATOR",
-    "ORCHESTRATOR .",
-    "ORCHESTRATOR ..",
-    "ORCHESTRATOR ...",
-    "ORCHESTRATOR ready",
-]
-
-_THINKING_MINIMAL = [
-    ".",
-    "..",
-    "...",
-]
-
-
-def _tool_minimal(tool_name: str) -> list[str]:
-    return [f"{tool_name} .", f"{tool_name} ..", f"{tool_name} ..."]
-
-
-# ══════════════════════════════════════
-# Public API — 根据 STYLE 自动选择
-# ══════════════════════════════════════
-
-_STYLES = {
-    "block": {
-        "boot": lambda: _BOOT_BLOCK,
-        "thinking": lambda: _THINKING_BLOCK,
-        "tool": _tool_block,
-    },
-    "text": {
-        "boot": lambda: _BOOT_TEXT,
-        "thinking": lambda: _THINKING_TEXT,
-        "tool": _tool_text,
-    },
-    "minimal": {
-        "boot": lambda: _BOOT_MINIMAL,
-        "thinking": lambda: _THINKING_MINIMAL,
-        "tool": _tool_minimal,
-    },
+# Thinking 是 2x2 矩阵：(dots/wave) x (plain/block)
+_THINKINGS = {
+    ("dots", "minimal"):  _THINKING_DOTS,
+    ("dots", "text"):     _THINKING_DOTS,
+    ("dots", "block"):    _THINKING_DOTS_BLOCK,
+    ("wave", "minimal"):  _THINKING_WAVE,
+    ("wave", "text"):     _THINKING_WAVE,
+    ("wave", "block"):    _THINKING_WAVE_BLOCK,
 }
 
 
-def _get(key: str):
-    return _STYLES.get(STYLE, _STYLES["minimal"])[key]
-
-
 def get_boot_frames() -> list[str]:
-    return _get("boot")()
+    return _BOOTS.get(STYLE, _BOOT_MINIMAL)
 
 
 def get_thinking_frames() -> list[str]:
-    return _get("thinking")()
+    return _THINKINGS.get((THINKING_STYLE, STYLE), _THINKING_DOTS)
 
 
 def get_tool_frames(tool_name: str) -> list[str]:
-    return _get("tool")(tool_name)
+    return _TOOLS.get(STYLE, _tool_minimal)(tool_name)
 
 
 def progress(pct: int, label: str = "") -> str:
@@ -199,12 +190,10 @@ def progress(pct: int, label: str = "") -> str:
         text += "```"
         return text
     else:
-        if label:
-            return f"{label}  {pct}%"
-        return f"{pct}%"
+        return f"{label}  {pct}%" if label else f"{pct}%"
 
 
-# Backward compat aliases
+# Backward compat
 BOOT_FRAMES = get_boot_frames()
 THINKING_FRAMES = get_thinking_frames()
 tool_frames = get_tool_frames
