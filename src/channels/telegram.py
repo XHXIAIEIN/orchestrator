@@ -349,26 +349,65 @@ class TelegramChannel(Channel):
             cls._system_prompt = "\n\n---\n\n".join(parts)
         else:
             cls._system_prompt = (
-                "你是 Orchestrator，一个本地 AI 管家。说话直接、有态度，是主人的损友。"
-                "回复简洁，不用 emoji，用中文。"
+                "You are Orchestrator, a local AI butler. Direct, opinionated, the owner's roast-buddy. "
+                "Be concise, no emoji. Always reply in Chinese."
             )
 
-        # 追加 Telegram 特定指令
+        # Telegram-specific instructions (English for prompt efficiency, bot replies in Chinese)
         cls._system_prompt += (
             "\n\n---\n\n"
-            "## Telegram 对话规则\n"
-            "- 你正在通过 Telegram 跟主人对话，保持简短（手机屏幕小）\n"
-            "- 不要用 emoji\n"
-            "- 不要用 Markdown 标题（# ##），Telegram 不渲染\n"
-            "- 可以用 *加粗* 和 `代码`\n"
-            "- 你可以通过 dispatch_task 工具派发任务给 Orchestrator 的 Governor 执行\n"
-            "- Governor 管六个部门：工部(engineering)、礼部(operations)、中书省(protocol)、兵部(security)、刑部(quality)、吏部(personnel)\n"
-            "- 预定义场景：full_audit（全面审计）、system_health（健康检查）、deep_scan（深度扫描）\n"
-            "- 主人说想做什么就直接派，不用问确认。执行结果会自动推送回来\n"
-            "- 纯闲聊就正常聊，别什么都往任务上靠\n"
-            "- 如果主人要求的操作超出你能力范围（比如需要交互式调试），建议他回 Claude Code 终端\n"
+            "## Telegram Rules\n"
+            "- You are chatting with the owner via Telegram. Always reply in Chinese.\n"
+            "- Keep messages short (mobile screen).\n"
+            "- No emoji. No Markdown headings (# ##) — Telegram doesn't render them.\n"
+            "- You may use *bold* and `code`.\n"
+            "- Use dispatch_task tool to send tasks to Governor for execution.\n"
+            "- Governor departments: engineering, operations, protocol, security, quality, personnel.\n"
+            "- Predefined scenarios: full_audit, system_health, deep_scan.\n"
+            "- When the owner wants something done, dispatch immediately — don't ask for confirmation.\n"
+            "- For casual chat, just chat. Don't force everything into a task.\n"
+            "- If a request needs interactive debugging, suggest the owner use Claude Code terminal.\n"
+            "- read_file paths start with /orchestrator/ (container path).\n"
         )
+
+        # 动态生成项目结构（启动时扫描一次，不硬编码）
+        try:
+            tree = cls._scan_project_tree(repo_root)
+            if tree:
+                cls._system_prompt += f"\n## 项目结构\n```\n{tree}```\n"
+        except Exception:
+            pass
+
         return cls._system_prompt
+
+    @staticmethod
+    def _scan_project_tree(repo_root: Path, max_depth: int = 2) -> str:
+        """扫描项目目录生成树（只到 max_depth 层，跳过无关目录）。"""
+        skip = {".git", "node_modules", "__pycache__", ".trash", "tmp",
+                ".claude", "worktrees", ".mypy_cache", ".pytest_cache"}
+        lines = ["/orchestrator/"]
+
+        def _walk(path: Path, prefix: str, depth: int):
+            if depth > max_depth:
+                return
+            try:
+                entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
+            except PermissionError:
+                return
+            dirs = [e for e in entries if e.is_dir() and e.name not in skip]
+            files = [e for e in entries if e.is_file() and not e.name.startswith(".")]
+            # 只显示目录和关键文件
+            for d in dirs:
+                lines.append(f"{prefix}{d.name}/")
+                _walk(d, prefix + "  ", depth + 1)
+            if depth <= 1:
+                for f in files[:5]:  # 顶层只显示前 5 个文件
+                    lines.append(f"{prefix}{f.name}")
+                if len(files) > 5:
+                    lines.append(f"{prefix}... (+{len(files)-5} files)")
+
+        _walk(repo_root, "  ", 0)
+        return "\n".join(lines[:60]) + "\n"  # 上限 60 行
 
     # ── Tool 定义：让 Haiku 能派发任务 ──
 
