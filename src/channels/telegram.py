@@ -528,6 +528,30 @@ class TelegramChannel(Channel):
                 "required": ["path"],
             },
         },
+        {
+            "name": "wake_claude",
+            "description": (
+                "Wake up Claude Code on the host machine for tasks you can't handle: "
+                "writing/modifying code, complex debugging, multi-file refactoring, "
+                "git operations, or anything requiring full tool access. "
+                "A terminal will open automatically on the host. Results push back to Telegram."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "What Claude Code should do",
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Relevant context from our conversation",
+                        "default": "",
+                    },
+                },
+                "required": ["task"],
+            },
+        },
     ]
 
     @staticmethod
@@ -933,6 +957,9 @@ class TelegramChannel(Channel):
             return self._tool_query_status(tool_input)
         elif tool_name == "read_file":
             return self._tool_read_file(tool_input)
+        elif tool_name == "wake_claude":
+            tool_input["_chat_id"] = chat_id
+            return self._tool_wake_claude(tool_input)
         return f"Unknown tool: {tool_name}"
 
     @staticmethod
@@ -1047,6 +1074,27 @@ class TelegramChannel(Channel):
 
         except Exception as e:
             return f"派发失败: {e}"
+
+    @staticmethod
+    def _tool_wake_claude(params: dict) -> str:
+        """唤醒宿主机 Claude Code。"""
+        task = params.get("task", "")
+        context = params.get("context", "")
+        chat_id = params.get("_chat_id", "")
+
+        if not task:
+            return "task is required"
+
+        try:
+            from src.channels.wake import write_wake_request
+            filename = write_wake_request(
+                task=task,
+                context=context,
+                chat_id=chat_id,
+            )
+            return f"Claude Code wake request sent ({filename}). A terminal will open on the host machine."
+        except Exception as e:
+            return f"Wake failed: {e}"
 
     def _tool_query_status(self, params: dict) -> str:
         """查询系统状态。"""

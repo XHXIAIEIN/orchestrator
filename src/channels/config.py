@@ -69,7 +69,7 @@ else:
 
 # Role permissions
 ROLE_PERMISSIONS: dict[str, set[str]] = {
-    "admin": {"chat", "query_status", "dispatch_task", "read_file"},
+    "admin": {"chat", "query_status", "dispatch_task", "read_file", "wake_claude"},
     "viewer": {"chat", "query_status"},
 }
 
