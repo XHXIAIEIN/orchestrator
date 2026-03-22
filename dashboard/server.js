@@ -1431,13 +1431,50 @@ else:
   });
 });
 
-wss.on('connection', (ws) => {
-  ws.send(JSON.stringify({ type: 'connected', message: 'Orchestrator Dashboard' }));
+// ── WebSocket 增强：session ID + 断线消息补发 ──
+const crypto = require('crypto');
+const WS_BUFFER_MAX = 200;  // 最多缓存 200 条消息
+const wsMessageBuffer = [];  // 环形缓冲区
+let wsMessageSeq = 0;        // 全局消息序号
+
+wss.on('connection', (ws, req) => {
+  // 分配 session ID
+  const sessionId = crypto.randomBytes(8).toString('hex');
+  ws.sessionId = sessionId;
+  ws.lastSeq = wsMessageSeq;
+
+  // 客户端可以带 ?lastSeq=N 来请求补发
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const requestedSeq = parseInt(url.searchParams.get('lastSeq') || '0', 10);
+
+  ws.send(JSON.stringify({
+    type: 'connected',
+    message: 'Orchestrator Dashboard',
+    sessionId,
+    seq: wsMessageSeq,
+  }));
+
+  // 断线补发：发送客户端错过的消息
+  if (requestedSeq > 0 && requestedSeq < wsMessageSeq) {
+    const missed = wsMessageBuffer.filter(m => m._seq > requestedSeq);
+    missed.forEach(m => {
+      if (ws.readyState === 1) ws.send(JSON.stringify(m));
+    });
+  }
 });
 
 function broadcast(data) {
+  // 给消息加序号并缓存
+  wsMessageSeq++;
+  const msg = { ...data, _seq: wsMessageSeq, _ts: new Date().toISOString() };
+  wsMessageBuffer.push(msg);
+  while (wsMessageBuffer.length > WS_BUFFER_MAX) wsMessageBuffer.shift();
+
   wss.clients.forEach(client => {
-    if (client.readyState === 1) client.send(JSON.stringify(data));
+    if (client.readyState === 1) {
+      client.send(JSON.stringify(msg));
+      client.lastSeq = wsMessageSeq;
+    }
   });
 }
 
