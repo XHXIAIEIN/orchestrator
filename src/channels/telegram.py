@@ -595,10 +595,13 @@ class TelegramChannel(Channel):
 
     @staticmethod
     def _db_conn(db_path: str):
-        """WAL 模式连接，支持并发读写。"""
+        """Connect with WAL mode if possible, fallback to default."""
         import sqlite3
         conn = sqlite3.connect(db_path, timeout=30)
-        conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            pass  # WAL needs write access to create -wal/-shm files
         conn.execute("PRAGMA busy_timeout=30000")
         return conn
 

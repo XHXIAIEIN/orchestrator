@@ -91,9 +91,12 @@ class EventBus:
         self._init_db()
 
     def _conn(self):
-        """创建 WAL 模式连接，支持并发读写。"""
+        """Connect with WAL mode if possible, fallback to default."""
         conn = sqlite3.connect(self._db_path, timeout=30)
-        conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
