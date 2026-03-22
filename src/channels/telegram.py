@@ -266,13 +266,13 @@ class TelegramChannel(Channel):
             hc = HealthCheck()
             report = hc.run()
             lines = ["*系统状态*\n"]
-            lines.append(f"整体: {'[OK] 正常' if report.get('healthy') else '[ERR] 异常'}")
+            lines.append(f"整体: {'正常' if report.get('healthy') else '异常'}")
             for check_name, check_data in report.get("checks", {}).items():
-                status = "[OK]" if check_data.get("ok") else "[ERR]"
-                lines.append(f"{status} {check_name}")
+                mark = "ok" if check_data.get("ok") else "异常"
+                lines.append(f"  {check_name}: {mark}")
             self._send_text(chat_id, "\n".join(lines))
         except Exception as e:
-            self._send_text(chat_id, f"[ERR] 获取状态失败: {e}")
+            self._send_text(chat_id, f"获取状态失败: {e}")
 
     def _cmd_tasks(self, chat_id: str):
         try:
@@ -287,19 +287,19 @@ class TelegramChannel(Channel):
                 return
 
             lines = ["*最近任务*\n"]
-            status_tags = {
-                "done": "[DONE]", "failed": "[FAIL]", "running": "[RUN]",
-                "pending": "[WAIT]", "scrutiny_failed": "[GATE]",
+            status_labels = {
+                "done": "完成", "failed": "失败", "running": "执行中",
+                "pending": "等待", "scrutiny_failed": "审查未通过",
             }
             for t in tasks:
-                tag = status_tags.get(t[2], f"[{t[2]}]")
+                label = status_labels.get(t[2], t[2])
                 dept = t[1] or "?"
                 summary = (t[3] or "")[:60]
-                lines.append(f"{tag} `{t[0][:8]}` [{dept}] {summary}")
+                lines.append(f"  `{t[0][:8]}` {dept} — {summary} ({label})")
 
             self._send_text(chat_id, "\n".join(lines))
         except Exception as e:
-            self._send_text(chat_id, f"[ERR] 获取任务失败: {e}")
+            self._send_text(chat_id, f"获取任务失败: {e}")
 
     def _cmd_run(self, chat_id: str, scenario: str):
         if not scenario.strip():
@@ -315,9 +315,9 @@ class TelegramChannel(Channel):
                 priority=Priority.HIGH,
                 source="channel:telegram",
             ))
-            self._send_text(chat_id, f"[OK] 已提交场景执行: `{scenario.strip()}`")
+            self._send_text(chat_id, f"已提交: `{scenario.strip()}`")
         except Exception as e:
-            self._send_text(chat_id, f"[ERR] 提交失败: {e}")
+            self._send_text(chat_id, f"提交失败: {e}")
 
     def _cmd_channels(self, chat_id: str):
         try:
@@ -326,11 +326,11 @@ class TelegramChannel(Channel):
             status = reg.get_status()
             lines = ["*Channel 状态*\n"]
             for name, info in status.items():
-                tag = "[ON]" if info["enabled"] else "[OFF]"
-                lines.append(f"{tag} {name} ({info['type']})")
+                state = "在线" if info["enabled"] else "离线"
+                lines.append(f"  {name} ({info['type']}): {state}")
             self._send_text(chat_id, "\n".join(lines))
         except Exception as e:
-            self._send_text(chat_id, f"[ERR] 获取 channel 状态失败: {e}")
+            self._send_text(chat_id, f"获取 channel 状态失败: {e}")
 
     # ── 对话：Claude API + DB 持久化 + 摘要记忆 ──
 
@@ -668,9 +668,9 @@ class TelegramChannel(Channel):
         except Exception as e:
             log.error(f"telegram: chat failed: {e}")
             if live_msg_id:
-                self._edit_message(chat_id, live_msg_id, f"[ERR] {e}")
+                self._edit_message(chat_id, live_msg_id, f"出了点问题: {e}")
             else:
-                self._send_text(chat_id, f"[ERR] {e}")
+                self._send_text(chat_id, f"出了点问题: {e}")
 
     def _delete_message(self, chat_id: str, message_id: int):
         """Delete a message (used when replacing placeholder with split messages)."""
