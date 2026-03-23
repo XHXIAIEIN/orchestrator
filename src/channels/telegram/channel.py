@@ -356,7 +356,17 @@ class TelegramChannel(Channel):
             chat_engine.handle_command(text, chat_id, self._send_text, "telegram")
             return
 
-        # Debounce: accumulate messages within a short window
+        # Short text without media + no pending buffer → fire immediately
+        has_media = bool(attachments)
+        is_long = len(text) > ch_cfg.LONG_MSG_THRESHOLD
+        with self._pending_lock:
+            has_pending = chat_id in self._pending
+
+        if not has_media and not has_pending and not is_long:
+            self._process_message(chat_id, text, attachments)
+            return
+
+        # Has media or existing pending buffer → debounce
         with self._pending_lock:
             if chat_id in self._pending:
                 buf = self._pending[chat_id]
@@ -365,20 +375,17 @@ class TelegramChannel(Channel):
                 buf["attachments"].extend(attachments)
                 if buf.get("timer"):
                     buf["timer"].cancel()
-                buf["timer"] = threading.Timer(
-                    self._debounce_sec, self._flush_pending, args=(chat_id,)
-                )
-                buf["timer"].start()
             else:
-                timer = threading.Timer(
-                    self._debounce_sec, self._flush_pending, args=(chat_id,)
-                )
                 self._pending[chat_id] = {
                     "texts": [text] if text else [],
                     "attachments": attachments,
-                    "timer": timer,
+                    "timer": None,
                 }
-                timer.start()
+            buf = self._pending[chat_id]
+            buf["timer"] = threading.Timer(
+                self._debounce_sec, self._flush_pending, args=(chat_id,)
+            )
+            buf["timer"].start()
 
     def _flush_pending(self, chat_id: str):
         """Debounce timer expired — process accumulated messages as one batch."""
@@ -386,11 +393,14 @@ class TelegramChannel(Channel):
             buf = self._pending.pop(chat_id, None)
         if not buf:
             return
-
         texts = buf["texts"]
         attachments = buf["attachments"]
         text = "\n".join(texts) if texts else ""
+        self._process_message(chat_id, text, attachments)
 
+    def _process_message(self, chat_id: str, text: str,
+                         attachments: list[MediaAttachment]):
+        """Route a (possibly batched) message to chat engine."""
         if not text and attachments:
             text = self._describe_media(attachments)
 
