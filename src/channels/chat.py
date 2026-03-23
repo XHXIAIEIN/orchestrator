@@ -142,9 +142,20 @@ def db_conn(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def save_message(db_path: str, chat_id: str, role: str, content: str):
+def _ensure_chat_client_column(conn: sqlite3.Connection):
+    """确保 chat_messages 表有 chat_client 字段（兼容旧表）。"""
+    try:
+        conn.execute("SELECT chat_client FROM chat_messages LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN chat_client TEXT DEFAULT ''")
+        conn.commit()
+
+
+def save_message(db_path: str, chat_id: str, role: str, content: str,
+                 chat_client: str = ""):
     """存一条消息。含硬上限保护。"""
     conn = db_conn(db_path)
+    _ensure_chat_client_column(conn)
     count = conn.execute(
         "SELECT COUNT(*) FROM chat_messages WHERE chat_id = ?", (chat_id,)
     ).fetchone()[0]
@@ -156,8 +167,9 @@ def save_message(db_path: str, chat_id: str, role: str, content: str):
             (chat_id, excess),
         )
     conn.execute(
-        "INSERT INTO chat_messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (chat_id, role, content, datetime.now(timezone.utc).isoformat()),
+        "INSERT INTO chat_messages (chat_id, role, content, created_at, chat_client) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (chat_id, role, content, datetime.now(timezone.utc).isoformat(), chat_client),
     )
     conn.commit()
     conn.close()
@@ -489,7 +501,7 @@ def do_chat(chat_id: str, text: str, original_text: str,
 
         db_path = _DEFAULT_DB
         db_content = original_text if original_text else text
-        save_message(db_path, chat_id, "user", db_content)
+        save_message(db_path, chat_id, "user", db_content, chat_client=channel_source)
 
         messages = build_context(db_path, chat_id)
         client = get_anthropic_client()
@@ -545,7 +557,7 @@ def do_chat(chat_id: str, text: str, original_text: str,
                 log.info(f"chat: reply sent successfully")
             except Exception as re:
                 log.error(f"chat: reply_fn failed: {re}", exc_info=True)
-            save_message(db_path, chat_id, "assistant", final_reply)
+            save_message(db_path, chat_id, "assistant", final_reply, chat_client=channel_source)
         else:
             log.warning(f"chat: no final_reply for {chat_id[:16]}...")
 
