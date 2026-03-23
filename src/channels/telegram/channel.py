@@ -4,12 +4,14 @@ Telegram Channel — Bot API 适配器。
 出站：ChannelMessage → sendMessage API
 入站：Long polling getUpdates → 命令解析 → Event Bus
 对话：Claude API（带 SOUL 人格）→ 回复
+多媒体：收发图片、语音、文件、视频、贴纸。
 
 对话/DB/工具逻辑复用 src.channels.chat 公共层。
 零外部依赖，纯 urllib。
 """
 import json
 import logging
+import os
 import threading
 import time
 import urllib.request
@@ -20,6 +22,7 @@ from typing import Optional
 from src.channels.base import Channel, ChannelMessage
 from src.channels import config as ch_cfg
 from src.channels import chat as chat_engine
+from src.channels.media import MediaAttachment, MediaType, download_url, guess_mime
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +124,100 @@ class TelegramChannel(Channel):
             log.warning(f"telegram: send failed: {e}")
             return False
 
+    # ── TG API 工具方法 ─────────────────────────────────────────────────────
+
+    def _tg_api(self, method: str, params: dict) -> dict:
+        """Call Telegram Bot API."""
+        payload = json.dumps(params).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self._base_url}/{method}",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
+            return json.loads(resp.read())
+        except Exception as e:
+            log.warning(f"telegram: {method} failed: {e}")
+            return {}
+
+    def _tg_get_file_url(self, file_id: str) -> str:
+        """Get download URL for a Telegram file."""
+        resp = self._tg_api("getFile", {"file_id": file_id})
+        if resp and resp.get("ok"):
+            path = resp["result"]["file_path"]
+            return f"https://api.telegram.org/file/bot{self.token}/{path}"
+        return ""
+
+    # ── 出站多媒体 ──────────────────────────────────────────────────────────
+
+    def _send_photo(self, chat_id: str, photo_path: str, caption: str = "") -> bool:
+        return self._send_multipart(chat_id, "sendPhoto", "photo", photo_path, caption)
+
+    def _send_document(self, chat_id: str, doc_path: str, caption: str = "") -> bool:
+        return self._send_multipart(chat_id, "sendDocument", "document", doc_path, caption)
+
+    def _send_voice(self, chat_id: str, voice_path: str, caption: str = "") -> bool:
+        return self._send_multipart(chat_id, "sendVoice", "voice", voice_path, caption)
+
+    def _send_video(self, chat_id: str, video_path: str, caption: str = "") -> bool:
+        return self._send_multipart(chat_id, "sendVideo", "video", video_path, caption)
+
+    def _send_sticker(self, chat_id: str, sticker_path: str) -> bool:
+        return self._send_multipart(chat_id, "sendSticker", "sticker", sticker_path)
+
+    def _send_multipart(self, chat_id: str, method: str, field_name: str,
+                        file_path: str, caption: str = "") -> bool:
+        """Send file via multipart/form-data to Telegram."""
+        import mimetypes
+        boundary = "----OrchestratorBoundary"
+        filename = os.path.basename(file_path)
+        mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+
+        body = bytearray()
+        body += f"--{boundary}\r\n".encode()
+        body += f'Content-Disposition: form-data; name="chat_id"\r\n\r\n{chat_id}\r\n'.encode()
+        if caption:
+            body += f"--{boundary}\r\n".encode()
+            body += f'Content-Disposition: form-data; name="caption"\r\n\r\n{caption}\r\n'.encode()
+        body += f"--{boundary}\r\n".encode()
+        body += f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode()
+        body += f"Content-Type: {mime}\r\n\r\n".encode()
+        with open(file_path, "rb") as f:
+            body += f.read()
+        body += f"\r\n--{boundary}--\r\n".encode()
+
+        req = urllib.request.Request(
+            f"{self._base_url}/{method}",
+            data=bytes(body),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=30)
+            result = json.loads(resp.read())
+            return result.get("ok", False)
+        except Exception as e:
+            log.warning(f"telegram: {method} failed: {e}")
+            return False
+
+    def _reply_media(self, chat_id: str, text: str,
+                     media_path: str = "", media_type: str = "") -> bool:
+        """Reply with media file if provided, otherwise plain text."""
+        if media_path and os.path.exists(media_path):
+            mime = media_type or guess_mime(media_path)
+            caption = text[:1024] if text else ""
+            if mime.startswith("image/"):
+                return self._send_photo(chat_id, media_path, caption)
+            elif mime.startswith("video/"):
+                return self._send_video(chat_id, media_path, caption)
+            elif mime.startswith("audio/"):
+                return self._send_voice(chat_id, media_path, caption)
+            else:
+                return self._send_document(chat_id, media_path, caption)
+        return self._send_text(chat_id, text)
+
     # ── 入站 ────────────────────────────────────────────────────────────────
 
     def start(self):
@@ -168,17 +265,14 @@ class TelegramChannel(Channel):
         self._last_update_id = update.get("update_id", self._last_update_id)
         message = update.get("message", {})
         chat_id = str(message.get("chat", {}).get("id", ""))
-        text = (message.get("text") or "").strip()
-        if not text or not chat_id:
+        if not chat_id:
             return
 
         # 鉴权
         if ch_cfg.ALLOWED_USERS:
             if not ch_cfg.user_can(chat_id, "chat"):
-                log.warning(f"telegram: rejected from unauthorized chat_id={chat_id}")
                 return
         elif self.chat_id and chat_id != self.chat_id:
-            log.warning(f"telegram: rejected from unauthorized chat_id={chat_id}")
             return
 
         # 频率限制
@@ -187,27 +281,131 @@ class TelegramChannel(Channel):
             return
         self._last_msg_time[chat_id] = now
 
-        if text.startswith("/"):
+        text = (message.get("text") or message.get("caption") or "").strip()
+        attachments = []
+
+        if "photo" in message:
+            photo = message["photo"][-1]  # largest size
+            att = self._download_tg_file(photo["file_id"], MediaType.IMAGE, "image/jpeg")
+            if att:
+                attachments.append(att)
+
+        if "voice" in message:
+            att = self._download_tg_file(
+                message["voice"]["file_id"], MediaType.VOICE, "audio/ogg",
+                duration_ms=message["voice"].get("duration", 0) * 1000,
+            )
+            if att:
+                attachments.append(att)
+
+        if "audio" in message:
+            att = self._download_tg_file(
+                message["audio"]["file_id"], MediaType.VOICE,
+                message["audio"].get("mime_type", "audio/mpeg"),
+                duration_ms=message["audio"].get("duration", 0) * 1000,
+            )
+            if att:
+                attachments.append(att)
+
+        if "document" in message:
+            doc = message["document"]
+            att = self._download_tg_file(
+                doc["file_id"], MediaType.FILE,
+                doc.get("mime_type", "application/octet-stream"),
+            )
+            if att:
+                att.file_name = doc.get("file_name", "")
+                attachments.append(att)
+
+        if "sticker" in message:
+            att = self._download_tg_file(
+                message["sticker"]["file_id"], MediaType.IMAGE, "image/webp",
+            )
+            if att:
+                attachments.append(att)
+
+        if "video" in message:
+            vid = message["video"]
+            att = self._download_tg_file(
+                vid["file_id"], MediaType.VIDEO, "video/mp4",
+                duration_ms=vid.get("duration", 0) * 1000,
+            )
+            if att:
+                attachments.append(att)
+
+        if "video_note" in message:
+            vn = message["video_note"]
+            att = self._download_tg_file(
+                vn["file_id"], MediaType.VIDEO, "video/mp4",
+                duration_ms=vn.get("duration", 0) * 1000,
+            )
+            if att:
+                attachments.append(att)
+
+        if not text and not attachments:
+            return
+
+        if text and text.startswith("/"):
             self._send_typing(chat_id)
             chat_engine.handle_command(text, chat_id, self._send_text, "telegram")
         else:
-            if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
+            if text and len(text) > ch_cfg.LONG_MSG_THRESHOLD:
                 file_path, char_count = chat_engine.save_to_inbox(text)
                 preview = text[:80].replace("\n", " ")
                 ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
-                self._start_chat(chat_id, ref, original_text=text)
+                self._start_chat(chat_id, ref, original_text=text, media=attachments)
             else:
-                self._start_chat(chat_id, text)
+                desc = text or self._describe_media(attachments)
+                self._start_chat(chat_id, desc, media=attachments)
 
-    def _start_chat(self, chat_id: str, text: str, original_text: str = ""):
+    # ── 入站多媒体辅助 ─────────────────────────────────────────────────────
+
+    def _download_tg_file(self, file_id: str, media_type: MediaType,
+                          mime: str, duration_ms: int = 0) -> MediaAttachment | None:
+        """Download a file from Telegram and wrap as MediaAttachment."""
+        try:
+            url = self._tg_get_file_url(file_id)
+            if not url:
+                return None
+            local_path = download_url(url, "inbound")
+            return MediaAttachment(
+                media_type=media_type, local_path=local_path,
+                mime_type=mime, duration_ms=duration_ms,
+            )
+        except Exception as e:
+            log.warning(f"telegram: file download failed: {e}")
+            return None
+
+    @staticmethod
+    def _describe_media(attachments: list[MediaAttachment]) -> str:
+        """Generate human-readable description of attachments."""
+        descs = []
+        for a in attachments:
+            if a.media_type == MediaType.IMAGE:
+                descs.append("[用户发送了一张图片]")
+            elif a.media_type == MediaType.VOICE:
+                descs.append(f"[用户发送了一条语音{f': {a.text}' if a.text else ''}]")
+            elif a.media_type == MediaType.FILE:
+                descs.append(f"[用户发送了文件: {a.file_name or '未知'}]")
+            elif a.media_type == MediaType.VIDEO:
+                descs.append("[用户发送了一段视频]")
+        return " ".join(descs) if descs else "[用户发送了媒体消息]"
+
+    # ── 对话 ────────────────────────────────────────────────────────────────
+
+    def _start_chat(self, chat_id: str, text: str, original_text: str = "",
+                    media: list[MediaAttachment] | None = None):
         """启动对话线程（带 typing 指示器）。"""
         def _chat_with_typing():
             typing_stop = self._keep_typing(chat_id)
             try:
                 chat_engine.do_chat(
                     chat_id, text, original_text,
-                    self._get_system_prompt(), self._send_text, "telegram",
+                    self._get_system_prompt(),
+                    lambda cid, txt, **kw: self._reply_media(cid, txt, **kw),
+                    "telegram",
                     permission_check_fn=lambda cid, tool: ch_cfg.user_can(cid, tool),
+                    media=media,
                 )
             finally:
                 typing_stop.set()
