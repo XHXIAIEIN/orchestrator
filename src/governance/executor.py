@@ -34,9 +34,9 @@ except ImportError:
     TokenAccountant = None
 
 try:
-    from src.governance.safety.doom_loop import check_doom_loop
+    from src.governance.stuck_detector import StuckDetector
 except ImportError:
-    check_doom_loop = None
+    StuckDetector = None
 
 try:
     from src.governance.audit.heartbeat import parse_progress, HEARTBEAT_PROMPT
@@ -211,6 +211,7 @@ class TaskExecutor:
 
         result_text = ""
         turn = 0
+        detector = StuckDetector() if StuckDetector else None
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
@@ -261,17 +262,21 @@ class TaskExecutor:
                         except Exception:
                             pass
 
-                # ── Doom Loop Detection: 每 5 轮检查一次 ──
-                if turn % 5 == 0 and check_doom_loop:
-                    events = self.db.get_agent_events(task_id, limit=30)
-                    doom = check_doom_loop(events)
-                    if doom.triggered:
-                        log.warning(f"TaskExecutor: DOOM LOOP task #{task_id}: {doom.reason}")
-                        self._log_agent_event(task_id, "doom_loop", {
-                            "reason": doom.reason, "details": doom.details,
-                        })
-                        result_text = f"[DOOM LOOP] 熔断：{doom.reason}"
-                        return result_text
+                # ── Stuck Detection: 每 3 轮检查一次 ──
+                if detector:
+                    tool_names = [tc.get("tool", "") for tc in tool_calls] if tool_calls else []
+                    error_text = message.error or ""
+                    detector.record({"data": {"tools": tool_names, "text": text_parts, "error": error_text}})
+
+                    if turn > 0 and turn % 3 == 0:
+                        stuck, pattern = detector.is_stuck()
+                        if stuck:
+                            log.warning(f"StuckDetector: task #{task_id} stuck — {pattern}")
+                            self._log_agent_event(task_id, "stuck_detected", {
+                                "pattern": pattern, "turn": turn,
+                            })
+                            result_text = f"[STUCK: {pattern}] Agent detected in loop after {turn} turns"
+                            break
 
             elif isinstance(message, TaskProgressMessage):
                 self._log_agent_event(task_id, "agent_progress", {
