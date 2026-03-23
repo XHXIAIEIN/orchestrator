@@ -568,7 +568,9 @@ def do_chat(chat_id: str, text: str, original_text: str,
 
         db_path = _DEFAULT_DB
         db_content = original_text if original_text else text
-        save_message(db_path, chat_id, "user", db_content, chat_client=channel_source)
+        if not db_content and media:
+            db_content = "[媒体消息]"
+        save_message(db_path, chat_id, "user", db_content or "[空消息]", chat_client=channel_source)
 
         messages = build_context(db_path, chat_id)
 
