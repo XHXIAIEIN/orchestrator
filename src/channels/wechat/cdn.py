@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives import padding
 
 log = logging.getLogger(__name__)
 
-CDN_BASE_URL = os.environ.get("WECHAT_CDN_BASE_URL", "https://cdn.ilinkai.weixin.qq.com")
+CDN_BASE_URL = os.environ.get("WECHAT_CDN_BASE_URL", "https://novac2c.cdn.weixin.qq.com/c2c")
 UPLOAD_MAX_RETRIES = 3
 
 
