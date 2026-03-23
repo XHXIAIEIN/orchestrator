@@ -8,6 +8,10 @@ Channel 抽象基类 — OpenClaw 式适配器模式。
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.channels.media import MediaAttachment
 
 
 @dataclass
@@ -18,6 +22,7 @@ class ChannelMessage:
     priority: str = "NORMAL"           # CRITICAL / HIGH / NORMAL / LOW
     department: str = ""               # 来源部门
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    media: list = field(default_factory=list)  # list[MediaAttachment]
 
 
 class Channel(ABC):

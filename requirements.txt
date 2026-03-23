@@ -5,6 +5,7 @@ anyio>=4.0.0
 python-dotenv>=1.0.0
 apscheduler
 PyYAML>=6.0
+cryptography>=42.0.0
 
 # Dev
 pytest>=8.0.0
