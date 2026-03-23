@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 MODEL_TIERS = {
+    "ollama/qwen3.5:9b":         {"cost": 0,    "capability": 0.55, "multimodal": False},
     "ollama/qwen3:32b":          {"cost": 0,    "capability": 0.6,  "multimodal": False},
     "claude-haiku-4-5-20251001": {"cost": 0.25, "capability": 0.7,  "multimodal": False},
     "ollama/gemma3:27b":         {"cost": 0,    "capability": 0.65, "multimodal": True},
