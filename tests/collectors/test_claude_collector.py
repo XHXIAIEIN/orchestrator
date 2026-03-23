@@ -6,10 +6,12 @@ from src.storage.events_db import EventsDB
 
 
 def make_fake_session(tmp_path, project="test_project", messages=None):
+    """Create a fake Claude session file in the expected JSONL format."""
     if messages is None:
         messages = [
-            {"role": "user", "content": "帮我写一个 Python 脚本"},
-            {"role": "assistant", "content": "好的，这是代码..."},
+            {"type": "user", "message": {"content": "帮我写一个 Python 脚本"},
+             "timestamp": "2026-03-23T00:00:00Z"},
+            {"type": "assistant", "message": {"content": "好的，这是代码..."}},
         ]
     project_dir = tmp_path / ".claude" / "projects" / project
     project_dir.mkdir(parents=True)
@@ -40,8 +42,9 @@ def test_collector_deduplicates(tmp_path):
 
 def test_collector_extracts_topics(tmp_path):
     make_fake_session(tmp_path, messages=[
-        {"role": "user", "content": "帮我设计一个多 agent 系统"},
-        {"role": "assistant", "content": "我建议使用 orchestrator 模式..."},
+        {"type": "user", "message": {"content": "帮我设计一个多 agent 系统"},
+         "timestamp": "2026-03-23T00:00:00Z"},
+        {"type": "assistant", "message": {"content": "我建议使用 orchestrator 模式..."}},
     ])
     db = EventsDB(str(tmp_path / "events.db"))
     collector = ClaudeCollector(db=db, claude_home=str(tmp_path / ".claude"))

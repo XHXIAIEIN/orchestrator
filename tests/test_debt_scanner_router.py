@@ -1,6 +1,6 @@
 import json
 from unittest.mock import patch, MagicMock
-from src.governance.debt_scanner import DebtScanner
+from src.governance.learning.debt_scanner import DebtScanner
 
 def test_analyze_batch_uses_router():
     """_analyze_one_batch() 应通过 LLMRouter 而不是直接调 subprocess。"""
@@ -24,7 +24,7 @@ def test_analyze_batch_uses_router():
         "context": "found a bug in the parser",
     }])
 
-    with patch("src.governance.debt_scanner.get_router") as mock_get_router:
+    with patch("src.governance.learning.debt_scanner.get_router") as mock_get_router:
         mock_router = MagicMock()
         mock_router.generate.return_value = fake_response
         mock_get_router.return_value = mock_router
@@ -45,7 +45,7 @@ def test_analyze_batch_handles_markdown_fences():
 
     fenced = '```json\n[{"session_id":"s","project":"p","summary":"bug","severity":"low","context":"err"}]\n```'
 
-    with patch("src.governance.debt_scanner.get_router") as mock_get_router:
+    with patch("src.governance.learning.debt_scanner.get_router") as mock_get_router:
         mock_router = MagicMock()
         mock_router.generate.return_value = fenced
         mock_get_router.return_value = mock_router

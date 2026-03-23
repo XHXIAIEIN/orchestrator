@@ -122,7 +122,7 @@ def assemble_context(department: str, task: dict) -> str:
 
     # 4. Extended Memory（按需加载）
     try:
-        from src.governance.memory_tier import (
+        from src.governance.context.memory_tier import (
             resolve_tags_from_spec, load_extended_memory, format_extended_for_prompt,
         )
         spec = task.get("spec", {})

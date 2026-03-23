@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 from src.storage.events_db import EventsDB
-from src.governance.prompts import load_prompt
+from src.governance.context.prompts import load_prompt
 
 PROFILE_TOOL = {
     "name": "save_profile_analysis",

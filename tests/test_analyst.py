@@ -1,24 +1,18 @@
+import json
 import pytest
 from unittest.mock import MagicMock, patch
 from src.analysis.analyst import DailyAnalyst
 from src.storage.events_db import EventsDB
 
 
-def make_analyst_response():
-    block = MagicMock()
-    block.type = "tool_use"
-    block.name = "save_analysis"
-    block.id = "tu_analysis"
-    block.input = {
+def make_analyst_result():
+    return {
         "summary": "今天主要在做 Python 开发",
         "time_breakdown": {"coding": 120, "reading": 30},
         "top_topics": ["python", "agent", "orchestrator"],
         "behavioral_insights": "下午最活跃，偏向深度工作",
         "profile_update": {"interests": ["AI", "编程"], "work_style": "夜猫子"}
     }
-    response = MagicMock()
-    response.content = [block]
-    return response
 
 
 def test_analyst_runs(tmp_path):
@@ -26,12 +20,13 @@ def test_analyst_runs(tmp_path):
     db.insert_event("claude", "coding", "写代码", 60, 0.8, ["python"], {})
     db.insert_event("browser_chrome", "dev", "看文档", 30, 0.6, ["docs"], {})
 
-    with patch("src.analysis.analyst.anthropic.Anthropic") as MockAnthropic:
-        mock_client = MagicMock()
-        MockAnthropic.return_value = mock_client
-        mock_client.messages.create.return_value = make_analyst_response()
+    result_json = json.dumps(make_analyst_result(), ensure_ascii=False)
+    mock_proc = MagicMock()
+    mock_proc.stdout = result_json
+    mock_proc.stderr = ""
 
-        analyst = DailyAnalyst(api_key="test-key", db=db)
+    with patch("src.analysis.analyst.subprocess.run", return_value=mock_proc):
+        analyst = DailyAnalyst(db=db)
         result = analyst.run()
 
         assert "summary" in result

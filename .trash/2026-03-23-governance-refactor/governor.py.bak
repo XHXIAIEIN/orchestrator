@@ -22,35 +22,35 @@ from claude_agent_sdk import (
 
 from src.storage.events_db import EventsDB
 from src.core.llm_router import get_router
-from src.governance.audit.run_logger import append_run_log, load_recent_runs, format_runs_for_context
-from src.governance.context.context_assembler import assemble_context
-from src.governance.context.prompts import (
+from src.governance.run_logger import append_run_log, load_recent_runs, format_runs_for_context
+from src.governance.context_assembler import assemble_context
+from src.governance.prompts import (
     TASK_PROMPT_TEMPLATE, SCRUTINY_PROMPT, COGNITIVE_MODE_PROMPTS,
     DEPARTMENTS, PARALLEL_SCENARIOS, SECOND_OPINION_MODEL,
     load_department, find_git_bash,
 )
-from src.governance.policy.blueprint import (
+from src.governance.blueprint import (
     load_blueprint, run_preflight, preflight_passed, get_allowed_tools,
     AuthorityCeiling,
 )
 from src.gateway.routing import resolve_route, get_policy_config
-from src.governance.pipeline.scratchpad import write_scratchpad, build_handoff_prompt
-from src.governance.pipeline.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
-from src.governance.budget.token_budget import TokenAccountant
-from src.governance.safety.doom_loop import check_doom_loop
-from src.governance.policy.prompt_canary import should_use_canary, get_canary_prompt
-from src.governance.safety.verify_gate import run_gates, save_gate_record
-from src.governance.policy.novelty_policy import check_novelty, get_recent_failures
-from src.governance.policy.policy_advisor import observe_task_execution
-from src.governance.safety.agent_semaphore import AgentSemaphore
-from src.governance.audit.punch_clock import get_punch_clock
-from src.governance.audit.outcome_tracker import record_outcome
-from src.governance.pipeline.fan_out import get_fan_out
-from src.governance.audit.heartbeat import parse_progress, HEARTBEAT_PROMPT
-from src.governance.policy.tiered_review import determine_review_tier, get_review_config
-from src.governance.context.intent_manifest import build_manifest
-from src.governance.policy.deterministic_resolver import get_deterministic_fallback
-from src.governance.safety.immutable_constraints import enforce_tool_constraint, enforce_timeout_constraint
+from src.governance.scratchpad import write_scratchpad, build_handoff_prompt
+from src.governance.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
+from src.governance.token_budget import TokenAccountant
+from src.governance.doom_loop import check_doom_loop
+from src.governance.prompt_canary import should_use_canary, get_canary_prompt
+from src.governance.verify_gate import run_gates, save_gate_record
+from src.governance.novelty_policy import check_novelty, get_recent_failures
+from src.governance.policy_advisor import observe_task_execution
+from src.governance.agent_semaphore import AgentSemaphore
+from src.governance.punch_clock import get_punch_clock
+from src.governance.outcome_tracker import record_outcome
+from src.governance.fan_out import get_fan_out
+from src.governance.heartbeat import parse_progress, HEARTBEAT_PROMPT
+from src.governance.tiered_review import determine_review_tier, get_review_config
+from src.governance.intent_manifest import build_manifest
+from src.governance.deterministic_resolver import get_deterministic_fallback
+from src.governance.immutable_constraints import enforce_tool_constraint, enforce_timeout_constraint
 from src.gateway.complexity import classify_complexity, should_skip_scrutiny, get_recommended_turns
 
 log = logging.getLogger(__name__)

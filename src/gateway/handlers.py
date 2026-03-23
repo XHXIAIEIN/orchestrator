@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from src.storage.events_db import EventsDB
-from src.governance.run_logger import load_recent_runs, verify_chain
+from src.governance.audit.run_logger import load_recent_runs, verify_chain
 
 log = logging.getLogger(__name__)
 

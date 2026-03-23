@@ -66,6 +66,7 @@ class TestIntentGateway:
         """TaskIntent 应能转换为 Governor 的 spec 格式。"""
         intent = TaskIntent(
             action="修复 Steam 采集器",
+            intent="fix",
             department="engineering",
             cognitive_mode="hypothesis",
             priority="high",

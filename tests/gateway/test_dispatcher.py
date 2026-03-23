@@ -8,7 +8,8 @@ class TestDispatcher:
     def test_dispatch_creates_task(self):
         """明确意图应创建 Governor 任务并返回 task_id。"""
         intent = TaskIntent(
-            action="修复 Steam 采集器", department="engineering",
+            action="修复 Steam 采集器", intent="fix",
+            department="engineering",
             cognitive_mode="hypothesis", priority="high",
             problem="Steam 采集器 0 数据", expected="正常采集",
             needs_clarification=False,
@@ -24,7 +25,8 @@ class TestDispatcher:
     def test_dispatch_clarification_returns_question(self):
         """需要澄清的意图不创建任务，返回问题。"""
         intent = TaskIntent(
-            action="", department="",
+            action="", intent="clarify",
+            department="",
             cognitive_mode="react", priority="medium",
             problem="", expected="",
             needs_clarification=True,
@@ -38,7 +40,8 @@ class TestDispatcher:
         """从自然语言到派单的完整流程。"""
         with patch('src.gateway.dispatcher.IntentGateway') as MockGW:
             MockGW.return_value.parse.return_value = TaskIntent(
-                action="运行安全扫描", department="security",
+                action="运行安全扫描", intent="execute",
+                department="security",
                 cognitive_mode="react", priority="high",
                 problem="需要安全检查", expected="无高危漏洞",
                 needs_clarification=False,

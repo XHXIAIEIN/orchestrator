@@ -12,12 +12,12 @@ from src.analysis.insights import InsightEngine
 from src.governance.governor import Governor
 from src.analysis.profile_analyst import ProfileAnalyst
 from src.core.health import HealthCheck
-from src.governance.debt_scanner import DebtScanner
-from src.governance.debt_resolver import resolve_debts, check_resolved_debts
+from src.governance.learning.debt_scanner import DebtScanner
+from src.governance.learning.debt_resolver import resolve_debts, check_resolved_debts
 from src.analysis.performance import PerformanceReport
 from src.voice.voice_picker import refresh_voice_pool
-from src.governance.skill_evolver import run_evolution
-from src.governance.policy_advisor import generate_all_suggestions
+from src.governance.learning.skill_evolver import run_evolution
+from src.governance.policy.policy_advisor import generate_all_suggestions
 from src.analysis.burst_detector import record_bursts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

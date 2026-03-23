@@ -269,7 +269,7 @@ def generate_suggestions(department: str) -> str:
 
     Returns markdown text. Also writes to departments/{dept}/policy-suggestions.md.
     """
-    from src.governance.blueprint import load_blueprint
+    from src.governance.policy.blueprint import load_blueprint
 
     agg = aggregate_denials(department)
     if agg["total"] == 0:

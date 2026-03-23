@@ -3,7 +3,7 @@ import logging
 import subprocess
 from datetime import date
 from src.storage.events_db import EventsDB
-from src.governance.prompts import load_prompt
+from src.governance.context.prompts import load_prompt
 
 log = logging.getLogger(__name__)
 

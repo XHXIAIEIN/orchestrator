@@ -32,6 +32,24 @@ DEBT_SIGNALS = re.compile(
 BATCH_SIZE = 4
 TIMEOUT = 120
 
+# 不再扫描的项目（已归档/暂停/用户明确不关心）
+IGNORED_PROJECTS: set[str] = set()
+
+
+def load_ignored_projects(db) -> None:
+    """从 DB 中加载被整体 dismiss 过的项目，自动加入黑名单。"""
+    global IGNORED_PROJECTS
+    try:
+        with db._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT project FROM attention_debts "
+                "WHERE status='dismissed' GROUP BY project "
+                "HAVING COUNT(*) >= 5"
+            ).fetchall()
+        IGNORED_PROJECTS.update(r[0] for r in rows)
+    except Exception:
+        pass
+
 
 def _get_text(content) -> str:
     if isinstance(content, str):
@@ -63,6 +81,8 @@ class DebtScanner:
             if not proj.is_dir():
                 continue
             project_name = _claude_dir_to_project(proj.name)
+            if project_name in IGNORED_PROJECTS:
+                continue
             for sf in proj.glob("*.jsonl"):
                 sid = sf.stem
                 if not full_scan and sid in scanned:
@@ -173,6 +193,9 @@ Analyze the following {len(batch)} Claude conversation sessions. Find GENUINE un
 - Assistant said "let me know if you need more help" — this is politeness, not incomplete work
 - User said "ok" or "got it" and the conversation ended — this means they're satisfied
 - Vague "status unclear" with no concrete unresolved action — if you can't name the specific unresolved task, it's not a debt
+- Research / exploration activities — user reading docs, browsing APIs, dispatching subagents to survey repos is DELIBERATE RESEARCH, not abandoned work
+- User chose not to act — if user investigated something and decided not to proceed, that is a DECISION, not a debt
+- Feature ideas discussed but not committed to — brainstorming is not a promise
 
 ## Severity guide:
 - high: Data loss risk, broken functionality user actively needs, security issue
@@ -245,7 +268,7 @@ If no genuine debts found, return []. Output ONLY the JSON array.
             log.warning(f"DebtScanner: failed to save debt: {e}")
 
     def _get_scanned_sessions(self) -> set:
-        """获取已扫描过的 session ID。"""
+        """获取已扫描过的 session ID（含 dismissed，不重复扫已忽略的）。"""
         try:
             with self.db._connect() as conn:
                 rows = conn.execute("SELECT DISTINCT session_id FROM attention_debts").fetchall()
@@ -255,7 +278,9 @@ If no genuine debts found, return []. Output ONLY the JSON array.
 
     def run(self, full_scan: bool = False) -> list[dict]:
         """完整流水线。"""
-        log.info(f"DebtScanner: starting {'full' if full_scan else 'incremental'} scan")
+        load_ignored_projects(self.db)
+        log.info(f"DebtScanner: starting {'full' if full_scan else 'incremental'} scan"
+                 f" (ignoring {len(IGNORED_PROJECTS)} projects)")
         self.db.write_log(
             f"礼部开始{'全量' if full_scan else '增量'}注意力债务扫描",
             "INFO", "debt_scanner"

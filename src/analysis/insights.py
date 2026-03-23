@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.storage.events_db import EventsDB
-from src.governance.prompts import load_prompt
+from src.governance.context.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
 
