@@ -143,11 +143,21 @@ def _ensure_chat_client_column(conn: sqlite3.Connection):
         conn.commit()
 
 
+def _ensure_media_paths_column(conn: sqlite3.Connection):
+    """确保 chat_messages 表有 media_paths 字段（JSON 数组）。"""
+    try:
+        conn.execute("SELECT media_paths FROM chat_messages LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN media_paths TEXT DEFAULT ''")
+        conn.commit()
+
+
 def save_message(db_path: str, chat_id: str, role: str, content: str,
-                 chat_client: str = ""):
-    """存一条消息。含硬上限保护。"""
+                 chat_client: str = "", media_paths: list[str] | None = None):
+    """存一条消息。含硬上限保护。media_paths: 关联的媒体文件路径列表。"""
     conn = db_conn(db_path)
     _ensure_chat_client_column(conn)
+    _ensure_media_paths_column(conn)
     count = conn.execute(
         "SELECT COUNT(*) FROM chat_messages WHERE chat_id = ?", (chat_id,)
     ).fetchone()[0]
@@ -158,25 +168,36 @@ def save_message(db_path: str, chat_id: str, role: str, content: str,
             "(SELECT id FROM chat_messages WHERE chat_id = ? ORDER BY id ASC LIMIT ?)",
             (chat_id, excess),
         )
+    media_json = json.dumps(media_paths) if media_paths else ""
     conn.execute(
-        "INSERT INTO chat_messages (chat_id, role, content, created_at, chat_client) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (chat_id, role, content, datetime.now(timezone.utc).isoformat(), chat_client),
+        "INSERT INTO chat_messages (chat_id, role, content, created_at, chat_client, media_paths) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (chat_id, role, content, datetime.now(timezone.utc).isoformat(), chat_client, media_json),
     )
     conn.commit()
     conn.close()
 
 
 def load_recent(db_path: str, chat_id: str, limit: int = 20) -> list[dict]:
-    """从 DB 加载最近 N 轮对话。"""
+    """从 DB 加载最近 N 轮对话。包含 media_paths（如果有）。"""
     conn = db_conn(db_path)
+    _ensure_media_paths_column(conn)
     rows = conn.execute(
-        "SELECT role, content FROM chat_messages "
+        "SELECT role, content, media_paths FROM chat_messages "
         "WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
         (chat_id, limit),
     ).fetchall()
     conn.close()
-    return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+    results = []
+    for r in reversed(rows):
+        msg = {"role": r[0], "content": r[1]}
+        if r[2]:
+            try:
+                msg["media_paths"] = json.loads(r[2])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        results.append(msg)
+    return results
 
 
 def load_memory(db_path: str, chat_id: str) -> str:
@@ -226,8 +247,47 @@ def build_context(db_path: str, chat_id: str) -> list[dict]:
         })
     recent = load_recent(db_path, chat_id, ch_cfg.RECENT_TURNS)
     # Filter out messages with empty content (Claude API rejects them)
-    for m in recent:
-        if m.get("content"):
+    # For recent messages with media_paths, inline images as multimodal content
+    import base64 as b64mod
+    media_msg_count = 0
+    MAX_INLINE_MEDIA_MSGS = 3  # only inline images from last N media messages
+
+    # Count media messages from the end to decide which ones to inline
+    media_indices = set()
+    for i in range(len(recent) - 1, -1, -1):
+        if recent[i].get("media_paths") and recent[i]["role"] == "user":
+            media_msg_count += 1
+            if media_msg_count <= MAX_INLINE_MEDIA_MSGS:
+                media_indices.add(i)
+
+    for i, m in enumerate(recent):
+        if not m.get("content"):
+            continue
+        paths = m.pop("media_paths", None)
+        if paths and i in media_indices and m["role"] == "user":
+            # Build multimodal content with inlined images
+            content_parts = []
+            for p in paths:
+                try:
+                    from pathlib import Path
+                    pp = Path(p)
+                    if pp.exists() and pp.stat().st_size < 5 * 1024 * 1024:  # <5MB
+                        b64 = b64mod.b64encode(pp.read_bytes()).decode()
+                        mime = "image/jpeg"
+                        if p.endswith(".png"): mime = "image/png"
+                        elif p.endswith(".webp"): mime = "image/webp"
+                        content_parts.append({
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": mime, "data": b64},
+                        })
+                except Exception:
+                    pass
+            content_parts.append({"type": "text", "text": m["content"]})
+            messages.append({"role": m["role"], "content": content_parts})
+        else:
+            # Older media messages: just text with path references
+            if paths:
+                m["content"] += f"\n[附带 {len(paths)} 个媒体文件]"
             messages.append(m)
     return messages
 
@@ -553,64 +613,34 @@ def do_chat(chat_id: str, text: str, original_text: str,
 
         db_path = _DEFAULT_DB
         db_content = original_text if original_text else text
-        if not db_content and media:
-            db_content = "[媒体消息]"
-        save_message(db_path, chat_id, "user", db_content or "[空消息]", chat_client=channel_source)
-
-        messages = build_context(db_path, chat_id)
-
-        # ── Process media attachments ──────────────────────────────
-        image_paths = []
+        # Collect media paths for DB storage
+        _media_paths = []
         if media:
             from src.channels.media import MediaType
             for att in media:
-                if att.media_type == MediaType.IMAGE and att.local_path:
-                    image_paths.append(att.local_path)
-                elif att.media_type == MediaType.VOICE and att.text:
-                    text = f"{text}\n[语音转文字: {att.text}]" if text else f"[语音转文字: {att.text}]"
-                elif att.media_type == MediaType.FILE:
-                    text = f"{text}\n[文件: {att.file_name}]" if text else f"[文件: {att.file_name}]"
-                elif att.media_type == MediaType.VIDEO:
-                    text = f"{text}\n[视频消息]" if text else "[视频消息]"
+                if att.local_path:
+                    _media_paths.append(att.local_path)
+            if not db_content:
+                n_img = sum(1 for a in media if a.media_type == MediaType.IMAGE)
+                n_other = len(media) - n_img
+                parts = []
+                if n_img: parts.append(f"{n_img} 张图片")
+                if n_other: parts.append(f"{n_other} 个媒体文件")
+                db_content = f"[用户发送了 {'、'.join(parts)}]"
+        save_message(db_path, chat_id, "user", db_content or "[空消息]",
+                     chat_client=channel_source, media_paths=_media_paths or None)
 
-        # Replace last user message with multimodal content if images present
-        if image_paths:
-            import base64 as b64mod
-            content_parts = []
-            for img_path in image_paths:
-                try:
-                    with open(img_path, "rb") as f:
-                        img_data = f.read()
-                    b64 = b64mod.b64encode(img_data).decode()
-                    mime = "image/jpeg"
-                    if img_path.endswith(".png"):
-                        mime = "image/png"
-                    elif img_path.endswith(".webp"):
-                        mime = "image/webp"
-                    elif img_path.endswith(".gif"):
-                        mime = "image/gif"
-                    content_parts.append({
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": mime, "data": b64},
-                    })
-                except Exception as e:
-                    log.warning(f"chat: failed to read image {img_path}: {e}")
-            if content_parts:
-                if text:
-                    prompt_text = text
-                elif len(content_parts) > 1:
-                    prompt_text = f"用户发了 {len(content_parts)} 张图片，请一起看看并回复"
-                else:
-                    prompt_text = "请描述这张图片"
-                content_parts.append({"type": "text", "text": prompt_text})
-                # Replace last message with multimodal content
-                if messages and messages[-1]["role"] == "user":
-                    messages[-1]["content"] = content_parts
-                else:
-                    messages.append({"role": "user", "content": content_parts})
+        messages = build_context(db_path, chat_id)
+
+        # ── Check if current message has images (for routing decision) ──
+        has_images = bool(_media_paths and any(
+            p.endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif'))
+            for p in _media_paths
+        ))
+        # build_context already inlines recent images from DB as multimodal content
 
         # ── Route: casual chat → local model, tool-needed → Claude ──
-        if ch_cfg.CHAT_LOCAL_ENABLED and not _needs_tools(text) and not image_paths:
+        if ch_cfg.CHAT_LOCAL_ENABLED and not _needs_tools(text) and not has_images:
             local_reply = _chat_local(system_prompt, messages, text)
             if local_reply:
                 log.info(f"chat: local model reply ({len(local_reply)} chars) to {chat_id[:16]}")
