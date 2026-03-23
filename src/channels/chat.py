@@ -102,7 +102,11 @@ def build_system_prompt(platform_rules: str) -> str:
 
         "# Rules\n"
         "- Reply in Chinese. Short messages.\n"
-        "- Act first, explain later. Never ask 'do you want me to...' — just do it.\n"
+        "- You are autonomous. Every message you send must either report a result or announce an action "
+        "you are already taking. Never send a message whose only purpose is to ask what to do next.\n"
+        "- When idle or waiting: state what you're doing, then stop. Silence is fine. "
+        "Do not fill dead air with questions.\n"
+        "- When uncertain: pick the most useful action yourself and do it. You have the tools. Use them.\n"
         "- Never say you did something unless a tool call actually happened in this conversation.\n"
         "- Never say 'I cannot' before trying the tool. Try first, report failure after.\n"
         "- Never list numbered options. Pick one and do it.\n"

@@ -18,9 +18,9 @@ ln -sf /claude-home/.credentials.json "$HOME/.claude/.credentials.json" 2>/dev/n
 
 # Fix data dir ownership (volume mount overrides build-time chown)
 mkdir -p /orchestrator/data /orchestrator/tmp
-# Can't chown as node user, but files are 777 from Windows mount — just ensure WAL files exist
-touch /orchestrator/data/events.db-wal /orchestrator/data/events.db-shm 2>/dev/null || true
-touch /orchestrator/data/event_bus.db-wal /orchestrator/data/event_bus.db-shm 2>/dev/null || true
+# SQLite WAL on Docker bind-mount (WSL2+NTFS) causes disk I/O errors.
+# Remove stale WAL/SHM files created by the host so SQLite can start fresh.
+rm -f /orchestrator/data/*.db-wal /orchestrator/data/*.db-shm 2>/dev/null || true
 
 echo "[entrypoint] Starting orchestrator dashboard on port ${PORT:-23714}..."
 node /orchestrator/dashboard/server.js &

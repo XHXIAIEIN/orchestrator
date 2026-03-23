@@ -25,7 +25,22 @@ class EventsDB:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
         except sqlite3.OperationalError:
+            # WAL fails on Docker bind-mounts (WSL2 + NTFS), fall back to DELETE
+            try:
+                conn.execute("PRAGMA journal_mode=DELETE")
+            except sqlite3.OperationalError:
+                pass
+        try:
+            conn.execute("PRAGMA busy_timeout=30000")
+        except sqlite3.OperationalError:
             pass
+        return conn
+
+    def _connect_safe(self):
+        """Fallback connection that avoids WAL entirely — for Docker bind-mount environments."""
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=DELETE")
         conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
