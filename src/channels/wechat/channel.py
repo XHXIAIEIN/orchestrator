@@ -93,6 +93,11 @@ class WeChatChannel(Channel):
         self._typing_tickets: dict[str, str] = {}  # user_id → ticket
         self._cdn_base_url = os.environ.get("WECHAT_CDN_BASE_URL", CDN_BASE_URL)
 
+        # 消息防抖 — 连发多条消息时攒一批再处理
+        self._pending: dict[str, dict] = {}  # user_id → {text, media_items, timer, ts}
+        self._pending_lock = threading.Lock()
+        self._debounce_sec = 3.0  # 等待窗口
+
     # ── 出站 ────────────────────────────────────────────────────────────────
 
     def send(self, message: ChannelMessage) -> bool:
@@ -201,12 +206,12 @@ class WeChatChannel(Channel):
             log.warning(f"wechat: rejected from unauthorized {user_id[:16]}...")
             return
 
-        now = time.time()
-        if now - self._last_msg_time.get(user_id, 0) < ch_cfg.RATE_LIMIT_WINDOW:
+        # Commands bypass debounce
+        if text.startswith("/"):
+            chat_engine.handle_command(text, user_id, self._reply_text, "wechat")
             return
-        self._last_msg_time[user_id] = now
 
-        # Download media attachments
+        # Download media immediately (CDN links may expire)
         attachments = []
         for item in media_items:
             try:
@@ -218,18 +223,56 @@ class WeChatChannel(Channel):
 
         log.info(f"wechat: msg from {user_id[:16]}...: {text[:50]} media={len(attachments)}")
 
-        if text.startswith("/"):
-            chat_engine.handle_command(text, user_id, self._reply_text, "wechat")
-        else:
-            if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
-                file_path, char_count = chat_engine.save_to_inbox(text)
-                preview = text[:80].replace("\n", " ")
-                ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
-                self._start_chat(user_id, ref, original_text=text, media=attachments)
+        # Debounce: accumulate messages within a short window
+        with self._pending_lock:
+            if user_id in self._pending:
+                # Append to existing buffer
+                buf = self._pending[user_id]
+                if text:
+                    buf["texts"].append(text)
+                buf["attachments"].extend(attachments)
+                # Reset timer
+                if buf.get("timer"):
+                    buf["timer"].cancel()
+                buf["timer"] = threading.Timer(
+                    self._debounce_sec, self._flush_pending, args=(user_id,)
+                )
+                buf["timer"].start()
+                log.debug(f"wechat: debounce append for {user_id[:16]}, "
+                          f"texts={len(buf['texts'])} media={len(buf['attachments'])}")
             else:
-                if not text and attachments:
-                    text = self._describe_media(attachments)
-                self._start_chat(user_id, text, media=attachments)
+                # New buffer
+                timer = threading.Timer(
+                    self._debounce_sec, self._flush_pending, args=(user_id,)
+                )
+                self._pending[user_id] = {
+                    "texts": [text] if text else [],
+                    "attachments": attachments,
+                    "timer": timer,
+                }
+                timer.start()
+
+    def _flush_pending(self, user_id: str):
+        """Debounce timer expired — process accumulated messages as one batch."""
+        with self._pending_lock:
+            buf = self._pending.pop(user_id, None)
+        if not buf:
+            return
+
+        texts = buf["texts"]
+        attachments = buf["attachments"]
+        text = "\n".join(texts) if texts else ""
+
+        if not text and attachments:
+            text = self._describe_media(attachments)
+
+        if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
+            file_path, char_count = chat_engine.save_to_inbox(text)
+            preview = text[:80].replace("\n", " ")
+            ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
+            self._start_chat(user_id, ref, original_text=text, media=attachments)
+        else:
+            self._start_chat(user_id, text, media=attachments)
 
     # ── Typing indicator ──────────────────────────────────────────────────
 

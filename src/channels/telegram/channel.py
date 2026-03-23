@@ -54,6 +54,11 @@ class TelegramChannel(Channel):
         self._last_msg_time: dict[str, float] = {}
         self._system_prompt: Optional[str] = None
 
+        # 消息防抖 — 连发多条消息时攒一批再处理
+        self._pending: dict[str, dict] = {}  # chat_id → {texts, attachments, timer}
+        self._pending_lock = threading.Lock()
+        self._debounce_sec = 3.0
+
     # ── 出站 ────────────────────────────────────────────────────────────────
 
     def send(self, message: ChannelMessage) -> bool:
@@ -345,18 +350,57 @@ class TelegramChannel(Channel):
         if not text and not attachments:
             return
 
+        # Commands bypass debounce
         if text and text.startswith("/"):
             self._send_typing(chat_id)
             chat_engine.handle_command(text, chat_id, self._send_text, "telegram")
-        else:
-            if text and len(text) > ch_cfg.LONG_MSG_THRESHOLD:
-                file_path, char_count = chat_engine.save_to_inbox(text)
-                preview = text[:80].replace("\n", " ")
-                ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
-                self._start_chat(chat_id, ref, original_text=text, media=attachments)
+            return
+
+        # Debounce: accumulate messages within a short window
+        with self._pending_lock:
+            if chat_id in self._pending:
+                buf = self._pending[chat_id]
+                if text:
+                    buf["texts"].append(text)
+                buf["attachments"].extend(attachments)
+                if buf.get("timer"):
+                    buf["timer"].cancel()
+                buf["timer"] = threading.Timer(
+                    self._debounce_sec, self._flush_pending, args=(chat_id,)
+                )
+                buf["timer"].start()
             else:
-                desc = text or self._describe_media(attachments)
-                self._start_chat(chat_id, desc, media=attachments)
+                timer = threading.Timer(
+                    self._debounce_sec, self._flush_pending, args=(chat_id,)
+                )
+                self._pending[chat_id] = {
+                    "texts": [text] if text else [],
+                    "attachments": attachments,
+                    "timer": timer,
+                }
+                timer.start()
+
+    def _flush_pending(self, chat_id: str):
+        """Debounce timer expired — process accumulated messages as one batch."""
+        with self._pending_lock:
+            buf = self._pending.pop(chat_id, None)
+        if not buf:
+            return
+
+        texts = buf["texts"]
+        attachments = buf["attachments"]
+        text = "\n".join(texts) if texts else ""
+
+        if not text and attachments:
+            text = self._describe_media(attachments)
+
+        if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
+            file_path, char_count = chat_engine.save_to_inbox(text)
+            preview = text[:80].replace("\n", " ")
+            ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
+            self._start_chat(chat_id, ref, original_text=text, media=attachments)
+        else:
+            self._start_chat(chat_id, text, media=attachments)
 
     # ── 入站多媒体辅助 ─────────────────────────────────────────────────────
 
