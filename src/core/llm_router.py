@@ -36,7 +36,7 @@ ROUTES = {
     # GUI 自动化推理 — 多模态，优先 Ollama，fallback 到 Claude
     "gui_reason":    {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 60,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
     # Channel 闲聊 — 本地优先，Claude fallback
-    "chat":          {"cascade": ["ollama/qwen3:32b", "claude-haiku-4-5-20251001"], "timeout": 30, "no_think": True},
+    "chat":          {"cascade": ["ollama/qwen3.5:9b", "claude-haiku-4-5-20251001"], "timeout": 30, "no_think": True},
 }
 
 MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
