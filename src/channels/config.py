@@ -111,3 +111,8 @@ for pair in _raw_mappings.split(","):
     if "=" in pair:
         k, v = pair.split("=", 1)
         PATH_MAPPINGS[k.strip()] = v.strip()
+
+# ── 媒体 ──
+MEDIA_DIR = _str("CHANNEL_MEDIA_DIR", "tmp/media")
+MEDIA_MAX_BYTES = _int("CHANNEL_MEDIA_MAX_BYTES", 50 * 1024 * 1024)
+WECHAT_CDN_BASE_URL = _str("WECHAT_CDN_BASE_URL", "https://cdn.ilinkai.weixin.qq.com")
