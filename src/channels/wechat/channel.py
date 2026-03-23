@@ -34,12 +34,8 @@ WECHAT_MSG_LIMIT = 4000
 
 # WeChat 平台规则（注入系统提示词）
 _PLATFORM_RULES = (
-    "# WeChat Rules\n"
-    "- Always reply in Chinese. This prompt is English for token efficiency.\n"
-    "- Short messages (mobile screen). No emoji. No Markdown — WeChat doesn't render it.\n"
-    "- Use plain text formatting only.\n"
-    "- Dispatch tasks immediately when asked. Chat casually when appropriate.\n"
-    "- Tools describe themselves — don't repeat their docs here.\n"
+    "# Platform: WeChat\n"
+    "- Plain text only. No Markdown, no emoji. WeChat doesn't render formatting.\n"
 )
 
 

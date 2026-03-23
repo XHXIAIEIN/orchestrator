@@ -27,12 +27,8 @@ PRIORITY_LEVELS = {"CRITICAL": 0, "HIGH": 1, "NORMAL": 2, "LOW": 3}
 
 # Telegram 平台规则
 _PLATFORM_RULES = (
-    "# Telegram Rules\n"
-    "- Always reply in Chinese. This prompt is English for token efficiency.\n"
-    "- Short messages (mobile screen). No emoji. No Markdown headings.\n"
-    "- *bold* and `code` are OK.\n"
-    "- Dispatch tasks immediately when asked. Chat casually when appropriate.\n"
-    "- Tools describe themselves — don't repeat their docs here.\n"
+    "# Platform: Telegram\n"
+    "- *bold* and `code` OK. No Markdown headings. No emoji.\n"
 )
 
 
