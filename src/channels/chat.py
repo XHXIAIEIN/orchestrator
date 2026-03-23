@@ -537,7 +537,11 @@ def _chat_local(system_prompt: str, messages: list[dict], text: str) -> str:
 
         result = router.generate(prompt, task_type="chat")
         if result and len(result.strip()) >= 5:
-            return result.strip()
+            # Strip thinking tags and XML artifacts from local model output
+            import re as _re
+            clean = _re.sub(r'<think>.*?</think>', '', result, flags=_re.DOTALL).strip()
+            clean = _re.sub(r'<[^>]+>.*?</[^>]+>', '', clean, flags=_re.DOTALL).strip()
+            return clean if len(clean) >= 5 else ""
     except Exception as e:
         log.debug(f"chat: local model failed: {e}")
     return ""
@@ -606,6 +610,14 @@ def do_chat(chat_id: str, text: str, original_text: str,
 
             if text_parts:
                 final_reply = "\n".join(text_parts)
+                # Strip hallucinated tool call XML that leaks into text blocks
+                import re as _re
+                final_reply = _re.sub(
+                    r'<(?:function_calls|tool_call|invoke)[^>]*>.*?</(?:function_calls|tool_call|invoke)>',
+                    '', final_reply, flags=_re.DOTALL).strip()
+                final_reply = _re.sub(
+                    r'<(?:function_calls|tool_call|invoke)[^>]*>.*',
+                    '', final_reply, flags=_re.DOTALL).strip()
 
             if not tool_calls:
                 break
