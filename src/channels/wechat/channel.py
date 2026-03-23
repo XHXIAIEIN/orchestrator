@@ -1,0 +1,264 @@
+"""
+微信 WeChat Channel — iLink Bot API 适配器。
+
+出站：ChannelMessage → sendmessage API（需 context_token）
+入站：Long polling getupdates → 命令解析 → Event Bus / Claude 对话
+
+对话/DB/工具逻辑复用 src.channels.chat 公共层。
+零外部依赖，纯 urllib。
+"""
+import logging
+import re
+import threading
+import time
+from typing import Optional
+
+from src.channels.base import Channel, ChannelMessage
+from src.channels import config as ch_cfg
+from src.channels import chat as chat_engine
+from src.channels.wechat.api import (
+    DEFAULT_BASE_URL,
+    get_updates,
+    send_message,
+    extract_text,
+    extract_from_user,
+    set_context_token,
+    get_context_token,
+    get_all_context_users,
+)
+
+log = logging.getLogger(__name__)
+
+PRIORITY_LEVELS = {"CRITICAL": 0, "HIGH": 1, "NORMAL": 2, "LOW": 3}
+WECHAT_MSG_LIMIT = 4000
+
+# WeChat 平台规则（注入系统提示词）
+_PLATFORM_RULES = (
+    "# WeChat Rules\n"
+    "- Always reply in Chinese. This prompt is English for token efficiency.\n"
+    "- Short messages (mobile screen). No emoji. No Markdown — WeChat doesn't render it.\n"
+    "- Use plain text formatting only.\n"
+    "- Dispatch tasks immediately when asked. Chat casually when appropriate.\n"
+    "- Tools describe themselves — don't repeat their docs here.\n"
+)
+
+
+class WeChatChannel(Channel):
+    """微信 iLink Bot 适配器。"""
+
+    name = "wechat"
+
+    def __init__(self, bot_token: str, base_url: str = DEFAULT_BASE_URL,
+                 min_priority: str = "HIGH",
+                 allowed_users: str = ""):
+        self.bot_token = bot_token
+        self.base_url = base_url or DEFAULT_BASE_URL
+        self.min_priority = PRIORITY_LEVELS.get(min_priority.upper(), 1)
+        self.enabled = True
+
+        # 用户白名单
+        self._allowed_users: dict[str, str] = {}
+        if allowed_users:
+            for pair in allowed_users.split(","):
+                pair = pair.strip()
+                if ":" in pair:
+                    uid, role = pair.split(":", 1)
+                    self._allowed_users[uid.strip()] = role.strip()
+                elif pair:
+                    self._allowed_users[pair] = "admin"
+
+        self._polling_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._sync_cursor = ""
+        self._consecutive_failures = 0
+        self._last_msg_time: dict[str, float] = {}
+
+        # 系统提示词（懒加载）
+        self._system_prompt: Optional[str] = None
+
+    # ── 出站 ────────────────────────────────────────────────────────────────
+
+    def send(self, message: ChannelMessage) -> bool:
+        msg_priority = PRIORITY_LEVELS.get(message.priority, 2)
+        if msg_priority > self.min_priority:
+            return False
+
+        users_with_token = get_all_context_users()
+        if not users_with_token:
+            log.debug("wechat: no users with context_token, skip broadcast")
+            return False
+
+        plain_text = _strip_markdown(message.text)
+        ok = True
+        for user_id in users_with_token:
+            if self._allowed_users:
+                role = self._allowed_users.get(user_id, "")
+                if not role:
+                    continue
+                if role == "viewer" and msg_priority > 1:
+                    continue
+
+            ctx_token = get_context_token(user_id)
+            if not ctx_token:
+                continue
+
+            try:
+                for chunk in _split_message(plain_text):
+                    send_message(self.bot_token, user_id, chunk,
+                                 ctx_token, self.base_url)
+            except Exception as e:
+                log.warning(f"wechat: send to {user_id[:16]}... failed: {e}")
+                ok = False
+        return ok
+
+    # ── 入站 ────────────────────────────────────────────────────────────────
+
+    def start(self):
+        self._stop_event.clear()
+        self._polling_thread = threading.Thread(
+            target=self._poll_loop, name="wechat-poll", daemon=True,
+        )
+        self._polling_thread.start()
+        log.info("wechat: polling started")
+
+    def stop(self):
+        self._stop_event.set()
+        if self._polling_thread:
+            self._polling_thread.join(timeout=5)
+            self._polling_thread = None
+
+    def _poll_loop(self):
+        MAX_FAILURES, BACKOFF_S, RETRY_S = 3, 30, 2
+
+        while not self._stop_event.is_set():
+            try:
+                resp = get_updates(self.bot_token, self._sync_cursor,
+                                   self.base_url, timeout=60)
+
+                if resp.get("errcode") == -14:
+                    log.warning("wechat: session expired (errcode -14)")
+                    break
+                # ret=None 或 ret=0 都是正常（无新消息时 ret 可能为 null）
+                ret = resp.get("ret")
+                if ret is not None and ret != 0:
+                    raise RuntimeError(f"getupdates ret={ret}")
+
+                new_cursor = resp.get("get_updates_buf", "")
+                if new_cursor:
+                    self._sync_cursor = new_cursor
+
+                for msg in resp.get("msgs") or []:
+                    try:
+                        self._handle_message(msg)
+                    except Exception as e:
+                        log.error(f"wechat: handle message failed: {e}")
+
+                self._consecutive_failures = 0
+
+            except Exception as e:
+                self._consecutive_failures += 1
+                log.debug(f"wechat: poll error ({self._consecutive_failures}): {e}")
+                if self._consecutive_failures >= MAX_FAILURES:
+                    log.warning(f"wechat: {MAX_FAILURES} failures, backing off {BACKOFF_S}s")
+                    self._stop_event.wait(timeout=BACKOFF_S)
+                    self._consecutive_failures = 0
+                else:
+                    self._stop_event.wait(timeout=RETRY_S)
+
+    def _handle_message(self, msg: dict):
+        if msg.get("message_type") != 1:
+            return
+
+        user_id = extract_from_user(msg)
+        text = extract_text(msg).strip()
+        ctx_token = msg.get("context_token", "")
+
+        if not user_id or not text:
+            return
+        if ctx_token:
+            set_context_token(user_id, ctx_token)
+        if self._allowed_users and user_id not in self._allowed_users:
+            log.warning(f"wechat: rejected from unauthorized {user_id[:16]}...")
+            return
+
+        now = time.time()
+        if now - self._last_msg_time.get(user_id, 0) < ch_cfg.RATE_LIMIT_WINDOW:
+            return
+        self._last_msg_time[user_id] = now
+
+        log.info(f"wechat: msg from {user_id[:16]}...: {text[:50]}")
+
+        if text.startswith("/"):
+            chat_engine.handle_command(text, user_id, self._reply_text, "wechat")
+        else:
+            if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
+                file_path, char_count = chat_engine.save_to_inbox(text)
+                preview = text[:80].replace("\n", " ")
+                ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
+                self._start_chat(user_id, ref, original_text=text)
+            else:
+                self._start_chat(user_id, text)
+
+    def _start_chat(self, user_id: str, text: str, original_text: str = ""):
+        threading.Thread(
+            target=chat_engine.do_chat,
+            args=(user_id, text, original_text,
+                  self._get_system_prompt(), self._reply_text, "wechat"),
+            name="wechat-chat", daemon=True,
+        ).start()
+
+    # ── 消息发送 ────────────────────────────────────────────────────────────
+
+    def _reply_text(self, user_id: str, text: str) -> bool:
+        ctx_token = get_context_token(user_id)
+        if not ctx_token:
+            log.warning(f"wechat: no context_token for {user_id[:16]}...")
+            return False
+        try:
+            plain = _strip_markdown(text)
+            for chunk in _split_message(plain):
+                send_message(self.bot_token, user_id, chunk,
+                             ctx_token, self.base_url)
+            return True
+        except Exception as e:
+            log.warning(f"wechat: reply failed: {e}")
+            return False
+
+    # ── 系统提示词 ──────────────────────────────────────────────────────────
+
+    def _get_system_prompt(self) -> str:
+        if self._system_prompt is None:
+            self._system_prompt = chat_engine.build_system_prompt(_PLATFORM_RULES)
+        return self._system_prompt
+
+
+# ── 工具函数 ────────────────────────────────────────────────────────────────
+
+def _split_message(text: str) -> list[str]:
+    limit = WECHAT_MSG_LIMIT
+    if len(text) <= limit:
+        return [text]
+    chunks = []
+    while text:
+        if len(text) <= limit:
+            chunks.append(text)
+            break
+        split_at = text.rfind("\n", 0, limit)
+        if split_at <= 0:
+            split_at = text.rfind(" ", 0, limit)
+        if split_at <= 0:
+            split_at = limit
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+    return chunks
+
+
+def _strip_markdown(text: str) -> str:
+    """粗暴去 Markdown，微信不渲染。"""
+    text = re.sub(r"```[^\n]*\n?([\s\S]*?)```", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"\*([^*]+)\*", r"\1", text)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    return text

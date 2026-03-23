@@ -8,6 +8,7 @@ SOUL/private/
 .claude/worktrees/
 .claude/boot.md
 .superpowers/
+data/
 __pycache__/
 *.pyc
 *.db

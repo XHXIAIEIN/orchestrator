@@ -97,6 +97,30 @@ class ChannelRegistry:
             except Exception as e:
                 log.error(f"channel: failed to init telegram: {e}")
 
+        # 微信（iLink Bot API）
+        wechat_token = os.environ.get("WECHAT_BOT_TOKEN", "")
+        if not wechat_token:
+            # 尝试从持久化凭证加载
+            try:
+                from src.channels.wechat.login import load_credentials
+                creds = load_credentials()
+                if creds:
+                    wechat_token = creds.get("bot_token", "")
+            except Exception:
+                pass
+        if wechat_token:
+            try:
+                from src.channels.wechat import WeChatChannel
+                wc = WeChatChannel(
+                    bot_token=wechat_token,
+                    base_url=os.environ.get("WECHAT_BASE_URL", ""),
+                    min_priority=os.environ.get("WECHAT_MIN_PRIORITY", "HIGH"),
+                    allowed_users=os.environ.get("WECHAT_ALLOWED_USERS", ""),
+                )
+                self.register(wc)
+            except Exception as e:
+                log.error(f"channel: failed to init wechat: {e}")
+
         # 企业微信
         if os.environ.get("WECOM_WEBHOOK_URL"):
             try:
@@ -109,7 +133,7 @@ class ChannelRegistry:
                 log.error(f"channel: failed to init wecom: {e}")
 
         if not self._channels:
-            log.debug("channel: no channels configured (set TELEGRAM_BOT_TOKEN or WECOM_WEBHOOK_URL)")
+            log.debug("channel: no channels configured (set TELEGRAM_BOT_TOKEN, WECHAT_BOT_TOKEN, or WECOM_WEBHOOK_URL)")
 
 
 # ── 全局单例 ──
