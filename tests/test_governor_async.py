@@ -132,8 +132,8 @@ def test_governor_execute_task_calls_agent_correctly():
                 gates=[], all_passed=True,
             )
 
-        with patch.object(gov, '_run_agent_session', side_effect=fake_agent_session), \
-             patch('src.governance.governor.run_gates', side_effect=fake_run_gates):
+        with patch.object(gov.executor, '_run_agent_session', side_effect=fake_agent_session), \
+             patch('src.governance.review.run_gates', side_effect=fake_run_gates):
             # This should NOT raise 'coroutine object is not callable'
             result = gov.execute_task(task_id)
 
