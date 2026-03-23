@@ -19,8 +19,22 @@ BASE_DIR = Path(__file__).parent.parent
 DB_PATH = str(BASE_DIR / "data" / "events.db")
 
 
+def _init_db(retries: int = 5, delay: float = 3.0) -> EventsDB:
+    """Init DB with retry — Docker bind-mount may need time to settle."""
+    for attempt in range(retries):
+        try:
+            return EventsDB(DB_PATH)
+        except Exception as e:
+            log.warning(f"DB init attempt {attempt + 1}/{retries} failed: {e}")
+            if attempt < retries - 1:
+                import time
+                time.sleep(delay)
+    # Last attempt — let it crash with full traceback
+    return EventsDB(DB_PATH)
+
+
 def start():
-    db = EventsDB(DB_PATH)
+    db = _init_db()
     s = BlockingScheduler()
 
     s.add_job(lambda: run_job("collectors", run_collectors, db), "interval", hours=1, id="collectors")
