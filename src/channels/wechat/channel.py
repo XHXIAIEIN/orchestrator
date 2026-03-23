@@ -53,6 +53,7 @@ WECHAT_MSG_LIMIT = 4000
 _PLATFORM_RULES = (
     "# Platform: WeChat\n"
     "- Plain text only. No Markdown, no emoji. WeChat doesn't render formatting.\n"
+    "- Images and text arrive as separate messages. When text follows images, it refers to those images.\n"
 )
 
 
