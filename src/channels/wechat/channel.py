@@ -94,9 +94,10 @@ class WeChatChannel(Channel):
         self._cdn_base_url = os.environ.get("WECHAT_CDN_BASE_URL", CDN_BASE_URL)
 
         # 消息防抖 — 连发多条消息时攒一批再处理
-        self._pending: dict[str, dict] = {}  # user_id → {text, media_items, timer, ts}
+        self._pending: dict[str, dict] = {}  # user_id → {texts, attachments, timer, start_ts}
         self._pending_lock = threading.Lock()
-        self._debounce_sec = 3.0  # 等待窗口
+        self._debounce_sec = 5.0   # 每条消息重置窗口
+        self._debounce_max = 20.0  # 最大等待上限
 
     # ── 出站 ────────────────────────────────────────────────────────────────
 
@@ -234,6 +235,7 @@ class WeChatChannel(Channel):
             return
 
         # Has media or existing pending buffer → debounce
+        now = time.time()
         with self._pending_lock:
             if user_id in self._pending:
                 buf = self._pending[user_id]
@@ -242,11 +244,21 @@ class WeChatChannel(Channel):
                 buf["attachments"].extend(attachments)
                 if buf.get("timer"):
                     buf["timer"].cancel()
+                # Check max wait — if exceeded, flush now
+                elapsed = now - buf.get("start_ts", now)
+                if elapsed >= self._debounce_max:
+                    self._pending_lock.release()
+                    try:
+                        self._flush_pending(user_id)
+                    finally:
+                        self._pending_lock.acquire()
+                    return
             else:
                 self._pending[user_id] = {
                     "texts": [text] if text else [],
                     "attachments": attachments,
                     "timer": None,
+                    "start_ts": now,
                 }
             buf = self._pending[user_id]
             buf["timer"] = threading.Timer(

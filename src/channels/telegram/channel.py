@@ -55,9 +55,10 @@ class TelegramChannel(Channel):
         self._system_prompt: Optional[str] = None
 
         # 消息防抖 — 连发多条消息时攒一批再处理
-        self._pending: dict[str, dict] = {}  # chat_id → {texts, attachments, timer}
+        self._pending: dict[str, dict] = {}  # chat_id → {texts, attachments, timer, start_ts}
         self._pending_lock = threading.Lock()
-        self._debounce_sec = 3.0
+        self._debounce_sec = 5.0
+        self._debounce_max = 20.0
 
     # ── 出站 ────────────────────────────────────────────────────────────────
 
@@ -367,6 +368,7 @@ class TelegramChannel(Channel):
             return
 
         # Has media or existing pending buffer → debounce
+        now = time.time()
         with self._pending_lock:
             if chat_id in self._pending:
                 buf = self._pending[chat_id]
@@ -375,11 +377,20 @@ class TelegramChannel(Channel):
                 buf["attachments"].extend(attachments)
                 if buf.get("timer"):
                     buf["timer"].cancel()
+                elapsed = now - buf.get("start_ts", now)
+                if elapsed >= self._debounce_max:
+                    self._pending_lock.release()
+                    try:
+                        self._flush_pending(chat_id)
+                    finally:
+                        self._pending_lock.acquire()
+                    return
             else:
                 self._pending[chat_id] = {
                     "texts": [text] if text else [],
                     "attachments": attachments,
                     "timer": None,
+                    "start_ts": now,
                 }
             buf = self._pending[chat_id]
             buf["timer"] = threading.Timer(
