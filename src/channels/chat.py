@@ -592,6 +592,27 @@ def _chat_local(system_prompt: str, messages: list[dict], text: str) -> str:
     return ""
 
 
+def _chat_local_vision(system_prompt: str, messages: list[dict],
+                       text: str, image_paths: list[str]) -> str:
+    """Call Ollama vision model (gemma3:27b) for image understanding."""
+    try:
+        from src.core.llm_router import get_router
+        router = get_router()
+        if not router._ollama_available:
+            return ""
+
+        prompt = f"{system_prompt}\n\nuser: {text or '请描述这些图片'}\nassistant:"
+        result = router.generate(prompt, task_type="vision", images=image_paths)
+        if result and len(result.strip()) >= 5:
+            import re as _re
+            clean = _re.sub(r'<think>.*?</think>', '', result, flags=_re.DOTALL).strip()
+            clean = _re.sub(r'<[^>]+>.*?</[^>]+>', '', clean, flags=_re.DOTALL).strip()
+            return clean if len(clean) >= 5 else ""
+    except Exception as e:
+        log.debug(f"chat: local vision failed: {e}")
+    return ""
+
+
 # ── 对话主循环 ────────────────────────────────────────────────────────────────
 
 def do_chat(chat_id: str, text: str, original_text: str,
@@ -639,9 +660,14 @@ def do_chat(chat_id: str, text: str, original_text: str,
         ))
         # build_context already inlines recent images from DB as multimodal content
 
-        # ── Route: casual chat → local model, tool-needed → Claude ──
-        if ch_cfg.CHAT_LOCAL_ENABLED and not _needs_tools(text) and not has_images:
-            local_reply = _chat_local(system_prompt, messages, text)
+        # ── Route: images → local vision, casual chat → local text, tools → Claude ──
+        if ch_cfg.CHAT_LOCAL_ENABLED and not _needs_tools(text):
+            if has_images:
+                # Images → gemma3:27b vision (local)
+                local_reply = _chat_local_vision(system_prompt, messages, text, _media_paths)
+            else:
+                # Text only → qwen3.5:9b (local)
+                local_reply = _chat_local(system_prompt, messages, text)
             if local_reply:
                 log.info(f"chat: local model reply ({len(local_reply)} chars) to {chat_id[:16]}")
                 try:
