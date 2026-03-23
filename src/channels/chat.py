@@ -596,7 +596,13 @@ def do_chat(chat_id: str, text: str, original_text: str,
                 except Exception as e:
                     log.warning(f"chat: failed to read image {img_path}: {e}")
             if content_parts:
-                content_parts.append({"type": "text", "text": text or "请描述这张图片"})
+                if text:
+                    prompt_text = text
+                elif len(content_parts) > 1:
+                    prompt_text = f"用户发了 {len(content_parts)} 张图片，请一起看看并回复"
+                else:
+                    prompt_text = "请描述这张图片"
+                content_parts.append({"type": "text", "text": prompt_text})
                 # Replace last message with multimodal content
                 if messages and messages[-1]["role"] == "user":
                     messages[-1]["content"] = content_parts

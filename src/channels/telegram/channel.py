@@ -57,8 +57,8 @@ class TelegramChannel(Channel):
         # 消息防抖 — 连发多条消息时攒一批再处理
         self._pending: dict[str, dict] = {}  # chat_id → {texts, attachments, timer, start_ts}
         self._pending_lock = threading.Lock()
-        self._debounce_sec = 5.0
-        self._debounce_max = 20.0
+        self._debounce_sec = 8.0
+        self._debounce_max = 45.0
 
     # ── 出站 ────────────────────────────────────────────────────────────────
 
