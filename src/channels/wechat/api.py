@@ -187,3 +187,129 @@ def extract_text(msg: dict) -> str:
 def extract_from_user(msg: dict) -> str:
     """提取发送者 ID。"""
     return msg.get("from_user_id", "")
+
+
+# ── MessageItemType 常量 ─────────────────────────────────────────────────────
+
+ITEM_TEXT = 1
+ITEM_IMAGE = 2
+ITEM_VOICE = 3
+ITEM_FILE = 4
+ITEM_VIDEO = 5
+
+
+# ── CDN 上传 URL ─────────────────────────────────────────────────────────────
+
+def get_upload_url(bot_token: str, base_url: str = DEFAULT_BASE_URL,
+                   **kwargs) -> dict:
+    """Get presigned CDN upload URL. kwargs: filekey, media_type, to_user_id, rawsize, rawfilemd5, filesize, aeskey, no_need_thumb."""
+    body = {k: v for k, v in kwargs.items() if v is not None}
+    body["base_info"] = _base_info()
+    return _api_post(base_url, "ilink/bot/getuploadurl", bot_token, body, timeout=15)
+
+
+# ── 媒体消息发送 ─────────────────────────────────────────────────────────────
+
+def _send_media_message(bot_token: str, to_user_id: str, context_token: str,
+                        item: dict, caption: str = "",
+                        base_url: str = DEFAULT_BASE_URL) -> dict:
+    """Send a media message with optional text caption.
+    iLink protocol requires each item as separate request."""
+    items = []
+    if caption:
+        items.append({"type": ITEM_TEXT, "text_item": {"text": caption}})
+    items.append(item)
+
+    result = {}
+    for single_item in items:
+        body = {
+            "msg": {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": _generate_client_id(),
+                "message_type": 2,   # BOT
+                "message_state": 2,  # FINISH
+                "context_token": context_token,
+                "item_list": [single_item],
+            },
+            "base_info": _base_info(),
+        }
+        result = _api_post(base_url, "ilink/bot/sendmessage", bot_token, body)
+    return result
+
+
+def send_image(bot_token: str, to_user_id: str, context_token: str,
+               uploaded: dict, caption: str = "",
+               base_url: str = DEFAULT_BASE_URL) -> dict:
+    """Send image using CDN upload result dict."""
+    import base64 as b64mod
+    item = {
+        "type": ITEM_IMAGE,
+        "image_item": {
+            "media": {
+                "encrypt_query_param": uploaded["download_encrypt_query_param"],
+                "aes_key": b64mod.b64encode(bytes.fromhex(uploaded["aes_key_hex"])).decode(),
+                "encrypt_type": 1,
+            },
+            "mid_size": uploaded["file_size_cipher"],
+        },
+    }
+    return _send_media_message(bot_token, to_user_id, context_token, item, caption, base_url)
+
+
+def send_file(bot_token: str, to_user_id: str, context_token: str,
+              uploaded: dict, file_name: str, caption: str = "",
+              base_url: str = DEFAULT_BASE_URL) -> dict:
+    """Send file attachment using CDN upload result dict."""
+    import base64 as b64mod
+    item = {
+        "type": ITEM_FILE,
+        "file_item": {
+            "media": {
+                "encrypt_query_param": uploaded["download_encrypt_query_param"],
+                "aes_key": b64mod.b64encode(bytes.fromhex(uploaded["aes_key_hex"])).decode(),
+                "encrypt_type": 1,
+            },
+            "file_name": file_name,
+            "len": str(uploaded["file_size"]),
+        },
+    }
+    return _send_media_message(bot_token, to_user_id, context_token, item, caption, base_url)
+
+
+def send_video(bot_token: str, to_user_id: str, context_token: str,
+               uploaded: dict, caption: str = "",
+               base_url: str = DEFAULT_BASE_URL) -> dict:
+    """Send video using CDN upload result dict."""
+    import base64 as b64mod
+    item = {
+        "type": ITEM_VIDEO,
+        "video_item": {
+            "media": {
+                "encrypt_query_param": uploaded["download_encrypt_query_param"],
+                "aes_key": b64mod.b64encode(bytes.fromhex(uploaded["aes_key_hex"])).decode(),
+                "encrypt_type": 1,
+            },
+            "video_size": uploaded["file_size_cipher"],
+        },
+    }
+    return _send_media_message(bot_token, to_user_id, context_token, item, caption, base_url)
+
+
+# ── 媒体消息解析 ─────────────────────────────────────────────────────────────
+
+def extract_media_items(msg: dict) -> list[dict]:
+    """Extract all media items from a WeixinMessage.
+    Returns list of raw item dicts with type field."""
+    items = []
+    for item in msg.get("item_list") or []:
+        t = item.get("type", 0)
+        if t == ITEM_IMAGE and item.get("image_item"):
+            items.append(item)
+        elif t == ITEM_VOICE and item.get("voice_item"):
+            items.append(item)
+        elif t == ITEM_FILE and item.get("file_item"):
+            items.append(item)
+        elif t == ITEM_VIDEO and item.get("video_item"):
+            items.append(item)
+    return items
