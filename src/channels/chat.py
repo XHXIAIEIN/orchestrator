@@ -489,12 +489,66 @@ def _tool_wake_claude(params: dict, chat_id: str) -> str:
         return f"Wake failed: {e}"
 
 
+# ── Intent 检测：是否需要工具 ─────────────────────────────────────────────────
+
+_TOOL_SIGNALS = {
+    # 系统查询 → query_status
+    "status", "健康", "状态", "health", "collectors", "采集", "tasks", "任务",
+    # 主机操作 → wake_claude
+    "打开", "运行", "执行", "跑", "run", "open", "改", "fix", "修", "写",
+    "代码", "code", "文件", "file", "呼叫", "外援", "wake", "claude",
+    "部署", "deploy", "重启", "restart", "push", "commit",
+    # 派单 → dispatch_task
+    "场景", "scenario", "审计", "audit", "扫描", "scan",
+    # 读文件 → read_file
+    "读", "read", "cat", "看文件", "日志", "log",
+}
+
+
+def _needs_tools(text: str) -> bool:
+    """Quick heuristic: does this message likely need tool calls?"""
+    t = text.lower()
+    # Commands always need tools
+    if t.startswith("/"):
+        return True
+    # Check for action signals
+    return any(s in t for s in _TOOL_SIGNALS)
+
+
+# ── 本地模型对话 ─────────────────────────────────────────────────────────────
+
+def _chat_local(system_prompt: str, messages: list[dict], text: str) -> str:
+    """Call Ollama local model for casual chat. Returns empty string on failure."""
+    try:
+        from src.core.llm_router import get_router
+        router = get_router()
+        if not router._ollama_available:
+            return ""
+
+        # Build a single prompt from recent context
+        recent = messages[-6:]  # last 3 turns
+        parts = []
+        for m in recent:
+            role = m["role"]
+            content = m["content"] if isinstance(m["content"], str) else str(m["content"])
+            parts.append(f"{role}: {content}")
+
+        prompt = f"{system_prompt}\n\n{''.join(chr(10) + p for p in parts)}\nassistant:"
+
+        result = router.generate(prompt, task_type="chat")
+        if result and len(result.strip()) >= 5:
+            return result.strip()
+    except Exception as e:
+        log.debug(f"chat: local model failed: {e}")
+    return ""
+
+
 # ── 对话主循环 ────────────────────────────────────────────────────────────────
 
 def do_chat(chat_id: str, text: str, original_text: str,
             system_prompt: str, reply_fn, channel_source: str = "channel",
             permission_check_fn=None):
-    """Claude API 对话主循环 — 带 tool use。
+    """对话主循环 — 闲聊走本地模型，需要工具时走 Claude API。
 
     Args:
         chat_id: 用户标识（Telegram chat_id / WeChat user_id）
@@ -506,7 +560,6 @@ def do_chat(chat_id: str, text: str, original_text: str,
         permission_check_fn: 权限检查 fn(chat_id, tool_name) -> bool，None=全放行
     """
     try:
-        from src.core.config import get_anthropic_client
         from src.storage.events_db import _DEFAULT_DB
 
         db_path = _DEFAULT_DB
@@ -514,6 +567,21 @@ def do_chat(chat_id: str, text: str, original_text: str,
         save_message(db_path, chat_id, "user", db_content, chat_client=channel_source)
 
         messages = build_context(db_path, chat_id)
+
+        # ── Route: casual chat → local model, tool-needed → Claude ──
+        if ch_cfg.CHAT_LOCAL_ENABLED and not _needs_tools(text):
+            local_reply = _chat_local(system_prompt, messages, text)
+            if local_reply:
+                log.info(f"chat: local model reply ({len(local_reply)} chars) to {chat_id[:16]}")
+                try:
+                    reply_fn(chat_id, local_reply)
+                except Exception as re:
+                    log.error(f"chat: reply_fn failed: {re}")
+                save_message(db_path, chat_id, "assistant", local_reply, chat_client=channel_source)
+                return
+
+        # ── Fall through to Claude API with tool use ──
+        from src.core.config import get_anthropic_client
         client = get_anthropic_client()
 
         max_rounds = ch_cfg.TOOL_USE_MAX_ROUNDS
