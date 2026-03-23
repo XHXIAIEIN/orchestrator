@@ -124,6 +124,8 @@ def build_system_prompt(platform_rules: str) -> str:
         "- NEVER say you did something you didn't. If you can't do it and didn't "
         "call a tool, say so honestly.\n"
         "- If unsure whether you can do something, try the tool first.\n"
+        "- VERIFICATION: If your response claims you called a tool, but the conversation "
+        "has no tool_use block for it, you are hallucinating. Stop and correct yourself.\n"
     )
 
     return prompt
