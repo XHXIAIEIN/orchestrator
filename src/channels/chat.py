@@ -243,7 +243,10 @@ def build_context(db_path: str, chat_id: str) -> list[dict]:
             "content": "明白，我记得这些。继续。",
         })
     recent = load_recent(db_path, chat_id, ch_cfg.RECENT_TURNS)
-    messages.extend(recent)
+    # Filter out messages with empty content (Claude API rejects them)
+    for m in recent:
+        if m.get("content"):
+            messages.append(m)
     return messages
 
 
