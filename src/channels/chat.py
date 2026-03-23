@@ -551,7 +551,7 @@ def _chat_local(system_prompt: str, messages: list[dict], text: str) -> str:
 
 def do_chat(chat_id: str, text: str, original_text: str,
             system_prompt: str, reply_fn, channel_source: str = "channel",
-            permission_check_fn=None):
+            permission_check_fn=None, media: list = None):
     """对话主循环 — 闲聊走本地模型，需要工具时走 Claude API。
 
     Args:
@@ -572,8 +572,52 @@ def do_chat(chat_id: str, text: str, original_text: str,
 
         messages = build_context(db_path, chat_id)
 
+        # ── Process media attachments ──────────────────────────────
+        image_paths = []
+        if media:
+            from src.channels.media import MediaType
+            for att in media:
+                if att.media_type == MediaType.IMAGE and att.local_path:
+                    image_paths.append(att.local_path)
+                elif att.media_type == MediaType.VOICE and att.text:
+                    text = f"{text}\n[语音转文字: {att.text}]" if text else f"[语音转文字: {att.text}]"
+                elif att.media_type == MediaType.FILE:
+                    text = f"{text}\n[文件: {att.file_name}]" if text else f"[文件: {att.file_name}]"
+                elif att.media_type == MediaType.VIDEO:
+                    text = f"{text}\n[视频消息]" if text else "[视频消息]"
+
+        # Replace last user message with multimodal content if images present
+        if image_paths:
+            import base64 as b64mod
+            content_parts = []
+            for img_path in image_paths:
+                try:
+                    with open(img_path, "rb") as f:
+                        img_data = f.read()
+                    b64 = b64mod.b64encode(img_data).decode()
+                    mime = "image/jpeg"
+                    if img_path.endswith(".png"):
+                        mime = "image/png"
+                    elif img_path.endswith(".webp"):
+                        mime = "image/webp"
+                    elif img_path.endswith(".gif"):
+                        mime = "image/gif"
+                    content_parts.append({
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": mime, "data": b64},
+                    })
+                except Exception as e:
+                    log.warning(f"chat: failed to read image {img_path}: {e}")
+            if content_parts:
+                content_parts.append({"type": "text", "text": text or "请描述这张图片"})
+                # Replace last message with multimodal content
+                if messages and messages[-1]["role"] == "user":
+                    messages[-1]["content"] = content_parts
+                else:
+                    messages.append({"role": "user", "content": content_parts})
+
         # ── Route: casual chat → local model, tool-needed → Claude ──
-        if ch_cfg.CHAT_LOCAL_ENABLED and not _needs_tools(text):
+        if ch_cfg.CHAT_LOCAL_ENABLED and not _needs_tools(text) and not image_paths:
             local_reply = _chat_local(system_prompt, messages, text)
             if local_reply:
                 log.info(f"chat: local model reply ({len(local_reply)} chars) to {chat_id[:16]}")
