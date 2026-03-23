@@ -126,7 +126,7 @@ def test_governor_execute_task_calls_agent_correctly():
             return "DONE: test passed"
 
         # Mock verify gates to pass (real git diff has 100+ files in dev env)
-        def fake_run_gates(task_id, department="", cwd=""):
+        def fake_run_gates(department, task_id, task_cwd, extra_gates=None):
             return GateRecord(
                 task_id=task_id, department=department,
                 gates=[], all_passed=True,

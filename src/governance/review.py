@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.storage.events_db import EventsDB
-from src.governance.scrutiny import classify_cognitive_mode, Scrutinizer
+from src.governance.scrutiny import classify_cognitive_mode
 from src.governance.policy.blueprint import load_blueprint
 from src.governance.pipeline.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
 
@@ -66,6 +66,50 @@ except ImportError:
     get_router = None
 
 log = logging.getLogger(__name__)
+
+
+def _extract_artifact(task: dict) -> dict:
+    """Extract structured handoff artifact from completed task."""
+    try:
+        output = task.get("output") or ""
+
+        commit_match = re.search(r'(?:commit|committed|提交)[:\s]*([0-9a-f]{7,40})', output, re.IGNORECASE)
+        commit = commit_match.group(1) if commit_match else ""
+
+        file_patterns = re.findall(r'(?:src|departments|SOUL|dashboard|tests|data|docs|bin)/[\w/.-]+\.\w+', output)
+        files_changed = list(set(file_patterns))[:10]
+
+        done_match = re.search(r'DONE:\s*(.+)', output)
+        summary = done_match.group(1).strip() if done_match else task.get("action", "")[:100]
+
+        remaining = re.findall(r'(?:TODO|FIXME|remaining|still need|未完成)[:\s]*(.+)', output, re.IGNORECASE)
+        remaining = [r.strip()[:100] for r in remaining[:5]]
+
+        found = []
+        for pattern in [r'(?:found|discovered|noticed|发现)[:\s]*(.+)',
+                       r'(?:note|warning|注意)[:\s]*(.+)']:
+            found.extend(re.findall(pattern, output, re.IGNORECASE))
+        found = [f.strip()[:100] for f in found[:5]]
+
+        return {
+            "task_id": task.get("id", 0),
+            "status": task.get("status", ""),
+            "done": summary,
+            "found": found,
+            "remaining": remaining,
+            "files_changed": files_changed,
+            "commit": commit,
+        }
+    except Exception:
+        return {
+            "task_id": task.get("id", 0),
+            "status": task.get("status", ""),
+            "done": task.get("action", "")[:100],
+            "found": [],
+            "remaining": [],
+            "files_changed": [],
+            "commit": "",
+        }
 
 
 class ReviewManager:
@@ -249,8 +293,7 @@ class ReviewManager:
         if parent_spec.get("department") == "quality":
             return
 
-        from src.governance.executor import TaskExecutor
-        artifact = TaskExecutor._extract_artifact(parent_task)
+        artifact = _extract_artifact(parent_task)
         files_str = ", ".join(artifact["files_changed"]) if artifact["files_changed"] else "未检测到"
         commit_str = artifact["commit"] or "未检测到"
 
@@ -396,14 +439,6 @@ class ReviewManager:
             "WARNING", "governor")
         log.info(f"ReviewManager: dispatched rework #{rework_id} for failed review #{review_task_id}")
 
-        # 返工任务走正常门下省审查后执行
-        self.db.update_task(rework_id, status="scrutinizing")
-        scrutinizer = Scrutinizer(self.db)
-        approved, note = scrutinizer.scrutinize(rework_id, self.db.get_task(rework_id))
-        if approved:
-            self.db.update_task(rework_id, scrutiny_note=f"准奏：{note}")
-            if self.on_execute:
-                self.on_execute(rework_id)
-        else:
-            self.db.update_task(rework_id, status="scrutiny_failed", scrutiny_note=note,
-                                finished_at=datetime.now(timezone.utc).isoformat())
+        # 返工任务通过 on_execute 回调走完整管线（Governor 会处理审查+执行）
+        if self.on_execute:
+            self.on_execute(rework_id)

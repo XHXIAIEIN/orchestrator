@@ -15,11 +15,26 @@ class Governor:
         self.db = db or EventsDB(db_path)
         self.scrutinizer = Scrutinizer(self.db)
         self.dispatcher = TaskDispatcher(self.db, self.scrutinizer)
-        self.reviewer = ReviewManager(self.db, on_execute=self._execute_async)
+        self.reviewer = ReviewManager(self.db, on_execute=self._scrutinize_and_execute)
         self.executor = TaskExecutor(self.db, on_finalize=self.reviewer.finalize_task)
 
-    def _execute_async(self, task_id: int):
-        self.executor.execute_task_async(task_id)
+    def _scrutinize_and_execute(self, task_id: int):
+        """Callback for ReviewManager: scrutinize rework tasks, then execute if approved."""
+        from datetime import datetime, timezone
+        task = self.db.get_task(task_id)
+        if not task:
+            return
+        self.db.update_task(task_id, status="scrutinizing")
+        try:
+            approved, note = self.scrutinizer.scrutinize(task_id, task)
+        except Exception as e:
+            approved, note = True, f"审查异常，默认放行：{e}"
+        if approved:
+            self.db.update_task(task_id, scrutiny_note=f"准奏：{note}")
+            self.executor.execute_task_async(task_id)
+        else:
+            self.db.update_task(task_id, status="scrutiny_failed", scrutiny_note=note,
+                                finished_at=datetime.now(timezone.utc).isoformat())
 
     # ── Scrutiny (backward compat) ──
 

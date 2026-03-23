@@ -39,12 +39,6 @@ except ImportError:
     check_doom_loop = None
 
 try:
-    from src.governance.safety.verify_gate import run_gates, save_gate_record
-except ImportError:
-    run_gates = None
-    save_gate_record = None
-
-try:
     from src.governance.audit.heartbeat import parse_progress, HEARTBEAT_PROMPT
 except ImportError:
     parse_progress = None
@@ -88,15 +82,7 @@ def _in_async_context() -> bool:
         return False
 
 
-def _resolve_project_cwd(project_name: str, fallback_cwd: str = "") -> str:
-    """Resolve a project name to a working directory path."""
-    if fallback_cwd:
-        return fallback_cwd
-    from src.core.project_registry import resolve_project
-    resolved = resolve_project(project_name)
-    if resolved:
-        return resolved
-    return os.environ.get("ORCHESTRATOR_ROOT", str(Path(__file__).parent.parent))
+from src.governance.scrutiny import _resolve_project_cwd  # shared utility
 
 
 def _extract_target_files(spec: dict) -> list[str]:
@@ -485,46 +471,3 @@ class TaskExecutor:
             log.warning(f"TaskExecutor: visual verify failed: {e}")
             return ""
 
-    @staticmethod
-    def _extract_artifact(task: dict) -> dict:
-        """Extract structured handoff artifact from completed task."""
-        try:
-            output = task.get("output") or ""
-
-            commit_match = re.search(r'(?:commit|committed|提交)[:\s]*([0-9a-f]{7,40})', output, re.IGNORECASE)
-            commit = commit_match.group(1) if commit_match else ""
-
-            file_patterns = re.findall(r'(?:src|departments|SOUL|dashboard|tests|data|docs|bin)/[\w/.-]+\.\w+', output)
-            files_changed = list(set(file_patterns))[:10]
-
-            done_match = re.search(r'DONE:\s*(.+)', output)
-            summary = done_match.group(1).strip() if done_match else task.get("action", "")[:100]
-
-            remaining = re.findall(r'(?:TODO|FIXME|remaining|still need|未完成)[:\s]*(.+)', output, re.IGNORECASE)
-            remaining = [r.strip()[:100] for r in remaining[:5]]
-
-            found = []
-            for pattern in [r'(?:found|discovered|noticed|发现)[:\s]*(.+)',
-                           r'(?:note|warning|注意)[:\s]*(.+)']:
-                found.extend(re.findall(pattern, output, re.IGNORECASE))
-            found = [f.strip()[:100] for f in found[:5]]
-
-            return {
-                "task_id": task.get("id", 0),
-                "status": task.get("status", ""),
-                "done": summary,
-                "found": found,
-                "remaining": remaining,
-                "files_changed": files_changed,
-                "commit": commit,
-            }
-        except Exception:
-            return {
-                "task_id": task.get("id", 0),
-                "status": task.get("status", ""),
-                "done": task.get("action", "")[:100],
-                "found": [],
-                "remaining": [],
-                "files_changed": [],
-                "commit": "",
-            }
