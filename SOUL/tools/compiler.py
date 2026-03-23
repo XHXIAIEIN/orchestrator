@@ -256,6 +256,34 @@ def format_experiences_section(experiences: list[dict]) -> str:
     return '\n'.join(parts)
 
 
+def promoted_learnings(db_path: Optional[Path] = None) -> list[dict]:
+    """Read promoted learnings from DB for boot.md injection."""
+    dp = db_path or (SOUL_DIR.parent / 'data' / 'events.db')
+    if not dp.exists():
+        return []
+    try:
+        import sys
+        sys.path.insert(0, str(SOUL_DIR.parent))
+        from src.storage.events_db import EventsDB
+        db = EventsDB(str(dp))
+        return db.get_promoted_learnings()
+    except Exception:
+        return []
+
+
+def format_learnings_section(learnings: list[dict]) -> str:
+    """Format promoted learnings as boot.md section."""
+    if not learnings:
+        return ''
+    lines = []
+    for l in learnings:
+        dept = f" [{l.get('department', '')}]" if l.get('department') else ''
+        occ = l.get('recurrence', 1)
+        marker = ' !!!' if occ >= 5 else ''
+        lines.append(f"- {l['rule']}{dept}{marker}")
+    return '\n'.join(lines)
+
+
 def extract_memory_rules(path: Optional[Path] = None) -> str:
     """
     从 MEMORY.md 中提取环境信息和规则。
@@ -359,7 +387,11 @@ def compile_boot(
     exps = recent_experiences(experiences_n)
     experiences = format_experiences_section(exps)
 
-    # 5. 工作须知（从 MEMORY.md 提取规则）
+    # 5. 教训（从 DB 读取 promoted learnings）
+    plearnings = promoted_learnings()
+    learnings_text = format_learnings_section(plearnings)
+
+    # 6. 工作须知（从 MEMORY.md 提取规则）
     rules = extract_memory_rules()
 
     # 组装
@@ -387,6 +419,14 @@ def compile_boot(
 ## 最近发生了什么
 
 {experiences}
+
+---
+
+## Learnings
+
+Hard-won rules from past mistakes. Violating these will likely cause the same failures.
+
+{learnings_text if learnings_text else '(None yet. Keep accumulating.)'}
 
 ---
 

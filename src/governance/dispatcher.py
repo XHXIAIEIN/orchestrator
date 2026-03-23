@@ -121,6 +121,17 @@ class TaskDispatcher:
             except Exception as e:
                 log.warning(f"TaskDispatcher: novelty check failed ({e}), continuing")
 
+        # ── Learnings Injection ──
+        try:
+            relevant = self.db.get_learnings_for_dispatch(department=dept)
+            if relevant:
+                warnings = [f"- {l['rule']} (x{l['recurrence']})" for l in relevant[:5]]
+                spec["learnings"] = warnings
+                self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+                log.info(f"TaskDispatcher: injected {len(warnings)} learnings into task #{task_id}")
+        except Exception as e:
+            log.warning(f"TaskDispatcher: learnings injection failed ({e}), continuing")
+
         # ── Complexity Classification ──
         complexity = classify_complexity(action, spec)
         spec["complexity"] = complexity.name

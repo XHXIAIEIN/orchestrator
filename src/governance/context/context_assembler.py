@@ -136,6 +136,12 @@ def assemble_context(department: str, task: dict) -> str:
     except Exception:
         pass  # extended memory is optional
 
+    # 5. Learnings（前车之鉴，从 spec 注入）
+    spec = task.get("spec", {}) if isinstance(task.get("spec"), dict) else {}
+    learnings = spec.get("learnings", [])
+    if learnings:
+        parts.append("【Learnings】Rules from past mistakes. Violating these will likely cause the same failures:\n" + "\n".join(learnings))
+
     if not parts:
         return ""
 

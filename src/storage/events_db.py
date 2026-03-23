@@ -238,6 +238,26 @@ class EventsDB:
                     summary TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS learnings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pattern_key TEXT NOT NULL,
+                    area TEXT NOT NULL DEFAULT 'general',
+                    rule TEXT NOT NULL,
+                    context TEXT NOT NULL DEFAULT '',
+                    source_type TEXT NOT NULL DEFAULT 'error',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    recurrence INTEGER NOT NULL DEFAULT 1,
+                    department TEXT,
+                    task_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    promoted_at TEXT,
+                    retired_at TEXT,
+                    UNIQUE(pattern_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_learnings_status ON learnings(status);
+                CREATE INDEX IF NOT EXISTS idx_learnings_area ON learnings(area);
+                CREATE INDEX IF NOT EXISTS idx_learnings_dept ON learnings(department);
             """)
             # Migrations: add columns to existing databases
             for col, typ in [("scrutiny_note", "TEXT"), ("parent_task_id", "INTEGER")]:
@@ -782,4 +802,102 @@ class EventsDB:
                     "ORDER BY updated_at DESC LIMIT ?",
                     (limit,)
                 ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── Learnings ──
+
+    def add_learning(
+        self,
+        pattern_key: str,
+        rule: str,
+        *,
+        area: str = "general",
+        context: str = "",
+        source_type: str = "error",
+        department: str = None,
+        task_id: int = None,
+    ) -> int:
+        """Record a learning. If pattern_key exists, bump recurrence instead."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id, recurrence, status FROM learnings WHERE pattern_key = ?",
+                (pattern_key,),
+            ).fetchone()
+            if existing:
+                new_count = existing["recurrence"] + 1
+                conn.execute(
+                    "UPDATE learnings SET recurrence = ?, context = CASE WHEN ? != '' THEN ? ELSE context END WHERE id = ?",
+                    (new_count, context, context, existing["id"]),
+                )
+                return existing["id"]
+            cursor = conn.execute(
+                "INSERT INTO learnings (pattern_key, area, rule, context, source_type, status, recurrence, department, task_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?)",
+                (pattern_key, area, rule, context, source_type, department, task_id, now),
+            )
+            return cursor.lastrowid
+
+    def promote_learning(self, learning_id: int) -> None:
+        """Promote a learning to boot.md-eligible status."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE learnings SET status = 'promoted', promoted_at = ? WHERE id = ?",
+                (now, learning_id),
+            )
+
+    def retire_learning(self, learning_id: int) -> None:
+        """Retire a learning (no longer relevant)."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE learnings SET status = 'retired', retired_at = ? WHERE id = ?",
+                (now, learning_id),
+            )
+
+    def get_learnings(self, status: str = None, area: str = None, department: str = None, limit: int = 50) -> list:
+        """Query learnings with optional filters."""
+        clauses, params = [], []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if area:
+            clauses.append("area = ?")
+            params.append(area)
+        if department:
+            clauses.append("department = ?")
+            params.append(department)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT id, pattern_key, area, rule, context, source_type, status, recurrence, department, task_id, created_at, promoted_at "
+                f"FROM learnings {where} ORDER BY recurrence DESC, created_at DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_promoted_learnings(self) -> list:
+        """Get all promoted learnings for boot.md compilation."""
+        return self.get_learnings(status="promoted", limit=30)
+
+    def get_learnings_for_dispatch(self, department: str = None, area: str = None) -> list:
+        """Get active+promoted learnings relevant to a dispatch context."""
+        clauses = ["status IN ('pending', 'promoted')"]
+        params = []
+        if department:
+            clauses.append("(department = ? OR department IS NULL)")
+            params.append(department)
+        if area:
+            clauses.append("area = ?")
+            params.append(area)
+        where = "WHERE " + " AND ".join(clauses)
+        params.append(20)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT pattern_key, rule, recurrence, department FROM learnings {where} "
+                f"ORDER BY recurrence DESC LIMIT ?",
+                params,
+            ).fetchall()
         return [dict(r) for r in rows]
