@@ -8,7 +8,10 @@
 零外部依赖，纯 urllib。
 """
 import logging
+import os
 import re
+import subprocess
+import tempfile
 import threading
 import time
 from typing import Optional
@@ -16,15 +19,29 @@ from typing import Optional
 from src.channels.base import Channel, ChannelMessage
 from src.channels import config as ch_cfg
 from src.channels import chat as chat_engine
+from src.channels.media import MediaAttachment, MediaType, save_media_buffer, guess_mime
 from src.channels.wechat.api import (
     DEFAULT_BASE_URL,
     get_updates,
     send_message,
+    send_typing,
+    get_config,
     extract_text,
     extract_from_user,
+    extract_media_items,
+    send_image,
+    send_file,
+    send_video,
     set_context_token,
     get_context_token,
     get_all_context_users,
+    ITEM_IMAGE, ITEM_VOICE, ITEM_FILE, ITEM_VIDEO,
+)
+from src.channels.wechat.cdn import (
+    cdn_download_and_decrypt,
+    cdn_download_plain,
+    upload_media_file,
+    CDN_BASE_URL,
 )
 
 log = logging.getLogger(__name__)
@@ -71,6 +88,10 @@ class WeChatChannel(Channel):
 
         # 系统提示词（懒加载）
         self._system_prompt: Optional[str] = None
+
+        # 多媒体 / typing
+        self._typing_tickets: dict[str, str] = {}  # user_id → ticket
+        self._cdn_base_url = os.environ.get("WECHAT_CDN_BASE_URL", CDN_BASE_URL)
 
     # ── 出站 ────────────────────────────────────────────────────────────────
 
@@ -168,8 +189,11 @@ class WeChatChannel(Channel):
         user_id = extract_from_user(msg)
         text = extract_text(msg).strip()
         ctx_token = msg.get("context_token", "")
+        media_items = extract_media_items(msg)
 
-        if not user_id or not text:
+        if not user_id:
+            return
+        if not text and not media_items:
             return
         if ctx_token:
             set_context_token(user_id, ctx_token)
@@ -182,7 +206,17 @@ class WeChatChannel(Channel):
             return
         self._last_msg_time[user_id] = now
 
-        log.info(f"wechat: msg from {user_id[:16]}...: {text[:50]}")
+        # Download media attachments
+        attachments = []
+        for item in media_items:
+            try:
+                att = self._download_media_item(item)
+                if att:
+                    attachments.append(att)
+            except Exception as e:
+                log.warning(f"wechat: media download failed: {e}")
+
+        log.info(f"wechat: msg from {user_id[:16]}...: {text[:50]} media={len(attachments)}")
 
         if text.startswith("/"):
             chat_engine.handle_command(text, user_id, self._reply_text, "wechat")
@@ -191,17 +225,138 @@ class WeChatChannel(Channel):
                 file_path, char_count = chat_engine.save_to_inbox(text)
                 preview = text[:80].replace("\n", " ")
                 ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
-                self._start_chat(user_id, ref, original_text=text)
+                self._start_chat(user_id, ref, original_text=text, media=attachments)
             else:
-                self._start_chat(user_id, text)
+                if not text and attachments:
+                    text = self._describe_media(attachments)
+                self._start_chat(user_id, text, media=attachments)
 
-    def _start_chat(self, user_id: str, text: str, original_text: str = ""):
-        threading.Thread(
-            target=chat_engine.do_chat,
-            args=(user_id, text, original_text,
-                  self._get_system_prompt(), self._reply_text, "wechat"),
-            name="wechat-chat", daemon=True,
-        ).start()
+    # ── Typing indicator ──────────────────────────────────────────────────
+
+    def _fetch_typing_ticket(self, user_id: str) -> str:
+        if user_id in self._typing_tickets:
+            return self._typing_tickets[user_id]
+        try:
+            ctx_token = get_context_token(user_id)
+            resp = get_config(self.bot_token, user_id, ctx_token or "", self.base_url)
+            ticket = resp.get("typing_ticket", "")
+            if ticket:
+                self._typing_tickets[user_id] = ticket
+            return ticket
+        except Exception as e:
+            log.debug(f"wechat: get typing_ticket failed: {e}")
+            return ""
+
+    def _send_typing_indicator(self, user_id: str, status: int = 1):
+        ticket = self._fetch_typing_ticket(user_id)
+        if not ticket:
+            return
+        try:
+            send_typing(self.bot_token, user_id, ticket, status, self.base_url)
+        except Exception as e:
+            log.debug(f"wechat: send_typing failed: {e}")
+
+    def _keep_typing(self, user_id: str) -> threading.Event:
+        stop = threading.Event()
+        def _loop():
+            while not stop.is_set():
+                self._send_typing_indicator(user_id, 1)
+                stop.wait(timeout=5)
+            self._send_typing_indicator(user_id, 2)  # cancel
+        threading.Thread(target=_loop, name="wx-typing", daemon=True).start()
+        return stop
+
+    # ── Media download ────────────────────────────────────────────────────
+
+    def _download_media_item(self, item: dict) -> MediaAttachment | None:
+        t = item.get("type", 0)
+
+        if t == ITEM_IMAGE:
+            img = item.get("image_item", {})
+            media = img.get("media", {})
+            eqp = media.get("encrypt_query_param", "")
+            if not eqp:
+                return None
+            import base64 as b64mod
+            aes_key_b64 = img.get("aeskey")
+            if aes_key_b64:
+                aes_key_b64 = b64mod.b64encode(bytes.fromhex(aes_key_b64)).decode()
+            else:
+                aes_key_b64 = media.get("aes_key", "")
+            if aes_key_b64:
+                buf = cdn_download_and_decrypt(eqp, aes_key_b64, self._cdn_base_url)
+            else:
+                buf = cdn_download_plain(eqp, self._cdn_base_url)
+            path = save_media_buffer(buf, "image/jpeg", "inbound")
+            return MediaAttachment(media_type=MediaType.IMAGE, local_path=path, mime_type="image/jpeg")
+
+        elif t == ITEM_VOICE:
+            voice = item.get("voice_item", {})
+            media = voice.get("media", {})
+            eqp = media.get("encrypt_query_param", "")
+            aes_key = media.get("aes_key", "")
+            if not eqp or not aes_key:
+                return None
+            silk_buf = cdn_download_and_decrypt(eqp, aes_key, self._cdn_base_url)
+            wav_buf = _silk_to_wav(silk_buf)
+            if wav_buf:
+                path = save_media_buffer(wav_buf, "audio/wav", "inbound")
+                mime = "audio/wav"
+            else:
+                path = save_media_buffer(silk_buf, "audio/silk", "inbound")
+                mime = "audio/silk"
+            return MediaAttachment(
+                media_type=MediaType.VOICE, local_path=path, mime_type=mime,
+                text=voice.get("text", ""), duration_ms=voice.get("playtime", 0),
+            )
+
+        elif t == ITEM_FILE:
+            fi = item.get("file_item", {})
+            media = fi.get("media", {})
+            eqp = media.get("encrypt_query_param", "")
+            aes_key = media.get("aes_key", "")
+            if not eqp or not aes_key:
+                return None
+            buf = cdn_download_and_decrypt(eqp, aes_key, self._cdn_base_url)
+            fname = fi.get("file_name", "file.bin")
+            path = save_media_buffer(buf, guess_mime(fname), "inbound", fname)
+            return MediaAttachment(
+                media_type=MediaType.FILE, local_path=path,
+                mime_type=guess_mime(fname), file_name=fname,
+                file_size=int(fi.get("len", 0)),
+            )
+
+        elif t == ITEM_VIDEO:
+            vid = item.get("video_item", {})
+            media = vid.get("media", {})
+            eqp = media.get("encrypt_query_param", "")
+            aes_key = media.get("aes_key", "")
+            if not eqp or not aes_key:
+                return None
+            buf = cdn_download_and_decrypt(eqp, aes_key, self._cdn_base_url)
+            path = save_media_buffer(buf, "video/mp4", "inbound")
+            return MediaAttachment(media_type=MediaType.VIDEO, local_path=path, mime_type="video/mp4")
+
+        return None
+
+    # ── Chat + typing ─────────────────────────────────────────────────────
+
+    def _start_chat(self, user_id: str, text: str, original_text: str = "",
+                    media: list[MediaAttachment] | None = None):
+        def _chat_with_typing():
+            typing_stop = self._keep_typing(user_id)
+            try:
+                chat_engine.do_chat(
+                    user_id, text, original_text,
+                    self._get_system_prompt(),
+                    lambda cid, txt, **kw: self._reply_media(cid, txt, **kw),
+                    "wechat",
+                    media=media,
+                )
+            finally:
+                typing_stop.set()
+
+        threading.Thread(target=_chat_with_typing, name="wx-chat", daemon=True).start()
 
     # ── 消息发送 ────────────────────────────────────────────────────────────
 
@@ -220,6 +375,60 @@ class WeChatChannel(Channel):
             log.warning(f"wechat: reply failed: {e}")
             return False
 
+    def _reply_media(self, user_id: str, text: str,
+                     media_path: str = "", media_type: str = "") -> bool:
+        ctx_token = get_context_token(user_id)
+        if not ctx_token:
+            log.warning(f"wechat: no context_token for {user_id[:16]}...")
+            return False
+        try:
+            if media_path and os.path.exists(media_path):
+                mime = media_type or guess_mime(media_path)
+                if mime.startswith("image/"):
+                    upload_type = 1
+                elif mime.startswith("video/"):
+                    upload_type = 2
+                else:
+                    upload_type = 3
+
+                uploaded = upload_media_file(
+                    media_path, user_id, upload_type,
+                    self.bot_token, self.base_url, self._cdn_base_url,
+                )
+                plain = _strip_markdown(text) if text else ""
+                if mime.startswith("image/"):
+                    send_image(self.bot_token, user_id, ctx_token, uploaded, plain, self.base_url)
+                elif mime.startswith("video/"):
+                    send_video(self.bot_token, user_id, ctx_token, uploaded, plain, self.base_url)
+                else:
+                    fname = os.path.basename(media_path)
+                    send_file(self.bot_token, user_id, ctx_token, uploaded, fname, plain, self.base_url)
+                return True
+
+            plain = _strip_markdown(text)
+            for chunk in _split_message(plain):
+                send_message(self.bot_token, user_id, chunk, ctx_token, self.base_url)
+            return True
+        except Exception as e:
+            log.warning(f"wechat: reply failed: {e}")
+            return False
+
+    # ── Media description ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _describe_media(attachments: list[MediaAttachment]) -> str:
+        descs = []
+        for a in attachments:
+            if a.media_type == MediaType.IMAGE:
+                descs.append("[用户发送了一张图片]")
+            elif a.media_type == MediaType.VOICE:
+                descs.append(f"[用户发送了一条语音{f': {a.text}' if a.text else ''}]")
+            elif a.media_type == MediaType.FILE:
+                descs.append(f"[用户发送了文件: {a.file_name or '未知'}]")
+            elif a.media_type == MediaType.VIDEO:
+                descs.append("[用户发送了一段视频]")
+        return " ".join(descs) if descs else "[用户发送了媒体消息]"
+
     # ── 系统提示词 ──────────────────────────────────────────────────────────
 
     def _get_system_prompt(self) -> str:
@@ -229,6 +438,33 @@ class WeChatChannel(Channel):
 
 
 # ── 工具函数 ────────────────────────────────────────────────────────────────
+
+def _silk_to_wav(silk_buf: bytes) -> bytes | None:
+    """Transcode SILK audio to WAV using ffmpeg."""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".silk", delete=False) as f:
+            f.write(silk_buf)
+            silk_path = f.name
+        wav_path = silk_path.replace(".silk", ".wav")
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
+                 "-i", silk_path, wav_path],
+                capture_output=True, timeout=10,
+            )
+            if result.returncode == 0 and os.path.exists(wav_path):
+                with open(wav_path, "rb") as wf:
+                    return wf.read() or None
+        finally:
+            for p in [silk_path, wav_path]:
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
+    except Exception as e:
+        log.debug(f"wechat: silk→wav failed: {e}")
+    return None
+
 
 def _split_message(text: str) -> list[str]:
     limit = WECHAT_MSG_LIMIT
