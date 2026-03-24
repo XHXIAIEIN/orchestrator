@@ -108,16 +108,16 @@ class YAMLCollector(ICollector):
             elif src_type == "http":
                 return self._read_http(source)
             else:
-                self.log.error(f"Unknown source type: {src_type}")
+                self._stderr.error(f"Unknown source type: {src_type}")
                 return None
         except Exception as e:
-            self.log.error(f"Source read failed: {e}")
+            self._stderr.error(f"Source read failed: {e}")
             return None
 
     def _read_json_file(self, source: dict) -> Optional[Any]:
         path = Path(_expand_env(source["path"]))
         if not path.exists():
-            self.log.warning(f"JSON file not found: {path}")
+            self._stderr.warning(f"JSON file not found: {path}")
             return None
         text = path.read_text(encoding="utf-8")
         # 支持 JSONL（每行一个 JSON）
@@ -133,16 +133,16 @@ class YAMLCollector(ICollector):
                 cmd, shell=True, capture_output=True, text=True, timeout=timeout
             )
             if result.returncode != 0:
-                self.log.warning(f"Command failed (rc={result.returncode}): {result.stderr[:200]}")
+                self._stderr.warning(f"Command failed (rc={result.returncode}): {result.stderr[:200]}")
             return result.stdout
         except subprocess.TimeoutExpired:
-            self.log.error(f"Command timed out after {timeout}s: {cmd[:100]}")
+            self._stderr.error(f"Command timed out after {timeout}s: {cmd[:100]}")
             return None
 
     def _read_sqlite(self, source: dict) -> Optional[list]:
         db_path = Path(_expand_env(source["path"]))
         if not db_path.exists():
-            self.log.warning(f"SQLite DB not found: {db_path}")
+            self._stderr.warning(f"SQLite DB not found: {db_path}")
             return None
         query = source["query"]
         try:
@@ -152,7 +152,7 @@ class YAMLCollector(ICollector):
             conn.close()
             return [dict(r) for r in rows]
         except Exception as e:
-            self.log.error(f"SQLite query failed: {e}")
+            self._stderr.error(f"SQLite query failed: {e}")
             return None
 
     def _read_http(self, source: dict) -> Optional[str]:
@@ -164,7 +164,7 @@ class YAMLCollector(ICollector):
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read().decode("utf-8")
         except Exception as e:
-            self.log.error(f"HTTP request failed: {e}")
+            self._stderr.error(f"HTTP request failed: {e}")
             return None
 
     def _extract(self, raw_data: Any) -> list[dict]:
