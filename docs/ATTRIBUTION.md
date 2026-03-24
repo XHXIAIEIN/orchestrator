@@ -14,15 +14,14 @@ All URLs verified 2026-03-24. One project (Lucentia) has since been deleted.
 ## Tier S — Core Architectural Influences
 
 ### [autonomous-claude](https://github.com/matthewbergvinson/autonomous-claude)
-**What we took:** The entire concept of a 24/7 autonomous AI agent. Watcher
-process with heartbeat detection, crash auto-restart, MCP memory system
-(SQLite short-term + Qdrant long-term), Dashboard monitoring panel, and
-`master_prompt.md` as a behavioral constitution. This is where the idea of
-an always-running AI butler came from.
-**Evolution path:** autonomous-claude → yeshenghuo (customized) → claude-code-template
-/ agent-automate-template (generalized) → Orchestrator (current).
-**Where it lives:** The core run loop, Docker-based deployment, heartbeat
-protocol, and the entire philosophy of "agent that runs while you sleep."
+**What we took:** The foundational concept of a 24/7 autonomous AI agent.
+Watcher process with heartbeat detection, crash auto-restart, MCP memory
+system (SQLite short-term + Qdrant long-term), Dashboard monitoring panel,
+`master_prompt.md` as behavioral constitution, multi-department worker
+architecture, and task queue with load balancing.
+**Where it lives:** The entire run loop, Docker-based deployment, heartbeat
+protocol, department-based task dispatch, `events.db` persistence, and the
+philosophy of "agent that runs while you sleep."
 
 ### [edict](https://github.com/cft0808/edict)
 **What we took:** The 三省六部 governance model for AI orchestration. Their
@@ -97,6 +96,15 @@ StuckDetector (5-pattern loop detection).
 **Where it lives:** `src/governance/pipeline/fan_out.py` (event emission),
 `src/core/condenser/` (compression pipeline),
 `src/governance/stuck_detector.py`.
+
+### [OpenClaw](https://github.com/openclaw/openclaw) + [OpenClaw-Wechat](https://github.com/dingxiang-me/OpenClaw-Wechat)
+**What we took:** The Channel layer architecture — a unified gateway that
+connects AI agents to messaging platforms (Telegram, WeChat, Discord, etc.)
+through a common interface. Hub-and-spoke pattern with per-channel chunking,
+mention-based activation in groups, and DM access control. OpenClaw-Wechat
+specifically demonstrated WeChat integration patterns.
+**Where it lives:** `src/channels/` — `base.py` (Channel protocol),
+`registry.py` (auto-discovery by env vars), `telegram.py`, `wechat.py`.
 
 ### [pilot-shell](https://github.com/maxritter/pilot-shell)
 **What we took:** Compaction recovery — PreCompact hook saves context snapshot
