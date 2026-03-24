@@ -165,16 +165,19 @@ sends scouts), two-layer review, file signal protocol.
 
 ## Philosophy
 
-Good engineering is knowing what to steal.
+> "Good artists copy, great artists steal." — Picasso (probably)
 
-We studied 50+ open-source orchestrators, picked the patterns that solved
-real problems, threw away the ones that didn't, and wired the survivors into
-a system that actually runs 24/7 as a butler in Docker. The selection itself
-is a design decision — for every pattern we took, there were three we rejected.
+We studied 50+ open-source orchestrators and took what worked. The 三省六部
+governance model came from edict and danghuangshang; the SOUL identity system
+from SoulFlow; manifest discovery from G-Assist. Every major subsystem traces
+back to someone else's insight.
 
-What each project contributed is documented above. What we contributed is the
-integration: making imperial bureaucracy, AI identity systems, manifest-driven
-discovery, and intent routing work together in a single coherent architecture.
+But stealing well is its own craft. For every pattern we took, three were
+rejected. Every pattern listed here has been significantly adapted — G-Assist
+uses JSON-RPC over stdin, we use YAML at import time; OpenHands has a monolithic
+EventStream, we have department-scoped fan-out; edict runs on Discord, we run
+Agent SDK in Docker. The best ideas are the ones you can't tell where they
+came from.
 
 If you see your project here and think we got the attribution wrong,
 open an issue.
