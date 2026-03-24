@@ -1,4 +1,5 @@
 .env
+credentials.json
 collectors.yml
 # SOUL: 框架公开，私人数据在 SOUL/private/
 SOUL/private/
