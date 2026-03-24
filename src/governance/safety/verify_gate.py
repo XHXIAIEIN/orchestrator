@@ -83,13 +83,19 @@ def gate_no_secrets(task_cwd: str, **kwargs) -> GateResult:
         changed = result2.stdout.strip().splitlines()
 
         all_files = set(staged + changed)
-        secret_patterns = [".env", ".key", ".pem", "credentials", "secret",
-                          "token", "password", "apikey", "api_key"]
+        # Only flag actual secret files, not code that mentions "token" or "secret"
+        secret_file_patterns = [".env", ".key", ".pem", "credentials.json",
+                                "credentials.yaml", "credentials.yml"]
+        secret_name_exact = {"secrets.yaml", "secrets.yml", "secrets.json",
+                             ".env.local", ".env.production"}
 
         violations = []
         for f in all_files:
             f_lower = f.lower()
-            if any(p in f_lower for p in secret_patterns):
+            basename = Path(f).name.lower()
+            if basename in secret_name_exact:
+                violations.append(f)
+            elif any(f_lower.endswith(p) for p in secret_file_patterns):
                 violations.append(f)
 
         if violations:
@@ -166,7 +172,7 @@ GATE_REGISTRY = {
 
 # 部门默认 gate 配置
 DEPARTMENT_GATES: dict[str, list[str]] = {
-    "engineering": ["no_secrets", "diff_size"],
+    "engineering": ["no_secrets", "diff_size", "test_pass"],
     "operations": ["no_secrets", "diff_size"],
     # 只读部门不需要 gate
     "protocol": [],

@@ -18,10 +18,22 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class BudgetConfig:
-    """预算配置。"""
-    monthly_total_usd: float = 50.0     # 月度总额
-    daily_per_dept_usd: float = 5.0     # 部门日额
-    per_task_max_usd: float = 1.0       # 单任务上限
+    """Budget configuration. Reads from env vars, falls back to defaults.
+
+    Env vars:
+        BUDGET_MONTHLY_USD: monthly total (default: 200)
+        BUDGET_DAILY_PER_DEPT_USD: per-department daily limit (default: 20)
+        BUDGET_PER_TASK_USD: single task cap (default: 5)
+    """
+    monthly_total_usd: float = 0
+    daily_per_dept_usd: float = 0
+    per_task_max_usd: float = 0
+
+    def __post_init__(self):
+        import os
+        self.monthly_total_usd = self.monthly_total_usd or float(os.environ.get("BUDGET_MONTHLY_USD", "200"))
+        self.daily_per_dept_usd = self.daily_per_dept_usd or float(os.environ.get("BUDGET_DAILY_PER_DEPT_USD", "20"))
+        self.per_task_max_usd = self.per_task_max_usd or float(os.environ.get("BUDGET_PER_TASK_USD", "5"))
 
 
 # 降级链：从贵到便宜

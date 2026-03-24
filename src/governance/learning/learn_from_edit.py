@@ -142,24 +142,24 @@ def save_lessons(department: str, lessons: list[EditLesson]):
     if learned_path.exists():
         existing = learned_path.read_text(encoding="utf-8")
 
+    # 去重：过滤掉已存在的教训
+    novel = [l for l in lessons if l.lesson not in existing]
+    if not novel:
+        log.info(f"learn_from_edit: all {len(lessons)} lessons already exist, skipping")
+        return
+
     # 追加新教训
-    new_section = f"\n\n## 教训 ({datetime.now(timezone.utc).strftime('%Y-%m-%d')})\n"
-    for lesson in lessons:
+    new_section = f"\n\n## Lessons ({datetime.now(timezone.utc).strftime('%Y-%m-%d')})\n"
+    for lesson in novel:
         new_section += (
             f"\n### [{lesson.category}] {lesson.file}\n"
-            f"- Agent 做了: {lesson.what_agent_did}\n"
-            f"- 人类改为: {lesson.what_human_changed}\n"
-            f"- **教训**: {lesson.lesson}\n"
+            f"- Agent did: {lesson.what_agent_did}\n"
+            f"- Human changed to: {lesson.what_human_changed}\n"
+            f"- **Lesson**: {lesson.lesson}\n"
         )
 
-    # 去重：如果相同的 lesson 已存在，跳过
-    for lesson in lessons:
-        if lesson.lesson in existing:
-            log.info(f"learn_from_edit: skipping duplicate lesson: {lesson.lesson[:50]}")
-            continue
-
     learned_path.write_text(existing + new_section, encoding="utf-8")
-    log.info(f"learn_from_edit: saved {len(lessons)} lessons to {learned_path}")
+    log.info(f"learn_from_edit: saved {len(novel)} lessons to {learned_path}")
 
 
 def get_lessons(department: str, n: int = 10) -> list[str]:

@@ -51,6 +51,12 @@ except ImportError:
     format_slop_report = None
 
 try:
+    from src.governance.learning.learn_from_edit import analyze_human_edits, save_lessons
+except ImportError:
+    analyze_human_edits = None
+    save_lessons = None
+
+try:
     from src.governance.context.intent_manifest import build_manifest
 except ImportError:
     build_manifest = None
@@ -197,6 +203,7 @@ class ReviewManager:
         log.info(f"ReviewManager: task #{task_id} {status}")
 
         # 部门执行记忆
+        commit_hash = ""
         if append_run_log:
             try:
                 duration_s = 0
@@ -222,6 +229,15 @@ class ReviewManager:
                 )
             except Exception as e:
                 log.warning(f"ReviewManager: failed to write run-log for task #{task_id}: {e}")
+
+        # ── Learn-from-edit: 检测人工修正，提取教训 ──
+        if status == "done" and analyze_human_edits and commit_hash:
+            try:
+                edit_lessons = analyze_human_edits(commit_hash, dept_key, cwd=task_cwd)
+                if edit_lessons and save_lessons:
+                    save_lessons(dept_key, edit_lessons)
+            except Exception as e:
+                log.debug(f"ReviewManager: learn_from_edit failed for task #{task_id}: {e}")
 
         # ── TokenAccountant: 记录成本 ──
         if self.accountant:
