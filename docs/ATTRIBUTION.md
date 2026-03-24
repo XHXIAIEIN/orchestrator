@@ -116,6 +116,13 @@ specifically demonstrated WeChat integration patterns.
 **Where it lives:** `src/channels/` — `base.py` (Channel protocol),
 `registry.py` (auto-discovery by env vars), `telegram.py`, `wechat.py`.
 
+### [Humanizer](https://github.com/blader/humanizer) + [Humanizer-zh](https://github.com/op7418/Humanizer-zh)
+**What we took:** AI-generated text detection and rewriting patterns — identifying
+and removing telltale signs of LLM output (inflated symbolism, promotional
+language, em dash overuse, rule of three, AI vocabulary). Humanizer-zh provided
+Chinese-specific de-slopping patterns.
+**Where it lives:** `src/governance/learning/deslop.py`, `SOUL/tools/deai_writer.py`.
+
 ### [Fish Speech](https://github.com/fishaudio/fish-speech)
 **What we took:** TTS engine for the butler's voice. Fish S2 Pro with inline
 emotion tags (`[laugh]`, `[whisper]`, natural language descriptions like
