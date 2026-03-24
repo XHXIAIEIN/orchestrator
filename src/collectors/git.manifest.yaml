@@ -1,0 +1,11 @@
+name: git
+display_name: Git
+category: core
+enabled: true
+env_vars:
+- GIT_REPOS_ROOT
+- GIT_PATHS
+requires:
+- git
+event_sources:
+- git

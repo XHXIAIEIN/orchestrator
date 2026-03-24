@@ -1,0 +1,8 @@
+name: network
+display_name: Network
+category: core
+enabled: true
+env_vars: []
+requires: []
+event_sources:
+- network

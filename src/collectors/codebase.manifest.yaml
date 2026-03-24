@@ -1,0 +1,10 @@
+name: codebase
+display_name: Codebase
+category: core
+enabled: true
+env_vars:
+- ORCHESTRATOR_ROOT
+requires:
+- git
+event_sources:
+- codebase

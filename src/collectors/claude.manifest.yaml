@@ -1,0 +1,9 @@
+name: claude
+display_name: Claude
+category: core
+enabled: true
+env_vars:
+- CLAUDE_HOME
+requires: []
+event_sources:
+- claude

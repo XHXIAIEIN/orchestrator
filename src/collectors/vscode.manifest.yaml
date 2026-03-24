@@ -1,0 +1,9 @@
+name: vscode
+display_name: VS Code
+category: core
+enabled: true
+env_vars:
+- VSCODE_DATA_PATH
+requires: []
+event_sources:
+- vscode

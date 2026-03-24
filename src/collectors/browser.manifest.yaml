@@ -1,0 +1,9 @@
+name: browser
+display_name: Browser
+category: core
+enabled: true
+env_vars:
+- CHROME_HISTORY_ROOT
+requires: []
+event_sources:
+- browser

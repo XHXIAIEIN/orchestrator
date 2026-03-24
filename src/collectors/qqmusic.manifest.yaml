@@ -1,0 +1,9 @@
+name: qqmusic
+display_name: QQ Music
+category: optional
+enabled: false
+env_vars:
+- QQMUSIC_DATA_PATH
+requires: []
+event_sources:
+- qqmusic

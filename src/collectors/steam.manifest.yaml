@@ -1,0 +1,10 @@
+name: steam
+display_name: Steam
+category: optional
+enabled: false
+env_vars:
+- STEAM_PATH
+requires:
+- steam
+event_sources:
+- steam
