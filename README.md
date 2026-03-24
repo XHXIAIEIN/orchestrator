@@ -1,68 +1,68 @@
 # Orchestrator
 
-一个 24/7 自主运行的 AI 管家系统 —— 采集数据、分析行为、自动派单、执行任务、自我改善。
+A 24/7 autonomous AI butler system — collects data, analyzes behavior, auto-dispatches tasks, executes them, and improves itself.
 
-## 架构
+## Architecture
 
 ```
-采集层 (8 collectors)  →  EventsDB  →  分析层  →  治理层 (Governor)
-                                                      ↓
-                                                 预检 (Blueprint)
-                                                      ↓
-                                                 门下省 (审查)
-                                                      ↓
-                                              六部 (并行执行)
-                                                      ↓
-                                                 Dashboard
+Collectors (8)  →  EventsDB  →  Analysis  →  Governance (Governor)
+                                                    ↓
+                                              Preflight (Blueprint)
+                                                    ↓
+                                              Scrutiny (Review)
+                                                    ↓
+                                            Six Ministries (Parallel)
+                                                    ↓
+                                               Dashboard
 ```
 
-### 三省六部
+### Three Departments and Six Ministries (三省六部)
 
-| 层级 | 组件 | 职能 |
-|------|------|------|
-| 中书省 | Governor | 决策：从洞察中提取任务，选择认知模式，分配部门 |
-| 门下省 | Scrutiny | 审查：Haiku 快速评估可行性、爆炸半径、逆推风险 |
-| 尚书省 | Six Depts | 执行：六部并行处理，按项目隔离，Blueprint 策略约束 |
+| Layer | Component | Role |
+|-------|-----------|------|
+| Secretariat (中书省) | Governor | Decision-making: extract tasks from insights, select cognitive mode, assign departments |
+| Chancellery (门下省) | Scrutiny | Review: Haiku quick-evaluates feasibility, blast radius, reversal risk |
+| Department of State Affairs (尚书省) | Six Depts | Execution: six ministries process in parallel, isolated by project, constrained by Blueprint policies |
 
-| 部门 | 职能 | 模型 |
-|------|------|------|
-| 工部 | 代码工程：写代码、改 bug、重构 | Sonnet |
-| 户部 | 系统运维：采集器修复、DB 管理、性能优化 | Sonnet |
-| 礼部 | 注意力审计：扫描遗忘的 TODO、未关闭 issue | Haiku |
-| 兵部 | 安全防御：密钥泄露、权限检查、依赖审计 | Haiku |
-| 刑部 | 质量验收：code review、测试、逻辑错误检查 | Sonnet |
-| 吏部 | 绩效管理：采集器健康度、任务成功率、趋势分析 | Haiku |
+| Department | Role | Model |
+|------------|------|-------|
+| Engineering (工部) | Code engineering: write code, fix bugs, refactor | Sonnet |
+| Operations (户部) | System ops: collector fixes, DB management, performance tuning | Sonnet |
+| Protocol (礼部) | Attention audit: scan forgotten TODOs, unclosed issues | Haiku |
+| Security (兵部) | Security defense: secret leaks, permission checks, dependency audits | Haiku |
+| Quality (刑部) | Quality acceptance: code review, testing, logic error detection | Sonnet |
+| Personnel (吏部) | Performance management: collector health, task success rate, trend analysis | Haiku |
 
-### 认知模式
+### Cognitive Modes
 
-Governor 根据任务复杂度自动选择思维模式：
+Governor automatically selects a thinking mode based on task complexity:
 
-| 模式 | 适用场景 | 思维方式 |
-|------|---------|---------|
-| Direct | 改 typo、调参数 | 直接执行 |
-| ReAct | 修 bug、加功能 | Think → Act → Observe → 循环 |
-| Hypothesis | "为什么 X 不工作" | 先假设 → 设计验证 → 确认/推翻 |
-| Designer | 重构、新子系统 | 先设计方案 → 审查 → 再实现 |
+| Mode | Use Case | Approach |
+|------|----------|----------|
+| Direct | Fix typos, tweak params | Execute directly |
+| ReAct | Fix bugs, add features | Think → Act → Observe → Loop |
+| Hypothesis | "Why doesn't X work" | Hypothesize → Design verification → Confirm/Refute |
+| Designer | Refactor, new subsystems | Design first → Review → Then implement |
 
-### Blueprint 系统
+### Blueprint System
 
-每个部门有三层配置文件：
+Each department has three config layers:
 
-| 文件 | 谁读 | 管什么 |
-|------|------|--------|
-| `manifest.yaml` | Registry (启动时扫描) | 身份、语义标签、意图路由、策略、执行配置 —— 单一注册源 |
-| `SKILL.md` | Agent (LLM) | 身份、行为准则、红线、完成标准 |
-| `blueprint.yaml` | Governor (代码) | 策略、权限、预检规则、生命周期配置 |
+| File | Read By | Controls |
+|------|---------|----------|
+| `manifest.yaml` | Registry (scanned at startup) | Identity, semantic tags, intent routing, policies, execution config — single source of registration |
+| `SKILL.md` | Agent (LLM) | Identity, behavioral guidelines, red lines, completion criteria |
+| `blueprint.yaml` | Governor (code) | Policies, permissions, preflight rules, lifecycle config |
 
-添加新部门只需要一个目录 + `manifest.yaml`，零代码改动。
+Adding a new department requires just one directory + `manifest.yaml`. Zero code changes.
 
-任务派单五阶段生命周期（借鉴 NemoClaw）：
+Task dispatch follows a five-stage lifecycle (inspired by NemoClaw):
 
 ```
 Create → Classify → Preflight(Blueprint) → Scrutinize(门下省) → Execute
 ```
 
-Blueprint 声明式策略示例：
+Blueprint declarative policy example:
 
 ```yaml
 policy:
@@ -78,56 +78,56 @@ preflight:
     target: "100"
 ```
 
-## 目录结构
+## Directory Structure
 
 ```
 orchestrator/
 ├── src/
-│   ├── core/           # 基础设施：config, agent, LLM 路由, 工具
-│   ├── governance/     # 治理层：Governor, 债务扫描, 技能进化
-│   ├── analysis/       # 分析层：日报, 洞察, 画像, 绩效
-│   ├── collectors/     # 采集层：Claude, Browser, Git, Steam, etc.
-│   ├── storage/        # 存储层：EventsDB, VectorDB
-│   ├── voice/          # 语音：TTS, 声音选择
-│   ├── scheduler.py    # 调度入口
-│   └── cli.py          # CLI 入口
-├── dashboard/          # 前端 (Express + WebSocket)
-│   └── public/         # 三个页面：Dashboard / Pipeline / Agents
-├── departments/        # 六部配置 (manifest.yaml + SKILL.md + blueprint.yaml + run-log)
-├── SOUL/               # AI 人格框架
-│   ├── private/        # 私人数据 (gitignored)
-│   ├── management.md   # 管理哲学 + 认知模式
-│   └── tools/          # 编译器 + 索引器
-├── data/               # 运行时数据 (gitignored)
-├── docs/               # API 文档
-├── bin/                # Docker 启动脚本
+│   ├── core/           # Infrastructure: config, agent, LLM routing, tools
+│   ├── governance/     # Governance: Governor, debt scanning, skill evolution
+│   ├── analysis/       # Analysis: daily reports, insights, profiling, performance
+│   ├── collectors/     # Collectors: Claude, Browser, Git, Steam, etc.
+│   ├── storage/        # Storage: EventsDB, VectorDB
+│   ├── voice/          # Voice: TTS, voice selection
+│   ├── scheduler.py    # Scheduler entry point
+│   └── cli.py          # CLI entry point
+├── dashboard/          # Frontend (Express + WebSocket)
+│   └── public/         # Three pages: Dashboard / Pipeline / Agents
+├── departments/        # Six Ministries config (manifest.yaml + SKILL.md + blueprint.yaml + run-log)
+├── SOUL/               # AI personality framework
+│   ├── private/        # Private data (gitignored)
+│   ├── management.md   # Management philosophy + cognitive modes
+│   └── tools/          # Compiler + indexer
+├── data/               # Runtime data (gitignored)
+├── docs/               # API docs
+├── bin/                # Docker startup scripts
 └── tests/
 ```
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 1. 克隆
+# 1. Clone
 git clone git@github.com:XHXIAIEIN/orchestrator.git
 cd orchestrator
 
-# 2. 配置环境变量
+# 2. Configure environment variables
 cp .env.example .env
-# 编辑 .env：
-#   - ANTHROPIC_API_KEY: 你的 Anthropic API key
-#   - 其余路径根据你的操作系统调整（.env.example 里有 Windows/macOS/Linux 示例）
+# Edit .env:
+#   - ANTHROPIC_API_KEY: your Anthropic API key
+#   - Adjust other paths for your OS (see .env.example for Windows/macOS/Linux examples)
 
-# 3. 创建数据目录
+# 3. Create data directories
 mkdir -p data SOUL/private
 
-# 4. 启动 (Docker)
+# 4. Start (Docker)
 docker compose up --build -d
 
-# 5. 验证
+# 5. Verify
 curl -s http://localhost:23714/api/health
-# 返回 {"status":"ok"} 表示启动成功
+# Returns {"status":"ok"} if startup succeeded
 
-# 6. 访问
+# 6. Access
 # Dashboard:     http://localhost:23714
 # Pipeline:      http://localhost:23714/pipeline
 # Agents:        http://localhost:23714/agents
@@ -135,137 +135,137 @@ curl -s http://localhost:23714/api/health
 # OpenAPI Spec:  http://localhost:23714/openapi.json
 ```
 
-### 不用 Docker
+### Without Docker
 
 ```bash
-# 终端 1: Python 调度器
+# Terminal 1: Python scheduler
 pip install -r requirements.txt
 python -m src.scheduler
 
-# 终端 2: Node 仪表盘
+# Terminal 2: Node dashboard
 cd dashboard && npm install && node server.js
 ```
 
-### 在其他项目中集成
+### Integrating with Other Projects
 
-在你的其他项目的 `CLAUDE.md` 里加入：
+Add this to your other project's `CLAUDE.md`:
 
 ```markdown
 ## Orchestrator
 
-查全局状态：`curl -s http://localhost:23714/api/brief`
-查未解决债务：`curl -s http://localhost:23714/api/debts?status=open`
-Agent 实时状态：`curl -s http://localhost:23714/api/agents/live`
-完整 API：见 http://localhost:23714/api-reference
+Global status: `curl -s http://localhost:23714/api/brief`
+Open debts: `curl -s http://localhost:23714/api/debts?status=open`
+Agent live status: `curl -s http://localhost:23714/api/agents/live`
+Full API: see http://localhost:23714/api-reference
 ```
 
 ## Dashboard
 
-三个页面：
+Three pages:
 
-- **Dashboard** `/` — 管家日报、三省六部状态、洞察分析、注意力债务、活动热力图
-- **Pipeline** `/pipeline` — 数据流可视化、采集器→分析→治理全链路动画、系统日志
-- **Agents** `/agents` — Agent 实时可观测：事件流、工具调用、思考过程、并行场景控制
+- **Dashboard** `/` — Butler daily report, Three Departments status, insight analysis, attention debts, activity heatmap
+- **Pipeline** `/pipeline` — Data flow visualization, collector→analysis→governance full-chain animation, system logs
+- **Agents** `/agents` — Agent real-time observability: event stream, tool calls, thinking process, parallel scenario control
 
 ## API
 
-完整 API 文档：[docs/api-reference.md](docs/api-reference.md)
+Full API docs: [docs/api-reference.md](docs/api-reference.md)
 
-给其他 Claude 实例用的精简版：[docs/api-for-claude.md](docs/api-for-claude.md)
+Slim version for other Claude instances: [docs/api-for-claude.md](docs/api-for-claude.md)
 
-交互式文档：`http://localhost:23714/api-reference` (Swagger UI)
+Interactive docs: `http://localhost:23714/api-reference` (Swagger UI)
 
-常用端点：
+Common endpoints:
 
 ```bash
-# 全局状态一览
+# Global status overview
 curl -s http://localhost:23714/api/brief
 
-# 未解决的注意力债务
+# Open attention debts
 curl -s 'http://localhost:23714/api/debts?status=open'
 
-# Agent 实时状态
+# Agent live status
 curl -s http://localhost:23714/api/agents/live
 
-# 触发并行场景（安全+质量+礼部同时扫描）
+# Trigger parallel scenario (Security + Quality + Protocol scan simultaneously)
 curl -s -X POST http://localhost:23714/api/scenarios/full_audit/run \
   -H 'Content-Type: application/json' -d '{"project":"orchestrator"}'
 
-# 任务执行回放（完整思考链 + 工具调用）
+# Task execution replay (full thinking chain + tool calls)
 curl -s http://localhost:23714/api/agents/42/trace
 ```
 
-## SOUL 系统
+## SOUL System
 
-AI 人格持续性框架。每个 Claude 实例启动时读取编译后的 `boot.md`，获得身份、关系、声音校准、最近记忆。
+AI personality persistence framework. Each Claude instance reads the compiled `boot.md` at startup, receiving identity, relationship, voice calibration, and recent memories.
 
 ```
 SOUL/
-├── private/           # 身份、关系、经历、校准数据 (gitignored)
-├── management.md      # 管理哲学：10 条决策原则 + 4 种认知模式
-├── tools/compiler.py  # 编译所有源文件 → boot.md
-└── tools/indexer.py   # 从对话历史提取校准样本
+├── private/           # Identity, relationships, experiences, calibration data (gitignored)
+├── management.md      # Management philosophy: 10 decision principles + 4 cognitive modes
+├── tools/compiler.py  # Compile all source files → boot.md
+└── tools/indexer.py   # Extract calibration samples from conversation history
 ```
 
-## 并行调度
+## Parallel Scheduling
 
-Governor 支持两种派单模式：
+Governor supports two dispatch modes:
 
-| 方法 | 用途 |
-|------|------|
-| `run_batch()` | 自动批量：从 recommendations 挑多个任务，按部门+项目去重并行 |
-| `run_parallel_scenario()` | 手动触发预定义场景 |
+| Method | Purpose |
+|--------|---------|
+| `run_batch()` | Auto batch: pick multiple tasks from recommendations, deduplicate by department+project, run in parallel |
+| `run_parallel_scenario()` | Manually trigger predefined scenarios |
 
-隔离规则：同部门 + 同项目串行，同部门 + 不同项目可并行，不同部门始终可并行。
+Isolation rules: same department + same project runs serially; same department + different projects can parallelize; different departments always parallelize.
 
-## 前置要求
+## Prerequisites
 
-只需要三样东西：
+You need exactly three things:
 
 - **Python 3.10+**
 - **Node.js 18+**
-- **Claude Code**（[安装指南](https://docs.anthropic.com/en/docs/claude-code)）
+- **Claude Code** ([install guide](https://docs.anthropic.com/en/docs/claude-code))
 
-数据库用 SQLite（Python 内置），不需要额外安装。Docker 可选。
+Database is SQLite (built into Python) — no extra installation needed. Docker is optional.
 
-### 可选组件
+### Optional Components
 
-以下组件不是必须的，系统会自动适配：
+These are not required. The system adapts automatically:
 
-| 组件 | 有的话 | 没有的话 |
-|------|--------|---------|
-| **Docker** | 一键 `docker compose up` 启动 | 手动 `python -m src.scheduler` + `node server.js` |
-| **Ollama** | 门下省审查、债务扫描走本地模型，省 token | 自动走 Claude API |
-| **Fish Speech** | Dashboard 管家日报可以语音播放 | 语音按钮不可用，不影响其他功能 |
+| Component | With it | Without it |
+|-----------|---------|------------|
+| **Docker** | One-click `docker compose up` startup | Manual `python -m src.scheduler` + `node server.js` |
+| **Ollama** | Scrutiny review and debt scanning use local models, saves tokens | Falls back to Claude API |
+| **Fish Speech** | Dashboard daily report can be played as audio | Voice button disabled, everything else works |
 
-### 采集器
+### Collectors
 
-8 个采集器各自独立，只采集你机器上有的数据。缺少某个数据源时该采集器自动跳过，不报错：
+8 independent collectors — they only collect data that exists on your machine. Missing data sources are silently skipped, no errors:
 
-| 采集器 | 采集什么 |
-|--------|---------|
-| Claude | Claude Code 对话历史 |
-| Browser | Chrome 浏览记录 |
-| Git | 本地 Git 仓库提交 |
-| VS Code | 编辑器使用时间 |
-| Steam | 游戏时长 |
-| QQ Music | 播放记录 |
-| Network | 本地运行的服务（端口扫描） |
-| Codebase | 项目自身的 git 历史 |
+| Collector | What it collects |
+|-----------|-----------------|
+| Claude | Claude Code conversation history |
+| Browser | Chrome browsing history |
+| Git | Local Git repository commits |
+| VS Code | Editor usage time |
+| Steam | Game playtime |
+| QQ Music | Playback history |
+| Network | Locally running services (port scan) |
+| Codebase | Project's own git history |
 
-## 设计参考
+## Design References
 
-50+ 开源项目的模式研究。完整的偷师簿见 [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) —— 每个子系统的来源、改造方式、在代码库中的位置。
+Pattern research from 50+ open-source projects. Full attribution log at [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) — source, adaptation method, and location in the codebase for each subsystem.
 
-核心来源：
+Core sources:
 
-| 来源 | 贡献 |
-|------|------|
-| [autonomous-claude](https://github.com/matthewbergvinson/autonomous-claude) | 24/7 自主运行的根基 |
-| [edict](https://github.com/cft0808/edict) / [danghuangshang](https://github.com/wanikua/danghuangshang) | 三省六部治理模型 |
-| [soul.md](https://github.com/aaronjmars/soul.md) | SOUL 身份系统 |
-| [NVIDIA G-Assist](https://github.com/NVIDIA/g-assist) | Manifest 驱动的部门自发现 |
-| [OpenHands](https://github.com/All-Hands-AI/OpenHands) | 上下文压缩 + 卡死检测 |
-| [OpenClaw](https://github.com/openclaw/openclaw) | Channel 层（Telegram / WeChat） |
-| [Agent-S](https://github.com/simular-ai/Agent-S) / [UI-TARS](https://github.com/bytedance/UI-TARS) | GUI 桌面控制引擎 |
-| [Fish Speech](https://github.com/fishaudio/fish-speech) | 语音系统（TTS + 情感标签） |
+| Source | Contribution |
+|--------|-------------|
+| [autonomous-claude](https://github.com/matthewbergvinson/autonomous-claude) | Foundation for 24/7 autonomous operation |
+| [edict](https://github.com/cft0808/edict) / [danghuangshang](https://github.com/wanikua/danghuangshang) | Three Departments and Six Ministries (三省六部) governance model |
+| [soul.md](https://github.com/aaronjmars/soul.md) | SOUL identity system |
+| [NVIDIA G-Assist](https://github.com/NVIDIA/g-assist) | Manifest-driven department auto-discovery |
+| [OpenHands](https://github.com/All-Hands-AI/OpenHands) | Context compression + stuck detection |
+| [OpenClaw](https://github.com/openclaw/openclaw) | Channel layer (Telegram / WeChat) |
+| [Agent-S](https://github.com/simular-ai/Agent-S) / [UI-TARS](https://github.com/bytedance/UI-TARS) | GUI desktop control engine |
+| [Fish Speech](https://github.com/fishaudio/fish-speech) | Voice system (TTS + emotion tags) |
