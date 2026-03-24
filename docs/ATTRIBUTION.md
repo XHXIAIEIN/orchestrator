@@ -165,24 +165,16 @@ sends scouts), two-layer review, file signal protocol.
 
 ## Philosophy
 
-Almost nothing here is original.
+Good engineering is knowing what to steal.
 
-The 三省六部 governance model? edict and danghuangshang did it first. The SOUL
-identity system? SoulFlow split agents into soul and heart before we existed.
-Manifest-driven discovery? NVIDIA G-Assist ships it in production. Authority
-ceilings, intent routing, stuck detection, context compression — every major
-subsystem traces back to someone else's idea.
+We studied 50+ open-source orchestrators, picked the patterns that solved
+real problems, threw away the ones that didn't, and wired the survivors into
+a system that actually runs 24/7 as a butler in Docker. The selection itself
+is a design decision — for every pattern we took, there were three we rejected.
 
-What we *did* do:
-- Read a lot of code
-- Took notes
-- Adapted what worked, ignored what didn't
-- Wired it all together into something that runs 24/7 as a butler in Docker
+What each project contributed is documented above. What we contributed is the
+integration: making imperial bureaucracy, AI identity systems, manifest-driven
+discovery, and intent routing work together in a single coherent architecture.
 
-That's not nothing. But it's not invention either. It's engineering — the
-unglamorous craft of combining other people's good ideas into something that
-actually works for your specific problem.
-
-This document exists because we'd rather be honest about our sources than
-pretend we're geniuses. If you see your project listed here and think we
-got the attribution wrong, open an issue.
+If you see your project here and think we got the attribution wrong,
+open an issue.
