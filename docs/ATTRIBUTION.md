@@ -168,15 +168,16 @@ sends scouts), two-layer review, file signal protocol.
 > "Good artists copy, great artists steal." — Picasso (probably)
 
 We don't just copy code — we study *patterns* and *principles*, then adapt
-them to our architecture. The 三省六部 governance model came from edict and
-danghuangshang; the SOUL identity system from SoulFlow; manifest discovery
-from G-Assist. Every major subsystem traces back to someone else's insight.
+them to our architecture. The specific mechanisms that make it all work are
+often inspired by others.
 
-Every pattern listed here has been significantly adapted — G-Assist uses
-JSON-RPC over stdin, we use YAML at import time; OpenHands has a monolithic
-EventStream, we have department-scoped fan-out; edict runs on Discord, we run
-Agent SDK in Docker. The best ideas are the ones you can't tell where they
-came from.
+Every pattern listed here has been significantly adapted:
+- G-Assist uses JSON-RPC over stdin; we use YAML manifests loaded at import time
+- OpenHands has a monolithic EventStream; we have department-scoped fan-out
+- Paperclip's Atomic Checkout is per-file; our PunchClock is per-department
+- edict/danghuangshang run on Discord/Feishu; we run Agent SDK in Docker
+
+The best ideas are the ones you can't tell where they came from.
 
 If you see your project here and think we got the attribution wrong,
 open an issue.
