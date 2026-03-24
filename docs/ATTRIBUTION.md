@@ -165,16 +165,24 @@ sends scouts), two-layer review, file signal protocol.
 
 ## Philosophy
 
-We don't just copy code — we study *patterns* and *principles*, then adapt them
-to our architecture. Even the 三省六部 governance metaphor came from edict and
-danghuangshang — what's ours is the specific combination: imperial bureaucracy +
-SOUL identity system + manifest-driven discovery + intent routing, all running
-as an autonomous butler in Docker.
+Almost nothing here is original.
 
-Every pattern listed here has been significantly adapted:
-- G-Assist uses JSON-RPC 2.0 over stdin/stdout; we use YAML manifests loaded at import time
-- OpenHands has a monolithic EventStream; we have department-scoped fan-out
-- Paperclip's Atomic Checkout is per-file; our PunchClock is per-department
-- edict/danghuangshang use Discord/Feishu channels; we use Agent SDK in Docker
+The 三省六部 governance model? edict and danghuangshang did it first. The SOUL
+identity system? SoulFlow split agents into soul and heart before we existed.
+Manifest-driven discovery? NVIDIA G-Assist ships it in production. Authority
+ceilings, intent routing, stuck detection, context compression — every major
+subsystem traces back to someone else's idea.
 
-The best ideas are the ones you can't tell where they came from.
+What we *did* do:
+- Read a lot of code
+- Took notes
+- Adapted what worked, ignored what didn't
+- Wired it all together into something that runs 24/7 as a butler in Docker
+
+That's not nothing. But it's not invention either. It's engineering — the
+unglamorous craft of combining other people's good ideas into something that
+actually works for your specific problem.
+
+This document exists because we'd rather be honest about our sources than
+pretend we're geniuses. If you see your project listed here and think we
+got the attribution wrong, open an issue.
