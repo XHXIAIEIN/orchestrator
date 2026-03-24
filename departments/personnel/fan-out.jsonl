@@ -1,0 +1,2 @@
+{"event_type": "task.failed", "ts": "2026-03-22T19:55:51.328526+00:00", "task_id": 122, "department": "personnel", "status": "failed", "project": "orchestrator", "summary": "Operations health check + personnel performance report"}
+{"event_type": "task.failed", "ts": "2026-03-22T19:59:42.800802+00:00", "task_id": 125, "department": "personnel", "status": "failed", "project": "orchestrator", "summary": "Protocol debt scan + security audit + personnel metrics"}

@@ -1,0 +1,2 @@
+{"event_type": "task.failed", "ts": "2026-03-22T19:37:40.833398+00:00", "task_id": 115, "department": "quality", "status": "failed", "project": "orchestrator", "summary": "Full system audit: security + quality + protocol in parallel"}
+{"event_type": "task.failed", "ts": "2026-03-22T19:55:37.225991+00:00", "task_id": 120, "department": "quality", "status": "failed", "project": "orchestrator", "summary": "扫描 src/channels/ 全部代码，找出硬编码值并解耦到环境变量或配置文件"}

@@ -1,0 +1,11 @@
+{"event_type": "task.completed", "ts": "2026-03-21T19:38:07.384643+00:00", "task_id": 999, "status": "done"}
+{"event_type": "task.failed", "ts": "2026-03-22T19:44:33.484874+00:00", "task_id": 1, "department": "engineering", "status": "failed", "project": "orchestrator", "summary": "检查 EventsDB 和 health 接口为什么报错"}
+{"event_type": "task.failed", "ts": "2026-03-22T19:58:57.124622+00:00", "task_id": 2, "department": "engineering", "status": "failed", "project": "orchestrator", "summary": "在 telegram_handler.py 中添加 message_reaction 事件处理，使 Orchestrator 能感知用户对消息的 emoji reaction。具体包括：1. 监听 m"}
+{"event_type": "task.failed", "ts": "2026-03-22T20:19:25.372711+00:00", "task_id": 135, "department": "engineering", "status": "failed", "project": "orchestrator", "summary": "检查 EventsDB 代码和最近 git 变更"}
+{"event_type": "task.failed", "ts": "2026-03-22T20:19:25.509138+00:00", "task_id": 137, "department": "engineering", "status": "failed", "project": "orchestrator", "summary": "Telegram reaction 事件接入 - 修改 telegram_handler.py 支持消息表情反应"}
+{"event_type": "task.failed", "ts": "2026-03-22T20:19:25.761339+00:00", "task_id": 142, "department": "engineering", "status": "failed", "project": "orchestrator", "summary": "full_audit"}
+{"event_type": "task.gate_failed", "ts": "2026-03-22T20:28:09.432201+00:00", "task_id": 1, "department": "engineering", "status": "gate_failed", "project": "orchestrator", "summary": "test async fix"}
+{"event_type": "task.gate_failed", "ts": "2026-03-23T04:18:16.913216+00:00", "task_id": 1, "department": "engineering", "status": "gate_failed", "project": "orchestrator", "summary": "test async fix"}
+{"event_type": "task.done", "ts": "2026-03-23T04:20:31.833910+00:00", "task_id": 1, "department": "engineering", "status": "done", "project": "orchestrator", "summary": "test async fix"}
+{"event_type": "task.failed", "ts": "2026-03-23T04:21:31.046096+00:00", "task_id": 163, "department": "engineering", "status": "failed", "project": "orchestrator", "summary": "deep_scan"}
+{"event_type": "task.done", "ts": "2026-03-23T06:57:24.933022+00:00", "task_id": 1, "department": "engineering", "status": "done", "project": "orchestrator", "summary": "test async fix"}
