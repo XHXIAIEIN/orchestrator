@@ -17,7 +17,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent
+while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_dir() and (_REPO_ROOT / "src").is_dir()):
+    _REPO_ROOT = _REPO_ROOT.parent
 WAKE_DIR = _REPO_ROOT / "tmp" / "wake"
 
 

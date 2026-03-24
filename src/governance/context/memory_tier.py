@@ -26,7 +26,9 @@ log = logging.getLogger(__name__)
 HOT_BUDGET_CHARS = 8000    # ~2000 tokens
 EXTENDED_MAX_CHARS = 4000  # 单次注入上限 ~1000 tokens
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent
+while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_dir() and (_REPO_ROOT / "src").is_dir()):
+    _REPO_ROOT = _REPO_ROOT.parent
 
 
 @dataclass

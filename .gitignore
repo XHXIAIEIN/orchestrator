@@ -4,7 +4,6 @@ collectors.yml
 SOUL/private/
 .claude/settings.local.json
 .claude/skills/persona/
-.claude/hooks/
 .claude/worktrees/
 .claude/boot.md
 .superpowers/
