@@ -145,4 +145,31 @@ def assemble_context(department: str, task: dict) -> str:
     if not parts:
         return ""
 
-    return "\n\n---\n\n".join(parts)
+    assembled = "\n\n---\n\n".join(parts)
+
+    # ── Condenser: if context exceeds token budget, compress ──
+    MAX_CONTEXT_CHARS = 12000  # ~3400 tokens, reasonable context budget
+    if len(assembled) > MAX_CONTEXT_CHARS:
+        try:
+            from src.governance.condenser.base import Event, View
+            from src.governance.condenser.amortized_forgetting import AmortizedForgettingCondenser
+
+            # Convert assembled parts into Events
+            events = []
+            for i, part in enumerate(parts):
+                events.append(Event(
+                    id=i, event_type="system", source="context_assembler",
+                    content=part,
+                ))
+
+            view = View(events)
+            condenser = AmortizedForgettingCondenser(
+                max_events=len(events), keep_head=2, keep_tail=3,
+            )
+            compressed = condenser.condense(view)
+            assembled = "\n\n---\n\n".join(e.content for e in compressed.events)
+        except Exception:
+            # Fallback: simple truncation
+            assembled = assembled[:MAX_CONTEXT_CHARS] + "\n\n[...context truncated...]"
+
+    return assembled
