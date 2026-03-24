@@ -5,7 +5,7 @@
 1. get_bot_qrcode → qrcode_img_content 是微信协议 URL
 2. 编码为二维码 → 终端显示 / 浏览器弹窗
 3. 用户从微信 ClawBot 插件扫码确认
-4. get_qrcode_status 轮询 → 拿到 bot_token → 存 src/channels/wechat/credentials.json
+4. get_qrcode_status 轮询 → 拿到 bot_token → 存 data/credentials/wechat.json
 
 可作为独立 CLI 工具: python -m src.channels.wechat.login
 """
@@ -28,7 +28,7 @@ from src.channels.wechat.api import (
 log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-CREDENTIALS_PATH = Path(__file__).resolve().parent / "credentials.json"
+CREDENTIALS_PATH = _REPO_ROOT / "data" / "credentials" / "wechat.json"
 
 
 def load_credentials() -> dict | None:
