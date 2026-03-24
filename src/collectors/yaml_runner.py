@@ -41,7 +41,6 @@ class YAMLCollector(ICollector):
     def __init__(self, db: EventsDB, yaml_path: Path = None, config: dict = None, **kwargs):
         # 不调 super().__init__，因为 base 的 __init__ 会调 self.metadata()
         # 而 YAMLCollector 本身的 metadata() 会 raise NotImplementedError
-        self.db = db
         if config:
             self.config = config
         elif yaml_path:
@@ -49,7 +48,13 @@ class YAMLCollector(ICollector):
         else:
             raise ValueError("YAMLCollector needs yaml_path or config")
         self._yaml_path = yaml_path
-        self.log = logging.getLogger(f"collector.yaml.{self.config.get('name', 'unknown')}")
+        # Must call super().__init__ AFTER self.config is set, because
+        # super() calls self.metadata() which needs self.config for bound subclasses.
+        # Note: don't shadow self.log — ICollector.log() is a method, not a Logger.
+        self.db = db
+        self._name = self.config.get("name", "yaml_unknown")
+        self._stderr = logging.getLogger(f"collector.{self._name}")
+        self._run_id = None
 
     @classmethod
     def metadata(cls) -> CollectorMeta:
