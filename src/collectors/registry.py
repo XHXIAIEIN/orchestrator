@@ -66,18 +66,43 @@ def discover_collectors() -> dict[str, type[ICollector]]:
     return registry
 
 
+def _load_collectors_yml() -> dict[str, bool]:
+    """Load config/collectors.yml — returns {name: enabled}."""
+    yml_path = _COLLECTORS_DIR.parent.parent / "config" / "collectors.yml"
+    if not yml_path.exists():
+        return {}
+    try:
+        import yaml
+        raw = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return {}
+        return {k: bool(v) for k, v in raw.items() if v is not None}
+    except Exception as e:
+        log.warning(f"registry: failed to load {yml_path}: {e}")
+        return {}
+
+
 def build_enabled_collectors(db, **kwargs) -> list[tuple[str, ICollector]]:
-    """构建启用的采集器实例列表。替代 scheduler._build_collectors()。"""
+    """构建启用的采集器实例列表。
+
+    优先级：环境变量 COLLECTOR_{NAME} > config/collectors.yml > meta.default_enabled
+    """
     registry = discover_collectors()
+    yml_config = _load_collectors_yml()
     enabled = []
 
     for name, cls in registry.items():
         meta = cls.metadata()
 
+        # Priority 1: env var
         env_key = f"COLLECTOR_{name.upper()}"
         env_val = os.environ.get(env_key)
         if env_val is not None:
             is_on = env_val.lower() in ("true", "1", "yes")
+        # Priority 2: config/collectors.yml
+        elif name in yml_config:
+            is_on = yml_config[name]
+        # Priority 3: collector default
         else:
             is_on = meta.default_enabled
 
@@ -90,5 +115,5 @@ def build_enabled_collectors(db, **kwargs) -> list[tuple[str, ICollector]]:
         except Exception as e:
             log.error(f"registry: {name} init failed: {e}")
 
-    log.info(f"registry: {len(enabled)}/{len(registry)} collectors enabled")
+    log.info(f"registry: {len(enabled)}/{len(registry)} collectors enabled (yml={len(yml_config)} overrides)")
     return enabled
