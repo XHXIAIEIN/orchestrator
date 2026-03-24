@@ -116,6 +116,14 @@ specifically demonstrated WeChat integration patterns.
 **Where it lives:** `src/channels/` — `base.py` (Channel protocol),
 `registry.py` (auto-discovery by env vars), `telegram.py`, `wechat.py`.
 
+### [Fish Speech](https://github.com/fishaudio/fish-speech)
+**What we took:** TTS engine for the butler's voice. Fish S2 Pro with inline
+emotion tags (`[laugh]`, `[whisper]`, natural language descriptions like
+`[speaking slowly, with disappointment]`) gives the SOUL a voice that matches
+its personality. Voice Picker randomly selects from Fish Audio's voice library
+by language/gender/style tags.
+**Where it lives:** `src/voice/tts.py`, `src/voice/voice_picker.py`.
+
 ### [Agent-S](https://github.com/simular-ai/Agent-S) + [UI-TARS](https://github.com/bytedance/UI-TARS)
 **What we took:** GUI automation agent architecture. Agent-S provided the
 perception-action loop pattern (screenshot → grounding → action execution),
