@@ -1,11 +1,7 @@
-# Attribution — Standing on the Shoulders of Giants
+# Attribution — 偷师簿
 
-This project draws inspiration, patterns, and architectural ideas from many
-open-source projects. We believe in giving credit where credit is due.
-
-> "Good artists copy, great artists steal." — Picasso (probably)
->
-> We steal, then we document it.
+管家的手艺不是凭空来的。这份文档记录了每一个被偷走的模式——
+从哪个项目来，改成了什么样，现在住在代码库的哪个角落。
 
 All URLs verified 2026-03-24. One project (Lucentia) has since been deleted.
 
