@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
 # Install Claude Code CLI globally (available for agent tasks inside sandbox)
 RUN npm install -g @anthropic-ai/claude-code
 
+ENV PYTHONDONTWRITEBYTECODE=1
 WORKDIR /orchestrator
 
 # Dashboard dependencies
