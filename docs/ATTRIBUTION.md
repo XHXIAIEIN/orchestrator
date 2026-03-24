@@ -48,9 +48,13 @@ rather than hardcoding department names. Quality-aware scheduling with policy pr
 
 ### [SoulFlow-Orchestrator](https://github.com/berrzebb/SoulFlow-Orchestrator)
 **What we took:** Gateway three-tier classification (NO_TOKEN / DIRECT / AGENT),
-Phase Loop, Critic Gate, Novelty Policy.
+Phase Loop, Critic Gate, Novelty Policy. Most importantly: the **Soul/Heart
+separation** — agent identity split into soul (principles) + heart (expression
+style) + extra_instructions, forkable and scopeable. This directly inspired
+our `SOUL/` directory architecture (public vs private, boot.md compilation).
 **Where it lives:** `RequestTier` in `src/gateway/classifier.py`,
-`check_novelty()` in `src/governance/policy/novelty_policy.py`.
+`check_novelty()` in `src/governance/policy/novelty_policy.py`,
+`SOUL/` directory structure (identity/prompts/experiences).
 
 ### [Lumina OS](https://github.com/fractalsense-ai/lumina-os)
 **What we took:** Domain Pack concept (self-contained department configs),
@@ -137,9 +141,10 @@ sends scouts), two-layer review, file signal protocol.
 
 | Project | URL | Pattern |
 |---------|-----|---------|
-| [Axe](https://github.com/axe-ai/axe) | Department memory via run-logs, opaque boundary principle |
+| [gstack](https://github.com/gstack-ai/gstack) | **SOUL cognitive system**: CEO decision principles, 4 cognitive modes (Direct/ReAct/Hypothesis/Designer) that form the core of `SOUL/public/prompts/cognitive_modes.md` and `classify_cognitive_mode()` |
+| [Axe](https://github.com/axe-ai/axe) | Department memory via run-logs, GC feedback loop, opaque boundary principle |
 | [Parlant](https://github.com/parlant-ai/parlant) | Dynamic context trimming (Contextual Matching Engine) |
-| [gstack](https://github.com/gstack-ai/gstack) | CEO decision principles, 4 cognitive modes |
+| [Letta/MemGPT](https://github.com/letta-ai/letta) | Structured persistent memory blocks — influenced `SOUL/` architecture (experiences.jsonl, identity.md, hall-of-instances) |
 | [Understand-Anything](https://github.com/Lum1104/Understand-Anything) | Stage-gated pipeline, Git hash incremental strategy |
 
 ---
@@ -153,7 +158,6 @@ sends scouts), two-layer review, file signal protocol.
 | Design-First Agent | gstack plan-review | Implemented in Designer cognitive mode |
 | Checkpoint-resume | Trigger.dev | Referenced |
 | Sandbox diff review | Plandex | Referenced |
-| Structured memory blocks | Letta/MemGPT | Referenced for SOUL evolution |
 | Session rewind | Google ADK | Referenced for compaction recovery |
 | Beam multi-model verification | big-AGI | Referenced |
 
