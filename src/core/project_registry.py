@@ -53,6 +53,10 @@ def scan_repos() -> dict[str, dict]:
     for d in sorted(root.iterdir()):
         if not d.is_dir():
             continue
+        # Skip directories with special characters (ghost entries from bad mounts)
+        if any(c in d.name for c in ";$&|`"):
+            log.warning(f"ProjectRegistry: skipping '{d.name}' (special chars in name)")
+            continue
         projects[d.name] = {
             "path": str(d),
             "is_git": (d / ".git").exists(),

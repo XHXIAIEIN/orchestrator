@@ -179,8 +179,8 @@ class YouTubeMusicCollector(ICollector):
                 continue
 
             iso = _chrome_ts_to_iso(visit_time)
-            day = iso[:10]
-            key = f"ytmusic:{vid}:{day}"
+            hour = iso[:13]  # YYYY-MM-DDTHH — hourly granularity, not daily
+            key = f"ytmusic:{vid}:{hour}"
 
             parsed = _parse_title(title)
 
@@ -188,7 +188,8 @@ class YouTubeMusicCollector(ICollector):
                 sessions[key] = {
                     "vid": vid,
                     "title": parsed,
-                    "day": day,
+                    "day": iso[:10],
+                    "hour": hour,
                     "occurred_at": iso,
                     "duration_us": 0,
                     "plays": 0,

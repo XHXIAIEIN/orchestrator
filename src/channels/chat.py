@@ -289,7 +289,34 @@ def build_context(db_path: str, chat_id: str) -> list[dict]:
             if paths:
                 m["content"] += f"\n[附带 {len(paths)} 个媒体文件]"
             messages.append(m)
+
+    # ── Token budget guard: prevent 200K+ prompts ──
+    MAX_CONTEXT_CHARS = 400_000  # ~100K tokens, safe under 200K with system prompt
+    total = sum(_msg_chars(m) for m in messages)
+    while total > MAX_CONTEXT_CHARS and len(messages) > 2:
+        removed = messages.pop(0)  # drop oldest message
+        total -= _msg_chars(removed)
+
     return messages
+
+
+def _msg_chars(msg: dict) -> int:
+    """Estimate character count of a message (including base64 images)."""
+    content = msg.get("content", "")
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        total = 0
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    total += len(part.get("text", ""))
+                elif part.get("type") == "image":
+                    total += len(part.get("source", {}).get("data", ""))
+            elif isinstance(part, str):
+                total += len(part)
+        return total
+    return 0
 
 
 def maybe_summarize(db_path: str, chat_id: str, client):
