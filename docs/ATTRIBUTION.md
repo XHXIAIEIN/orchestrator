@@ -171,7 +171,6 @@ sends scouts), two-layer review, file signal protocol.
 | [Orchestra](https://github.com/Traves-Theberge/Orchestra) | Claim-Execute-Release, Provider Cascade |
 | [bored](https://github.com/TannerBurns/bored) | Stage Pipeline + Deslop (anti-AI-smell) |
 | [project-artemis](https://github.com/ajansen7/project-artemis) | Two-tier memory (hot/extended), Learn-from-edit loop |
-| [Lucentia](https://github.com/wngfra/Lucentia) | TokenAccountant budget degradation chain *(repo deleted, patterns preserved in local notes)* |
 
 ### Second Round (2026-03-24)
 
