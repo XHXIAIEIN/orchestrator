@@ -66,20 +66,85 @@ def discover_collectors() -> dict[str, type[ICollector]]:
     return registry
 
 
+_COLLECTORS_YML = _COLLECTORS_DIR.parent.parent / "config" / "collectors.yml"
+
+
 def _load_collectors_yml() -> dict[str, bool]:
     """Load config/collectors.yml — returns {name: enabled}."""
-    yml_path = _COLLECTORS_DIR.parent.parent / "config" / "collectors.yml"
-    if not yml_path.exists():
+    if not _COLLECTORS_YML.exists():
         return {}
     try:
         import yaml
-        raw = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
+        raw = yaml.safe_load(_COLLECTORS_YML.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             return {}
         return {k: bool(v) for k, v in raw.items() if v is not None}
     except Exception as e:
-        log.warning(f"registry: failed to load {yml_path}: {e}")
+        log.warning(f"registry: failed to load {_COLLECTORS_YML}: {e}")
         return {}
+
+
+def sync_collectors_yml(registry: dict[str, type]) -> None:
+    """Sync config/collectors.yml with discovered collectors.
+
+    - New collectors → appended as commented-out entries
+    - Removed collectors → marked with '# REMOVED:' prefix
+    - Existing entries → untouched (preserve user's enable/disable choices)
+    """
+    import yaml
+
+    yml_path = _COLLECTORS_YML
+    yml_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Parse existing file preserving comments
+    existing_lines = []
+    existing_keys = set()
+    if yml_path.exists():
+        existing_lines = yml_path.read_text(encoding="utf-8").splitlines()
+        for line in existing_lines:
+            stripped = line.lstrip("# ").strip()
+            if ":" in stripped and not stripped.startswith(("#", "REMOVED")):
+                key = stripped.split(":")[0].strip()
+                if key and not key.startswith(("─", "Orchestrator", "启用", "禁用", "注释", "环境")):
+                    existing_keys.add(key)
+            # Also catch commented-out collectors like "# steam: true"
+            if line.startswith("# ") and ":" in line and "REMOVED" not in line:
+                maybe_key = line.lstrip("# ").split(":")[0].strip()
+                if maybe_key in registry:
+                    existing_keys.add(maybe_key)
+
+    discovered = set(registry.keys())
+    new_collectors = discovered - existing_keys
+    removed_collectors = existing_keys - discovered
+
+    if not new_collectors and not removed_collectors:
+        return  # Nothing to sync
+
+    output_lines = list(existing_lines)
+
+    # Mark removed collectors
+    if removed_collectors:
+        for i, line in enumerate(output_lines):
+            for name in removed_collectors:
+                if line.strip().startswith(f"{name}:") or line.strip().startswith(f"# {name}:"):
+                    if "REMOVED" not in line:
+                        output_lines[i] = f"# REMOVED: {line.lstrip('# ')}"
+
+    # Append new collectors
+    if new_collectors:
+        output_lines.append("")
+        output_lines.append(f"# ── 新发现 ({len(new_collectors)}) ──")
+        for name in sorted(new_collectors):
+            meta = registry[name].metadata()
+            category = meta.category
+            default = "true" if meta.default_enabled else "false"
+            if meta.default_enabled:
+                output_lines.append(f"{name}: {default}")
+            else:
+                output_lines.append(f"# {name}: {default}")
+
+    yml_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
+    log.info(f"registry: synced collectors.yml — +{len(new_collectors)} new, -{len(removed_collectors)} removed")
 
 
 def build_enabled_collectors(db, **kwargs) -> list[tuple[str, ICollector]]:
@@ -88,6 +153,7 @@ def build_enabled_collectors(db, **kwargs) -> list[tuple[str, ICollector]]:
     优先级：环境变量 COLLECTOR_{NAME} > config/collectors.yml > meta.default_enabled
     """
     registry = discover_collectors()
+    sync_collectors_yml(registry)
     yml_config = _load_collectors_yml()
     enabled = []
 
