@@ -187,5 +187,6 @@ Every pattern listed here has been significantly adapted:
 
 The best ideas are the ones you can't tell where they came from.
 
-If you see your project here and think we got the attribution wrong,
-open an issue.
+This document exists because we'd rather be honest about where things came
+from than pretend we're geniuses. If you see your project listed here and
+think we got the attribution wrong, open an issue.
