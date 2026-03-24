@@ -116,6 +116,17 @@ specifically demonstrated WeChat integration patterns.
 **Where it lives:** `src/channels/` — `base.py` (Channel protocol),
 `registry.py` (auto-discovery by env vars), `telegram.py`, `wechat.py`.
 
+### [Agent-S](https://github.com/simular-ai/Agent-S) + [UI-TARS](https://github.com/bytedance/UI-TARS)
+**What we took:** GUI automation agent architecture. Agent-S provided the
+perception-action loop pattern (screenshot → grounding → action execution),
+OCR-first grounding strategy, and trajectory-based action context. UI-TARS
+from ByteDance contributed UI understanding model concepts and grounding
+approaches for desktop interaction.
+**Where it lives:** `src/gui/` — `engine.py` (perception-action loop),
+`grounder.py` + `grounder_ocr.py` (OCR grounding with fuzzy match),
+`trajectory.py` (sliding window action context), `actions.py` (whitelist
+ACL + kill switch), `screen.py` (multi-monitor capture + DPI mapping).
+
 ### [pilot-shell](https://github.com/maxritter/pilot-shell)
 **What we took:** Compaction recovery — PreCompact hook saves context snapshot
 before compression, enables rollback if compacted context loses critical info.
