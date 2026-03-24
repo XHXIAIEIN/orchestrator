@@ -11,7 +11,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _PROMPT_DIRS = [
     _REPO_ROOT / "SOUL" / "private" / "prompts",  # personal override
     _REPO_ROOT / "SOUL" / "public" / "prompts",    # public default
@@ -93,7 +93,7 @@ PARALLEL_SCENARIOS = {
 
 def load_department(name: str) -> str | None:
     """从 departments/{name}/SKILL.md 加载部门 prompt。文件不存在时返回 None（fallback 到 DEPARTMENTS dict）。"""
-    skill_path = Path(__file__).parent.parent / "departments" / name / "SKILL.md"
+    skill_path = _REPO_ROOT / "departments" / name / "SKILL.md"
     try:
         if skill_path.exists():
             return skill_path.read_text(encoding="utf-8")
