@@ -30,6 +30,7 @@ class HealthCheck:
             "collectors": self._check_collectors(),
             "governor": self._check_governor(),
             "container": self._check_container(),
+            "departments": self._check_departments(),
             "issues": [],
         }
         report["issues"] = self.issues
@@ -146,3 +147,26 @@ class HealthCheck:
             pass  # Windows 没有 statvfs
 
         return {"memory": mem_info, "disk": disk_info}
+
+    def _check_departments(self) -> dict:
+        """Validate all department domain packs — manifest, SKILL.md, blueprint completeness."""
+        try:
+            from src.governance.context.domain_pack import load_all_domain_packs, validate_domain_pack
+            packs = load_all_domain_packs()
+            result = {}
+            for dept, pack in packs.items():
+                issues = validate_domain_pack(pack)
+                result[dept] = {
+                    "valid": pack.valid and not issues,
+                    "files": len(pack.files_present),
+                    "issues": issues,
+                }
+                if issues:
+                    self.issues.append({
+                        "level": "medium", "component": f"dept:{dept}",
+                        "summary": f"{dept} domain pack: {'; '.join(issues[:2])}",
+                    })
+            return result
+        except Exception as e:
+            log.debug(f"Department check failed: {e}")
+            return {}
