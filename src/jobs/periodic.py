@@ -1,4 +1,4 @@
-"""Periodic jobs — profile analysis, performance report, skill evolution, policy suggestions, weekly audit."""
+"""Periodic jobs — profile analysis, performance report, skill evolution, policy suggestions, shared knowledge, weekly audit."""
 import logging
 
 from src.storage.events_db import EventsDB
@@ -6,6 +6,7 @@ from src.analysis.profile_analyst import ProfileAnalyst
 from src.analysis.performance import PerformanceReport
 from src.governance.learning.skill_evolver import run_evolution
 from src.governance.policy.policy_advisor import generate_all_suggestions
+from src.jobs.shared_knowledge import update_all as update_shared_knowledge
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +65,17 @@ def policy_suggestions(db: EventsDB):
     except Exception as e:
         log.error(f"PolicyAdvisor failed: {e}")
         db.write_log(f"Policy Advisor 失败: {e}", "ERROR", "policy_advisor")
+
+
+def shared_knowledge(db: EventsDB):
+    """Update departments/shared/ knowledge files (recent-changes, known-issues, codebase-map)."""
+    try:
+        results = update_shared_knowledge(db)
+        summary = ", ".join(f"{k}: {v} chars" for k, v in results.items())
+        db.write_log(f"共享知识更新: {summary}", "INFO", "shared_knowledge")
+    except Exception as e:
+        log.error(f"SharedKnowledge update failed: {e}")
+        db.write_log(f"共享知识更新失败: {e}", "ERROR", "shared_knowledge")
 
 
 def weekly_audit(db: EventsDB):
