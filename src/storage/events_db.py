@@ -275,6 +275,12 @@ class EventsDB:
                     conn.execute(f"ALTER TABLE logs ADD COLUMN {col} {typ}")
                 except sqlite3.OperationalError:
                     pass
+            # Learnings: add hit tracking columns for usage-based culling
+            for col, typ in [("hit_count", "INTEGER DEFAULT 0"), ("last_hit_at", "TEXT")]:
+                try:
+                    conn.execute(f"ALTER TABLE learnings ADD COLUMN {col} {typ}")
+                except sqlite3.OperationalError:
+                    pass
             # Deferred indexes (depend on migration columns)
             try:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id)")
@@ -887,8 +893,13 @@ class EventsDB:
         """Get all promoted learnings for boot.md compilation."""
         return self.get_learnings(status="promoted", limit=30)
 
-    def get_learnings_for_dispatch(self, department: str = None, area: str = None) -> list:
-        """Get active+promoted learnings relevant to a dispatch context."""
+    def get_learnings_for_dispatch(self, department: str = None, area: str = None,
+                                    record_hits: bool = True) -> list:
+        """Get active+promoted learnings relevant to a dispatch context.
+
+        If record_hits=True, bumps hit_count and last_hit_at for matched learnings
+        (supports usage-based experience culling).
+        """
         clauses = ["status IN ('pending', 'promoted')"]
         params = []
         if department:
@@ -901,8 +912,20 @@ class EventsDB:
         params.append(20)
         with self._connect() as conn:
             rows = conn.execute(
-                f"SELECT pattern_key, rule, recurrence, department FROM learnings {where} "
+                f"SELECT id, pattern_key, rule, recurrence, department FROM learnings {where} "
                 f"ORDER BY recurrence DESC LIMIT ?",
                 params,
             ).fetchall()
-        return [dict(r) for r in rows]
+            result = [dict(r) for r in rows]
+
+            if record_hits and result:
+                now = datetime.now(timezone.utc).isoformat()
+                ids = [r["id"] for r in result]
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"UPDATE learnings SET hit_count = COALESCE(hit_count, 0) + 1, "
+                    f"last_hit_at = ? WHERE id IN ({placeholders})",
+                    [now] + ids,
+                )
+
+        return result
