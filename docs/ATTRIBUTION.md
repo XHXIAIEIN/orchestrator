@@ -13,6 +13,17 @@ All URLs verified 2026-03-24. One project (Lucentia) has since been deleted.
 
 ## Tier S — Core Architectural Influences
 
+### [autonomous-claude](https://github.com/matthewbergvinson/autonomous-claude)
+**What we took:** The entire concept of a 24/7 autonomous AI agent. Watcher
+process with heartbeat detection, crash auto-restart, MCP memory system
+(SQLite short-term + Qdrant long-term), Dashboard monitoring panel, and
+`master_prompt.md` as a behavioral constitution. This is where the idea of
+an always-running AI butler came from.
+**Evolution path:** autonomous-claude → yeshenghuo (customized) → claude-code-template
+/ agent-automate-template (generalized) → Orchestrator (current).
+**Where it lives:** The core run loop, Docker-based deployment, heartbeat
+protocol, and the entire philosophy of "agent that runs while you sleep."
+
 ### [edict](https://github.com/cft0808/edict)
 **What we took:** The 三省六部 governance model for AI orchestration. Their
 implementation of 门下省 (Menxia) as a mandatory quality gate with veto authority
