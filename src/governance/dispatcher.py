@@ -12,6 +12,11 @@ from src.governance.policy.deterministic_resolver import get_deterministic_fallb
 from src.governance.safety.agent_semaphore import AgentSemaphore
 from src.gateway.complexity import classify_complexity, should_skip_scrutiny
 
+try:
+    from src.governance.pipeline.scout import ScoutMission, create_scout_spec, build_scout_prompt
+except ImportError:
+    ScoutMission = None
+
 log = logging.getLogger(__name__)
 
 CLAUDE_TIMEOUT = 300
@@ -131,6 +136,27 @@ class TaskDispatcher:
                 log.info(f"TaskDispatcher: injected {len(warnings)} learnings into task #{task_id}")
         except Exception as e:
             log.warning(f"TaskDispatcher: learnings injection failed ({e}), continuing")
+
+        # ── Scout pre-dispatch: designer mode gets recon first ──
+        if spec.get("cognitive_mode") == "designer" and ScoutMission:
+            try:
+                problem = spec.get("problem", action)
+                cwd = spec.get("cwd", "") or _resolve_project_cwd(
+                    spec.get("project", "orchestrator"), "")
+                scout_spec = create_scout_spec(
+                    ScoutMission(question=problem, search_scope=cwd),
+                    project=spec.get("project", "orchestrator"), cwd=cwd,
+                )
+                scout_id = self.db.create_task(
+                    action=f"Scout: {problem[:80]}",
+                    reason=f"Pre-recon for designer task #{task_id}",
+                    priority="medium", spec=scout_spec, source="scout",
+                )
+                spec["scout_task_id"] = scout_id
+                self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+                log.info(f"TaskDispatcher: dispatched scout #{scout_id} for designer task #{task_id}")
+            except Exception as e:
+                log.debug(f"TaskDispatcher: scout dispatch failed ({e}), continuing without recon")
 
         # ── Complexity Classification ──
         complexity = classify_complexity(action, spec)
