@@ -127,7 +127,8 @@ class FanOutCollector:
                     data: dict, department: str):
         """写入文件（JSONL 格式）。"""
         dir_template = target.config.get("dir", "tmp/fan-out")
-        dir_path = _REPO_ROOT / dir_template.format(department=department)
+        # Prevent writing to departments/ root when department is empty
+        dir_path = _REPO_ROOT / dir_template.format(department=department or "_unrouted")
         dir_path.mkdir(parents=True, exist_ok=True)
 
         file_name = target.config.get("file", "fan-out.jsonl")
