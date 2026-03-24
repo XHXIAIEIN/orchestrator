@@ -13,11 +13,26 @@ All URLs verified 2026-03-24. One project (Lucentia) has since been deleted.
 
 ## Tier S — Core Architectural Influences
 
+### [edict](https://github.com/cft0808/edict)
+**What we took:** The 三省六部 governance model for AI orchestration. Their
+implementation of 门下省 (Menxia) as a mandatory quality gate with veto authority
+directly shaped our Scrutinizer. Proved that imperial bureaucratic structures
+are not just a metaphor — they encode real separation-of-powers constraints.
+**Where it lives:** The entire governance pipeline — `src/governance/scrutiny.py`,
+`src/governance/executor.py`, `src/governance/dispatcher.py`.
+
+### [danghuangshang](https://github.com/wanikua/danghuangshang)
+**What we took:** Multi-regime governance concept (Tang three-branch vs Ming
+cabinet system), persistent per-agent memory via SQLite, automated code review
+on state transitions, 14-18 specialized agents coordinated through hierarchical
+channels. Validated that the 三省六部 model scales beyond toy examples.
+**Where it lives:** Per-department `run-log.jsonl`, governance model flexibility,
+`departments/*/blueprint.yaml` declarative config.
+
 ### [organvm-engine](https://github.com/meta-organvm/organvm-engine)
 **What we took:** Seed Contract pattern, Authority Ceiling (READ → PROPOSE →
 MUTATE → APPROVE hierarchy), Punch-in/Punch-out coordination for parallel agents.
-**Where it lives:** `AuthorityCeiling` enum in `src/governance/policy/blueprint.py`,
-organ-based governance metaphor that validated our 三省六部 approach.
+**Where it lives:** `AuthorityCeiling` enum in `src/governance/policy/blueprint.py`.
 
 ### [Paperclip](https://github.com/paperclipai/paperclip)
 **What we took:** Atomic Checkout (file-level locking to prevent concurrent
@@ -67,19 +82,6 @@ StuckDetector (5-pattern loop detection).
 **Where it lives:** `src/governance/pipeline/fan_out.py` (event emission),
 `src/core/condenser/` (compression pipeline),
 `src/governance/stuck_detector.py`.
-
-### [edict](https://github.com/cft0808/edict)
-**What we took:** Validation that the 三省六部 governance model works for AI
-orchestration. Their implementation of 门下省 (Menxia) as a mandatory quality
-gate with veto authority directly influenced our Scrutinizer design.
-**Where it lives:** `src/governance/scrutiny.py`, overall governance pipeline.
-
-### [danghuangshang](https://github.com/wanikua/danghuangshang)
-**What we took:** Multi-regime governance concept (Tang dynasty three-branch vs
-Ming cabinet system), persistent per-agent memory via SQLite, automated code
-review triggered on state transitions.
-**Where it lives:** Influenced governance model flexibility, per-department
-`run-log.jsonl` design.
 
 ### [pilot-shell](https://github.com/maxritter/pilot-shell)
 **What we took:** Compaction recovery — PreCompact hook saves context snapshot
