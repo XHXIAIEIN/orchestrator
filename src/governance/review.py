@@ -45,6 +45,12 @@ except ImportError:
     observe_task_execution = None
 
 try:
+    from src.governance.learning.deslop import scan_for_slop, format_slop_report
+except ImportError:
+    scan_for_slop = None
+    format_slop_report = None
+
+try:
     from src.governance.context.intent_manifest import build_manifest
 except ImportError:
     build_manifest = None
@@ -153,6 +159,28 @@ class ReviewManager:
                     log.warning(f"ReviewManager: task #{task_id} failed verify gates: {gate_msg}")
             except Exception as e:
                 log.warning(f"ReviewManager: verify gate error for task #{task_id}: {e}")
+
+        # ── Deslop: 扫描工部产出的 AI 臭味 ──
+        if status == "done" and dept_key == "engineering" and scan_for_slop:
+            try:
+                import subprocess
+                diff = subprocess.run(
+                    ["git", "diff", "--name-only"], cwd=task_cwd,
+                    capture_output=True, text=True, timeout=10,
+                ).stdout.strip()
+                all_findings = []
+                for fpath in diff.splitlines()[:10]:  # 最多扫 10 个文件
+                    if fpath.endswith(".py"):
+                        full = Path(task_cwd) / fpath
+                        if full.exists():
+                            content = full.read_text(encoding="utf-8", errors="ignore")
+                            all_findings.extend(scan_for_slop(str(fpath), content))
+                if all_findings:
+                    slop_report = format_slop_report(all_findings)
+                    output += f"\n\n{slop_report}"
+                    log.info(f"ReviewManager: deslop found {len(all_findings)} issues in task #{task_id}")
+            except Exception as e:
+                log.debug(f"ReviewManager: deslop scan failed for task #{task_id}: {e}")
 
         # 视觉验证
         if status == "done":

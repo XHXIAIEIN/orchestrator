@@ -35,6 +35,11 @@ except ImportError:
     TokenAccountant = None
 
 try:
+    from src.governance.safety.doom_loop import check_doom_loop
+except ImportError:
+    check_doom_loop = None
+
+try:
     from src.governance.stuck_detector import StuckDetector
 except ImportError:
     StuckDetector = None
@@ -267,6 +272,21 @@ class TaskExecutor:
                             })
                             result_text = f"[STUCK: {pattern}] Agent detected in loop after {turn} turns"
                             break
+
+                # ── Doom Loop: 每 6 轮深度检查（补 StuckDetector 没覆盖的模式） ──
+                if check_doom_loop and turn > 0 and turn % 6 == 0:
+                    try:
+                        events = self.db.get_agent_events(task_id, limit=30)
+                        doom = check_doom_loop(events)
+                        if doom.triggered:
+                            log.warning(f"DoomLoop: task #{task_id} — {doom.reason}")
+                            self._log_agent_event(task_id, "doom_loop_detected", {
+                                "reason": doom.reason, "turn": turn, **doom.details,
+                            })
+                            result_text = f"[DOOM LOOP: {doom.reason}] Agent terminated after {turn} turns"
+                            break
+                    except Exception as e:
+                        log.debug(f"DoomLoop check error: {e}")
 
             elif isinstance(message, TaskProgressMessage):
                 self._log_agent_event(task_id, "agent_progress", {
