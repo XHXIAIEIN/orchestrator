@@ -87,10 +87,12 @@ orchestrator/
 │   ├── governance/     # Governance: Governor, debt scanning, skill evolution
 │   ├── analysis/       # Analysis: daily reports, insights, profiling, performance
 │   ├── collectors/     # Collectors: Claude, Browser, Git, Steam, etc.
+│   ├── channels/       # Channel layer: Telegram, WeChat, WeCom adapters
 │   ├── storage/        # Storage: EventsDB, VectorDB
 │   ├── voice/          # Voice: TTS, voice selection
 │   ├── scheduler.py    # Scheduler entry point
 │   └── cli.py          # CLI entry point
+├── claw/               # Desktop daemon (C# .NET 8, system tray + Toast approval)
 ├── dashboard/          # Frontend (Express + WebSocket)
 │   └── public/         # Three pages: Dashboard / Pipeline / Agents
 ├── departments/        # Six Ministries config (manifest.yaml + SKILL.md + blueprint.yaml + run-log)
@@ -166,6 +168,44 @@ Three pages:
 - **Dashboard** `/` — Butler daily report, Three Departments status, insight analysis, attention debts, activity heatmap
 - **Pipeline** `/pipeline` — Data flow visualization, collector→analysis→governance full-chain animation, system logs
 - **Agents** `/agents` — Agent real-time observability: event stream, tool calls, thinking process, parallel scenario control
+
+## Channel Layer
+
+Multi-platform message bus. Outbound events and inbound commands through unified `ChannelMessage` interface.
+
+| Channel | Outbound | Inbound | Approval Buttons |
+|---------|----------|---------|-----------------|
+| Telegram | ✓ | ✓ (polling) | Inline keyboard |
+| WeChat | ✓ | ✓ | Text commands |
+| WeCom | ✓ (webhook) | — | — |
+
+Commands: `/status`, `/tasks`, `/run <scenario>`, `/approve <id>`, `/deny <id>`, `/pending`, `/yolo`, `/noyolo`
+
+## Approval Gateway
+
+Multi-channel human approval for authority escalation. Only triggers when `blueprint.authority >= APPROVE` or task spec has `requires_approval: true`. Under normal operation, this never fires — all departments cap at MUTATE.
+
+```
+Executor needs APPROVE authority
+  → ApprovalGateway.request_approval()
+    ├─ Claw: Windows Toast (Approve/Deny buttons)
+    ├─ Telegram: Inline keyboard (批准/拒绝)
+    └─ WeChat: Text commands
+  → First response wins (5min timeout = auto-deny)
+  → Executor continues or aborts
+```
+
+- `/yolo` — disable all approval prompts, auto-approve everything
+- `/noyolo` — re-enable approval flow
+- All components optional (decoupled via `try/except ImportError`)
+
+## Claw (Desktop Daemon)
+
+C# .NET 8 system tray daemon — no UI, just a WebSocket bridge + Windows Toast notifications. Connects to `ws://localhost:23714`, auto-reconnects on disconnect.
+
+```bash
+cd claw/Claw && dotnet run
+```
 
 ## API
 

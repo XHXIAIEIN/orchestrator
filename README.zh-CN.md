@@ -87,10 +87,12 @@ orchestrator/
 │   ├── governance/     # 治理层：Governor, 债务扫描, 技能进化
 │   ├── analysis/       # 分析层：日报, 洞察, 画像, 绩效
 │   ├── collectors/     # 采集层：Claude, Browser, Git, Steam, etc.
+│   ├── channels/       # Channel 层：Telegram, WeChat, 企业微信适配器
 │   ├── storage/        # 存储层：EventsDB, VectorDB
 │   ├── voice/          # 语音：TTS, 声音选择
 │   ├── scheduler.py    # 调度入口
 │   └── cli.py          # CLI 入口
+├── claw/               # 桌面守护进程 (C# .NET 8，系统托盘 + Toast 审批)
 ├── dashboard/          # 前端 (Express + WebSocket)
 │   └── public/         # 三个页面：Dashboard / Pipeline / Agents
 ├── departments/        # 六部配置 (manifest.yaml + SKILL.md + blueprint.yaml + run-log)
@@ -166,6 +168,44 @@ Agent 实时状态：`curl -s http://localhost:23714/api/agents/live`
 - **Dashboard** `/` — 管家日报、三省六部状态、洞察分析、注意力债务、活动热力图
 - **Pipeline** `/pipeline` — 数据流可视化、采集器→分析→治理全链路动画、系统日志
 - **Agents** `/agents` — Agent 实时可观测：事件流、工具调用、思考过程、并行场景控制
+
+## Channel 层
+
+多平台消息总线。通过统一的 `ChannelMessage` 接口实现出站事件和入站命令。
+
+| Channel | 出站 | 入站 | 审批按钮 |
+|---------|------|------|---------|
+| Telegram | ✓ | ✓ (polling) | Inline keyboard |
+| WeChat | ✓ | ✓ | 文字命令 |
+| 企业微信 | ✓ (webhook) | — | — |
+
+命令：`/status`、`/tasks`、`/run <scenario>`、`/approve <id>`、`/deny <id>`、`/pending`、`/yolo`、`/noyolo`
+
+## 审批网关
+
+多通道人工审批，用于权限提升。仅在 `blueprint.authority >= APPROVE` 或任务标记 `requires_approval: true` 时触发。正常运行中所有部门权限上限为 MUTATE，不会触发审批。
+
+```
+执行层需要 APPROVE 权限
+  → ApprovalGateway.request_approval()
+    ├─ Claw: Windows Toast（批准/拒绝按钮）
+    ├─ Telegram: Inline keyboard（批准/拒绝）
+    └─ WeChat: 文字命令
+  → 第一个回复生效（5 分钟超时 = 自动拒绝）
+  → 执行层继续或中止
+```
+
+- `/yolo` — 关闭所有审批提示，自动批准一切
+- `/noyolo` — 恢复审批流程
+- 所有组件可选（通过 `try/except ImportError` 解耦）
+
+## Claw（桌面守护进程）
+
+C# .NET 8 系统托盘守护进程 — 无 UI，纯 WebSocket 桥接 + Windows Toast 通知。连接 `ws://localhost:23714`，断线自动重连。
+
+```bash
+cd claw/Claw && dotnet run
+```
 
 ## API
 
