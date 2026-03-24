@@ -1,0 +1,19 @@
+# Example Collector — 新采集器的模板
+# 复制整个 _example/ 目录，改名，改 manifest，实现 collect()
+# Registry 会自动发现（目录名不以 _ 开头的才会被扫描）
+
+name: example
+display_name: Example Collector
+category: experimental    # core | optional | experimental
+enabled: false            # true = 默认启用，false = 需要手动开启
+
+# 需要的环境变量（registry 不检查，仅文档用途）
+env_vars:
+  - EXAMPLE_API_KEY
+
+# 系统依赖（仅文档用途）
+requires: []
+
+# 产出的事件源标签（写入 events.source 字段）
+event_sources:
+  - example
