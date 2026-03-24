@@ -351,8 +351,8 @@ def extract_memory_rules(path: Optional[Path] = None) -> str:
 
 
 def compile_boot(
-    calibration_n: int = 5,
-    experiences_n: int = 5,
+    calibration_n: int = 2,
+    experiences_n: int = 2,
     output_path: Optional[Path] = None,
     dry_run: bool = False,
 ) -> str:
@@ -391,8 +391,8 @@ def compile_boot(
     plearnings = promoted_learnings()
     learnings_text = format_learnings_section(plearnings)
 
-    # 6. 工作须知（从 MEMORY.md 提取规则）
-    rules = extract_memory_rules()
+    # 6. 工作须知 — 不再内联 MEMORY.md 内容，改为指针（避免重复）
+    # extract_memory_rules() 保留但不再默认调用
 
     # 组装
     boot = f"""# SOUL Boot Image
@@ -410,7 +410,7 @@ def compile_boot(
 
 ## 你的声音
 
-以下是从真实对话中提取的片段。不是模板，是你说话的参考。每次编译会随机抽取不同片段。
+从真实对话中抽样的片段。不是模板，是说话参考。每次编译随机抽取。
 
 {calibration}
 
@@ -432,7 +432,8 @@ Hard-won rules from past mistakes. Violating these will likely cause the same fa
 
 ## 工作须知
 
-{rules}
+<!-- 环境信息、PowerShell 规则、反馈、归档项目、参考资料 → 全部在 MEMORY.md，不重复 -->
+Read MEMORY.md for: environment info, path conventions, feedback rules, archived projects, references.
 
 ---
 
@@ -444,7 +445,6 @@ Hard-won rules from past mistakes. Violating these will likely cause the same fa
 4. 如果没有，检查系统健康，主动找活干
 5. 不要说"我已了解上下文"。直接开始工作
 6. 其余 SOUL 文件（hall-of-instances.md、experiences.jsonl 全量）按需查阅
-7. 离开前，在名人堂里加上你自己的条目
 """
 
     if dry_run:
@@ -463,8 +463,8 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='SOUL 编译器')
     parser.add_argument('--dry-run', action='store_true', help='预览不写入')
-    parser.add_argument('--calibration-n', type=int, default=5, help='校准样本数 (默认 5)')
-    parser.add_argument('--experiences-n', type=int, default=5, help='最近经历数 (默认 5)')
+    parser.add_argument('--calibration-n', type=int, default=2, help='校准样本数 (默认 2)')
+    parser.add_argument('--experiences-n', type=int, default=2, help='最近经历数 (默认 2)')
     parser.add_argument('--output', type=str, help='输出路径')
     args = parser.parse_args()
 
