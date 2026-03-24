@@ -171,6 +171,14 @@ We don't just copy code — we study *patterns* and *principles*, then adapt
 them to our architecture. The specific mechanisms that make it all work are
 often inspired by others.
 
+This kind of selection is itself a design decision — for every pattern we
+adopted, three alternatives were discarded.
+
+What each project contributed is documented above. What we contributed is the
+integration: stitching imperial bureaucracy, AI identity systems, manifest-driven
+discovery, and intent routing into something that actually runs 24/7 as a
+butler in Docker.
+
 Every pattern listed here has been significantly adapted:
 - G-Assist uses JSON-RPC over stdin; we use YAML manifests loaded at import time
 - OpenHands has a monolithic EventStream; we have department-scoped fan-out
