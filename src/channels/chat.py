@@ -538,26 +538,27 @@ def _tool_wake_claude(params: dict, chat_id: str) -> str:
 
 _TOOL_SIGNALS = {
     # 系统查询 → query_status
-    "status", "健康", "状态", "health", "collectors", "采集", "tasks", "任务",
-    # 主机操作 → wake_claude
-    "打开", "运行", "执行", "跑", "run", "open", "改", "fix", "修", "写",
-    "代码", "code", "文件", "file", "呼叫", "外援", "wake", "claude",
-    "部署", "deploy", "重启", "restart", "push", "commit",
+    "查状态", "看状态", "系统状态", "health", "collectors", "采集器",
+    # 主机操作 → wake_claude (multi-char phrases to avoid false positives)
+    "打开", "运行一下", "执行一下", "跑一下", "帮我改", "帮我修", "帮我写",
+    "改代码", "写代码", "改文件", "写文件", "修一下", "修复",
+    "呼叫外援", "wake claude", "叫claude",
+    "部署", "deploy", "重启", "restart", "git push", "git commit",
     # 派单 → dispatch_task
-    "场景", "scenario", "审计", "audit", "扫描", "scan",
+    "跑场景", "run scenario", "审计一下", "扫描一下",
     # 读文件 → read_file
-    "读", "read", "cat", "看文件", "日志", "log",
+    "读文件", "看文件", "看日志", "读日志", "cat ",
 }
 
 _REASON_SIGNALS = {
-    # 需要深度推理的信号
-    "为什么", "why", "原因", "分析", "analyze", "对比", "比较", "compare",
-    "优缺点", "pros", "cons", "权衡", "tradeoff", "区别", "difference",
-    "怎么选", "推荐", "recommend", "建议", "suggest", "评估", "evaluate",
-    "解释", "explain", "原理", "principle", "逻辑", "logic",
-    "规划", "plan", "方案", "strategy", "设计", "design", "架构", "architecture",
-    "debug", "调试", "排查", "诊断", "diagnose", "root cause",
-    "总结", "summarize", "归纳", "综合",
+    # 需要深度推理的信号 (2+ char phrases to avoid false positives)
+    "为什么", "什么原因", "分析一下", "帮我分析",
+    "对比一下", "比较一下", "有什么区别",
+    "优缺点", "怎么选", "帮我推荐", "你建议", "你觉得该",
+    "帮我评估", "解释一下", "什么原理", "什么逻辑",
+    "帮我规划", "怎么设计", "架构",
+    "帮我debug", "调试一下", "排查一下", "帮我诊断", "root cause",
+    "总结一下", "帮我归纳",
 }
 
 # 会话惯性：记录每个用户最近的路由决策

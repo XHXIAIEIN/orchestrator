@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -72,14 +73,9 @@ CLAUDE_TIMEOUT = 300
 MAX_AGENT_TURNS = 25
 
 
-def _in_async_context() -> bool:
-    """检测当前是否已在 async event loop 中（线程池 vs 主线程）。"""
-    try:
-        import sniffio
-        sniffio.current_async_library()
-        return True
-    except (ImportError, sniffio.AsyncLibraryNotFoundError):
-        return False
+# Thread pool for task execution — reuses threads, avoids WinError 50 from
+# excessive thread creation, and keeps OS thread count bounded.
+_task_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="governor-task")
 
 
 from src.governance.scrutiny import _resolve_project_cwd  # shared utility
@@ -108,16 +104,10 @@ class TaskExecutor:
         self.punch_clock = get_punch_clock() if get_punch_clock else None
 
     def execute_task_async(self, task_id: int):
-        """在后台线程中执行任务，不阻塞调用方。"""
-        t = threading.Thread(
-            target=self.execute_task,
-            args=(task_id,),
-            name=f"governor-task-{task_id}",
-            daemon=True,
-        )
-        t.start()
-        log.info(f"TaskExecutor: task #{task_id} dispatched to background thread")
-        return t
+        """在线程池中执行任务，不阻塞调用方。"""
+        future = _task_pool.submit(self.execute_task, task_id)
+        log.info(f"TaskExecutor: task #{task_id} submitted to thread pool")
+        return future
 
     def _prepare_prompt(self, task: dict, dept_key: str, dept: dict,
                         task_cwd: str, project_name: str,
@@ -406,10 +396,8 @@ class TaskExecutor:
                     task_id, prompt, dept_prompt, allowed_tools, task_cwd,
                     max_turns=task_max_turns,
                 )
-            if _in_async_context():
-                output = anyio.from_thread.run(_agent_coro)
-            else:
-                output = anyio.run(_agent_coro)
+            # Background threads never own an event loop — always use anyio.run()
+            output = anyio.run(_agent_coro)
             output = output[:2000] if output else "(no output)"
             status = "done" if output and output != "(no output)" else "failed"
         except TimeoutError:

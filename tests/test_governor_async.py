@@ -102,7 +102,7 @@ def test_governor_execute_task_calls_agent_correctly():
     from src.governance.safety.verify_gate import GateResult, GateRecord
     import tempfile, os
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         db_path = os.path.join(tmpdir, "test.db")
         db = EventsDB(db_path)
 

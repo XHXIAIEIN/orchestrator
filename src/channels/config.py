@@ -23,7 +23,7 @@ def _list(key: str, default: str) -> list[str]:
 
 # ── 对话模型 ──
 CHAT_MODEL = _str("CHANNEL_CHAT_MODEL", "claude-haiku-4-5-20251001")
-CHAT_LOCAL_MODEL = _str("CHANNEL_CHAT_LOCAL_MODEL", "qwen3:32b")  # Ollama model for casual chat
+CHAT_LOCAL_MODEL = _str("CHANNEL_CHAT_LOCAL_MODEL", "deepseek-r1:14b")  # Ollama model for casual chat
 CHAT_LOCAL_ENABLED = _str("CHANNEL_CHAT_LOCAL_ENABLED", "true").lower() in ("true", "1", "yes")
 CHAT_MAX_TOKENS = _int("CHANNEL_CHAT_MAX_TOKENS", 1024)
 SUMMARIZE_MAX_TOKENS = _int("CHANNEL_SUMMARIZE_MAX_TOKENS", 600)

@@ -18,15 +18,15 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 MODEL_TIERS = {
     "ollama/qwen3.5:9b":         {"cost": 0,    "capability": 0.55, "multimodal": False},
-    "ollama/qwen3:32b":          {"cost": 0,    "capability": 0.6,  "multimodal": False},
+    "ollama/deepseek-r1:14b":    {"cost": 0,    "capability": 0.6,  "multimodal": False},
     "claude-haiku-4-5-20251001": {"cost": 0.25, "capability": 0.7,  "multimodal": False},
     "ollama/gemma3:27b":         {"cost": 0,    "capability": 0.65, "multimodal": True},
     "claude-sonnet-4-6":         {"cost": 3.0,  "capability": 0.9,  "multimodal": True},
 }
 
 ROUTES = {
-    "scrutiny":      {"cascade": ["ollama/qwen3:32b", "claude-haiku-4-5-20251001"], "timeout": 45, "no_think": True},
-    "debt_scan":     {"cascade": ["ollama/qwen3:32b", "claude-haiku-4-5-20251001"], "timeout": 90, "no_think": True},
+    "scrutiny":      {"cascade": ["ollama/deepseek-r1:14b", "claude-haiku-4-5-20251001"], "timeout": 45, "no_think": True},
+    "debt_scan":     {"cascade": ["ollama/deepseek-r1:14b", "claude-haiku-4-5-20251001"], "timeout": 90, "no_think": True},
     "summary":       {"backend": "claude", "model": "claude-haiku-4-5-20251001",  "timeout": 120},
     "deep_analysis": {"cascade": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"], "timeout": 120},
     "profile":       {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
@@ -38,7 +38,7 @@ ROUTES = {
     # Channel 闲聊 — 本地优先，Claude fallback
     "chat":          {"cascade": ["ollama/qwen3.5:9b", "claude-haiku-4-5-20251001"], "timeout": 30, "no_think": True},
     # Channel 需要推理的对话 — deepseek-r1
-    "chat_reason":   {"cascade": ["ollama/deepseek-r1:14b", "ollama/qwen3:32b"], "timeout": 90},
+    "chat_reason":   {"cascade": ["ollama/deepseek-r1:14b", "ollama/qwen3.5:9b"], "timeout": 90},
 }
 
 MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
