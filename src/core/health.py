@@ -15,9 +15,9 @@ log = logging.getLogger(__name__)
 
 
 class HealthCheck:
-    def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
-        self.db = db or EventsDB(db_path)
-        self.db_path = db_path
+    def __init__(self, db: EventsDB = None, db_path: str = None):
+        self.db = db or (EventsDB(db_path) if db_path else EventsDB())
+        self.db_path = self.db.db_path
         self.issues = []
 
     def run(self) -> dict:

@@ -17,3 +17,5 @@ __pycache__/
 .playwright-mcp/
 dashboard/node_modules/
 node_modules/
+.firecrawl/
+tmp/

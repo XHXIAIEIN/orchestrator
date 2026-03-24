@@ -127,8 +127,8 @@ MODEL_NAME = "claude-sonnet-4-6"
 
 
 class ProfileAnalyst:
-    def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
-        self.db = db or EventsDB(db_path)
+    def __init__(self, db: EventsDB = None, db_path: str = None):
+        self.db = db or (EventsDB(db_path) if db_path else EventsDB())
 
     def run(self, analysis_type: str = 'periodic') -> dict:
         context = _build_context(self.db, analysis_type)

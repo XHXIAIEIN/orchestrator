@@ -11,8 +11,8 @@ from src.governance.review import ReviewManager
 class Governor:
     MAX_REWORK = ReviewManager.MAX_REWORK  # backward compat
 
-    def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
-        self.db = db or EventsDB(db_path)
+    def __init__(self, db: EventsDB = None, db_path: str = None):
+        self.db = db or (EventsDB(db_path) if db_path else EventsDB())
         self.scrutinizer = Scrutinizer(self.db)
         self.dispatcher = TaskDispatcher(self.db, self.scrutinizer)
         self.reviewer = ReviewManager(self.db, on_execute=self._scrutinize_and_execute)

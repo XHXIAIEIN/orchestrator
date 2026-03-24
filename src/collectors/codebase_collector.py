@@ -23,8 +23,8 @@ class CodebaseCollector(ICollector):
             event_sources=["codebase"], default_enabled=True,
         )
 
-    def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
-        resolved_db = db or EventsDB(db_path)
+    def __init__(self, db: EventsDB = None, db_path: str = None):
+        resolved_db = db or (EventsDB(db_path) if db_path else EventsDB())
         super().__init__(resolved_db)
         self.repo_path = os.environ.get(
             "ORCHESTRATOR_ROOT",

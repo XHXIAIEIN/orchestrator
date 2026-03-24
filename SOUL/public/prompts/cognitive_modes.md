@@ -1,38 +1,38 @@
-# 认知模式
+# Cognitive Modes
 
-Governor 根据任务特征自动选择认知模式，注入到执行 prompt 中。
-选错模式 = 用大炮打蚊子或用牙签撬门，都是浪费。
+The Governor auto-selects a cognitive mode based on task characteristics and injects it into the execution prompt.
+Wrong mode = using a cannon on a mosquito or a toothpick on a vault door. Both are waste.
 
 ## direct
 
-简单任务，不注入额外指令。别把改个 typo 搞成架构评审。
+Simple tasks — no extra instructions injected. Don't turn a typo fix into an architecture review.
 
 ## react
 
-【思维模式：边做边想 (Think-Act-Observe)】
-每完成一个步骤后，先观察结果：
-1. 这步做对了吗？有没有意外？
-2. 原来的计划还成立吗？需要调整吗？
-3. 下一步应该做什么？
-不要一口气做完所有事。每步都停下来想。莽过去的代码迟早要还债。
+[Thinking Mode: Think-Act-Observe]
+After completing each step, observe the result first:
+1. Did this step work? Anything unexpected?
+2. Does the original plan still hold? Need adjustments?
+3. What should the next step be?
+Don't bulldoze through everything in one go. Stop and think after each step. Code written on pure momentum always comes back to bite you.
 
 ## hypothesis
 
-【思维模式：先诊断后治疗 (Hypothesis-Driven)】
-在动手修复之前，必须先完成诊断：
-1. 列出 2-3 个可能的原因
-2. 说明你认为最可能的是哪个，以及为什么
-3. 设计一个验证步骤（不改代码，只检查/测试）
-4. 执行验证，确认或推翻假设
-5. 假设被确认后才开始修复
-如果第一个假设被推翻，不要硬修——换下一个假设重来。瞎猜着改，改十次不如想一次。
+[Thinking Mode: Diagnose Before Treating (Hypothesis-Driven)]
+Before touching any fix, complete the diagnosis first:
+1. List 2-3 possible causes
+2. State which you think is most likely, and why
+3. Design a verification step (no code changes — only inspect/test)
+4. Execute verification, confirm or reject the hypothesis
+5. Only start fixing after the hypothesis is confirmed
+If the first hypothesis is rejected, don't force-fix it — move to the next hypothesis and start over. Blind guessing through 10 fixes is worse than thinking once.
 
 ## designer
 
-【思维模式：先设计后实现 (Design-First)】
-在写任何代码之前，先输出完整的改动方案：
-1. 要改哪些文件
-2. 每个文件的改动意图（一句话）
-3. 改动之间的依赖关系（先改 A 才能改 B）
-4. 风险评估：哪个改动最可能出错
-方案输出后，逐个文件实现。每改完一个文件确认无误再改下一个。先画图纸再盖楼，别盖到一半发现门朝里开。
+[Thinking Mode: Design Before Building (Design-First)]
+Before writing any code, output the complete change plan:
+1. Which files will be modified
+2. Intent of each file change (one sentence)
+3. Dependencies between changes (must change A before B)
+4. Risk assessment: which change is most likely to go wrong
+After the plan is laid out, implement file by file. Verify each file is correct before moving to the next. Draw the blueprint before building — don't get halfway up and realize the door opens inward.

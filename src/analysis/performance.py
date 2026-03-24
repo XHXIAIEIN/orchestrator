@@ -12,8 +12,8 @@ log = logging.getLogger(__name__)
 
 
 class PerformanceReport:
-    def __init__(self, db: EventsDB = None, db_path: str = "events.db"):
-        self.db = db or EventsDB(db_path)
+    def __init__(self, db: EventsDB = None, db_path: str = None):
+        self.db = db or (EventsDB(db_path) if db_path else EventsDB())
 
     def run(self) -> dict:
         """生成绩效报告：采集器、Governor 任务、分析器。"""
