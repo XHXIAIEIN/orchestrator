@@ -4,8 +4,6 @@ A butler's craft doesn't come from nowhere. This document tracks every
 stolen pattern — where it came from, how it was adapted, and where it
 lives in our codebase now.
 
-All URLs verified 2026-03-24. One project (Lucentia) has since been deleted.
-
 ---
 
 ## Tier S — Core Architectural Influences
