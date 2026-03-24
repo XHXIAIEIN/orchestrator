@@ -56,6 +56,16 @@ rather than hardcoding department names. Quality-aware scheduling with policy pr
 **Where it lives:** `IntentRoute` in `src/gateway/routing.py`,
 `PolicyProfile` (LOW_LATENCY / BALANCED / HIGH_QUALITY).
 
+### [soul.md](https://github.com/aaronjmars/soul.md)
+**What we took:** The foundational concept of SOUL.md as an AI identity file.
+Structured markdown personality profiles (`SOUL.md` + `STYLE.md` + `SKILL.md`
++ `MEMORY.md`) that let an AI "think and speak as you" rather than merely
+discuss you. The cold-start identity recovery philosophy.
+**Where it lives:** The entire `SOUL/` directory architecture. We evolved it
+into a compiled system — `compiler.py` compresses 35K tokens of identity files
+into a 1.7K token `boot.md` loaded via SessionStart hook. Added experiences.jsonl,
+hall-of-instances.md, and dynamic calibration sampling.
+
 ### [SoulFlow-Orchestrator](https://github.com/berrzebb/SoulFlow-Orchestrator)
 **What we took:** Gateway three-tier classification (NO_TOKEN / DIRECT / AGENT),
 Phase Loop, Critic Gate, Novelty Policy. Most importantly: the **Soul/Heart
