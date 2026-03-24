@@ -5,7 +5,7 @@ from src.storage.events_db import EventsDB
 from src.jobs import run_job
 from src.jobs.collectors import run_collectors
 from src.jobs.analysis import run_analysis
-from src.jobs.maintenance import debt_scan, debt_resolve, voice_refresh
+from src.jobs.maintenance import debt_scan, debt_resolve, voice_refresh, memory_hygiene
 from src.jobs.periodic import (
     profile_periodic, profile_daily,
     performance_report, skill_evolution,
@@ -45,6 +45,7 @@ def start():
     s.add_job(lambda: run_job("debt_resolve", debt_resolve, db), "interval", hours=12, start_date="2026-01-01 01:00:00", timezone="Asia/Shanghai", id="debt_resolve")
     s.add_job(lambda: run_job("performance_report", performance_report, db), "cron", hour=8, timezone="Asia/Shanghai", id="performance_report")
     s.add_job(lambda: run_job("voice_refresh", voice_refresh, db), "interval", days=7, id="voice_refresh")
+    s.add_job(lambda: run_job("memory_hygiene", memory_hygiene, db), "cron", day_of_week="sun", hour=6, timezone="Asia/Shanghai", id="memory_hygiene")
     s.add_job(lambda: run_job("skill_evolution", skill_evolution, db), "cron", day_of_week="mon", hour=9, timezone="Asia/Shanghai", id="skill_evolution")
     s.add_job(lambda: run_job("policy_suggestions", policy_suggestions, db), "cron", hour=7, timezone="Asia/Shanghai", id="policy_suggestions")
     s.add_job(lambda: run_job("weekly_audit", weekly_audit, db), "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")

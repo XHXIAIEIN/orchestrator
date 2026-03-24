@@ -46,12 +46,15 @@ Governor 根据任务复杂度自动选择思维模式：
 
 ### Blueprint 系统
 
-每个部门有两层配置文件，各管各的：
+每个部门有三层配置文件：
 
 | 文件 | 谁读 | 管什么 |
 |------|------|--------|
+| `manifest.yaml` | Registry (启动时扫描) | 身份、语义标签、意图路由、策略、执行配置 —— 单一注册源 |
 | `SKILL.md` | Agent (LLM) | 身份、行为准则、红线、完成标准 |
 | `blueprint.yaml` | Governor (代码) | 策略、权限、预检规则、生命周期配置 |
+
+添加新部门只需要一个目录 + `manifest.yaml`，零代码改动。
 
 任务派单五阶段生命周期（借鉴 NemoClaw）：
 
@@ -90,7 +93,7 @@ orchestrator/
 │   └── cli.py          # CLI 入口
 ├── dashboard/          # 前端 (Express + WebSocket)
 │   └── public/         # 三个页面：Dashboard / Pipeline / Agents
-├── departments/        # 六部配置 (SKILL.md + blueprint.yaml + guidelines + run-log)
+├── departments/        # 六部配置 (manifest.yaml + SKILL.md + blueprint.yaml + run-log)
 ├── SOUL/               # AI 人格框架
 │   ├── private/        # 私人数据 (gitignored)
 │   ├── management.md   # 管理哲学 + 认知模式
@@ -252,16 +255,17 @@ Governor 支持两种派单模式：
 
 ## 设计参考
 
-v2 架构研究了 16 个开源项目 + 3 个认知框架，以下是实际影响了设计的项目：
+50+ 开源项目的模式研究。完整的偷师簿见 [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) —— 每个子系统的来源、改造方式、在代码库中的位置。
 
-| 项目 | 借鉴了什么 |
-|------|-----------|
-| [Axe](https://github.com/axe-org/axe) | 部门记忆 (run-log)、GC feedback loop、不透明边界（只传 artifact 不传推理） |
-| [gstack](https://github.com/anthropics/claude-code/tree/main/.claude) | CEO 决策模式、编译型 skill 系统、Designer 认知模式、爆炸半径逆推 |
-| [Parlant](https://github.com/parlant-io/parlant) | 动态上下文裁剪（Contextual Matching Engine）—— 条件规则匹配替代全量注入 |
-| [Rowboat](https://github.com/rowboat-ai/rowboat) | 共享 Markdown vault 协作模式（部门间通过文件共享知识） |
-| [Hermes](https://github.com/anthropics/hermes) | 自动 skill 创建 + cron 调度 + subagent 并行执行 |
-| [ReAct](https://arxiv.org/abs/2210.03629) | Think → Act → Observe 循环认知模式 |
-| [DATAGEN](https://arxiv.org/abs/2402.17911) | Hypothesis-Driven Agent（先假设后验证的诊断模式） |
-| [agent-automate-template](https://github.com/XHXIAIEIN/agent-automate-template) | PostToolUse 心跳、多 Worker 并行调度、Session 质量评分、Master Prompt 自治规则 |
-| [NemoClaw](https://github.com/NVIDIA/NemoClaw) | Plugin/Blueprint 分层（薄调度+厚产物）、五阶段生命周期、声明式策略 YAML、预检验证 |
+核心来源：
+
+| 来源 | 贡献 |
+|------|------|
+| [autonomous-claude](https://github.com/matthewbergvinson/autonomous-claude) | 24/7 自主运行的根基 |
+| [edict](https://github.com/cft0808/edict) / [danghuangshang](https://github.com/wanikua/danghuangshang) | 三省六部治理模型 |
+| [soul.md](https://github.com/aaronjmars/soul.md) | SOUL 身份系统 |
+| [NVIDIA G-Assist](https://github.com/NVIDIA/g-assist) | Manifest 驱动的部门自发现 |
+| [OpenHands](https://github.com/All-Hands-AI/OpenHands) | 上下文压缩 + 卡死检测 |
+| [OpenClaw](https://github.com/openclaw/openclaw) | Channel 层（Telegram / WeChat） |
+| [Agent-S](https://github.com/simular-ai/Agent-S) / [UI-TARS](https://github.com/bytedance/UI-TARS) | GUI 桌面控制引擎 |
+| [Fish Speech](https://github.com/fishaudio/fish-speech) | 语音系统（TTS + 情感标签） |

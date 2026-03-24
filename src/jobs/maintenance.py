@@ -1,10 +1,12 @@
-"""Maintenance jobs — debt scan/resolve and voice pool refresh."""
+"""Maintenance jobs — debt scan/resolve, voice pool refresh, memory hygiene."""
 import logging
+from pathlib import Path
 
 from src.storage.events_db import EventsDB
 from src.governance.learning.debt_scanner import DebtScanner
 from src.governance.learning.debt_resolver import resolve_debts, check_resolved_debts
 from src.voice.voice_picker import refresh_voice_pool
+from src.governance.context.memory_supersede import apply_half_life
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +39,28 @@ def debt_resolve(db: EventsDB):
     except Exception as e:
         log.error(f"DebtResolver failed: {e}")
         db.write_log(f"DebtResolver failed: {e}", "ERROR", "debt_resolver")
+
+
+def memory_hygiene(db: EventsDB):
+    """Scan memory files for expiry (half-life 90 days). Report only, no auto-delete."""
+    try:
+        # Scan all known memory directories
+        memory_dirs = [
+            Path.home() / ".claude" / "projects",
+        ]
+        total_expired = 0
+        for base in memory_dirs:
+            if not base.exists():
+                continue
+            for mem_dir in base.glob("*/memory"):
+                expired = apply_half_life(mem_dir, dry_run=True)
+                if expired:
+                    total_expired += len(expired)
+                    log.info(f"memory_hygiene: {mem_dir.parent.name} has {len(expired)} expired memories")
+        if total_expired:
+            db.write_log(f"Memory hygiene: {total_expired} memories past 90-day half-life", "INFO", "memory_supersede")
+    except Exception as e:
+        log.error(f"Memory hygiene failed: {e}")
 
 
 def voice_refresh(db: EventsDB):
