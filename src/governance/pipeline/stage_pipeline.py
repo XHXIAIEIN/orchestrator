@@ -56,6 +56,7 @@ DEFAULT_PIPELINES: dict[str, list[Stage]] = {
         Stage("scrutiny", "builtin"),
         Stage("execute", "builtin"),
         Stage("verify_gates", "gate"),
+        Stage("deslop", "builtin"),
         Stage("quality_review", "builtin", skip_if="scout_task"),
     ],
     "operations": [
@@ -142,6 +143,12 @@ def _has_tests(cwd: str) -> bool:
         return False
     test_dirs = [Path(cwd) / "tests", Path(cwd) / "test"]
     return any(d.exists() for d in test_dirs)
+
+
+def has_stage(department: str, stage_name: str, blueprint=None) -> bool:
+    """Check if a department's pipeline includes a given stage."""
+    pipeline = get_pipeline(department, blueprint)
+    return any(s.name == stage_name for s in pipeline.stages)
 
 
 def format_pipeline_status(pipeline: Pipeline, completed: list[str],

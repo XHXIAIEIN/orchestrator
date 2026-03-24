@@ -1,8 +1,8 @@
 # src/governance/events/types.py
 """Typed event hierarchy for governance pipeline.
 
-Phase 1: Type definitions only. Existing code continues using dicts.
-New code can use these types for better structure.
+Phase 2: Types used at creation point (executor), serialized via to_dict()
+for DB/fan-out. Consumers can use from_dict() for type-safe reads.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -33,6 +33,23 @@ class GovernanceEvent:
             d["source"] = d["source"].value
         d["event_class"] = self.__class__.__name__
         return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GovernanceEvent":
+        """Reconstruct from DB dict. Ignores unknown fields gracefully."""
+        import copy
+        import dataclasses
+        d = copy.copy(d)
+        d.pop("event_class", None)
+        source_val = d.get("source")
+        if isinstance(source_val, str):
+            try:
+                d["source"] = EventSource(source_val)
+            except ValueError:
+                d["source"] = EventSource.SYSTEM
+        known = {f.name for f in dataclasses.fields(cls)}
+        filtered = {k: v for k, v in d.items() if k in known}
+        return cls(**filtered)
 
 
 # ── Actions (things that happen TO the system) ──
@@ -105,6 +122,13 @@ class ReworkDispatched(GovernanceEvent):
 class TaskEscalated(GovernanceEvent):
     reason: str = ""
     rework_count: int = 0
+
+
+@dataclass
+class DoomLoopDetected(GovernanceEvent):
+    reason: str = ""
+    turn: int = 0
+    details: dict = field(default_factory=dict)
 
 
 # ── System Events ──

@@ -57,6 +57,11 @@ except ImportError:
     save_lessons = None
 
 try:
+    from src.governance.pipeline.stage_pipeline import has_stage
+except ImportError:
+    has_stage = None
+
+try:
     from src.governance.context.intent_manifest import build_manifest
 except ImportError:
     build_manifest = None
@@ -152,8 +157,11 @@ class ReviewManager:
             except Exception as e:
                 log.warning(f"ReviewManager: scratchpad write failed for task #{task_id}: {e}")
 
+        # ── Pipeline-aware stage checks ──
+        _has = lambda stage: has_stage(dept_key, stage) if has_stage else False
+
         # ── Verify Gates: non-negotiable 质量门控 ──
-        if status == "done" and dept_key in ("engineering", "operations") and run_gates:
+        if status == "done" and _has("verify_gates") and run_gates:
             try:
                 gate_record = run_gates(dept_key, task_id, task_cwd)
                 save_gate_record(gate_record, db=self.db)
@@ -167,7 +175,7 @@ class ReviewManager:
                 log.warning(f"ReviewManager: verify gate error for task #{task_id}: {e}")
 
         # ── Deslop: 扫描工部产出的 AI 臭味 ──
-        if status == "done" and dept_key == "engineering" and scan_for_slop:
+        if status == "done" and _has("deslop") and scan_for_slop:
             try:
                 import subprocess
                 diff = subprocess.run(
@@ -284,9 +292,9 @@ class ReviewManager:
             except Exception:
                 pass
 
-        # 部门协作 — PLAN→ACT→EVAL 闭环
+        # 部门协作 — PLAN→ACT→EVAL 闭环 (pipeline-driven)
         if status == "done":
-            if dept_key == "engineering":
+            if _has("quality_review"):
                 task["output"] = output
                 self._dispatch_quality_review(task_id, task, task_cwd, project_name)
             elif dept_key == "quality":

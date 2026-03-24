@@ -40,6 +40,15 @@ except ImportError:
     check_doom_loop = None
 
 try:
+    from src.governance.events.types import (
+        AgentTurn as AgentTurnEvent, AgentResult as AgentResultEvent,
+        StuckDetected as StuckDetectedEvent, DoomLoopDetected as DoomLoopDetectedEvent,
+        EventSource,
+    )
+except ImportError:
+    AgentTurnEvent = None
+
+try:
     from src.governance.stuck_detector import StuckDetector
 except ImportError:
     StuckDetector = None
@@ -235,15 +244,28 @@ class TaskExecutor:
                     elif block_type == 'text':
                         text_parts.append(getattr(block, 'text', '')[:300])
 
-                event_data = {"turn": turn}
-                if thinking:
-                    event_data["thinking"] = thinking
-                if tool_calls:
-                    event_data["tools"] = tool_calls
-                if text_parts:
-                    event_data["text"] = text_parts
-                if message.error:
-                    event_data["error"] = message.error
+                if AgentTurnEvent:
+                    evt = AgentTurnEvent(
+                        task_id=task_id, source=EventSource.AGENT, turn=turn,
+                        tools=[tc.get("tool", "") for tc in tool_calls] if tool_calls else [],
+                        thinking_preview=thinking[0][:200] if thinking else "",
+                        text_preview=text_parts[0][:200] if text_parts else "",
+                        error=message.error or None,
+                    )
+                    event_data = evt.to_dict()
+                    # Preserve rich tool data for doom_loop detection
+                    if tool_calls:
+                        event_data["tools_detail"] = tool_calls
+                else:
+                    event_data = {"turn": turn}
+                    if thinking:
+                        event_data["thinking"] = thinking
+                    if tool_calls:
+                        event_data["tools"] = tool_calls
+                    if text_parts:
+                        event_data["text"] = text_parts
+                    if message.error:
+                        event_data["error"] = message.error
                 self._log_agent_event(task_id, "agent_turn", event_data)
 
                 # ── Heartbeat: 从 PROGRESS 标记提取进度 ──
@@ -267,9 +289,11 @@ class TaskExecutor:
                         stuck, pattern = detector.is_stuck()
                         if stuck:
                             log.warning(f"StuckDetector: task #{task_id} stuck — {pattern}")
-                            self._log_agent_event(task_id, "stuck_detected", {
-                                "pattern": pattern, "turn": turn,
-                            })
+                            stuck_data = (StuckDetectedEvent(
+                                task_id=task_id, source=EventSource.GOVERNOR,
+                                pattern=pattern, turn=turn,
+                            ).to_dict() if AgentTurnEvent else {"pattern": pattern, "turn": turn})
+                            self._log_agent_event(task_id, "stuck_detected", stuck_data)
                             result_text = f"[STUCK: {pattern}] Agent detected in loop after {turn} turns"
                             break
 
@@ -280,9 +304,13 @@ class TaskExecutor:
                         doom = check_doom_loop(events)
                         if doom.triggered:
                             log.warning(f"DoomLoop: task #{task_id} — {doom.reason}")
-                            self._log_agent_event(task_id, "doom_loop_detected", {
+                            doom_data = (DoomLoopDetectedEvent(
+                                task_id=task_id, source=EventSource.GOVERNOR,
+                                reason=doom.reason, turn=turn, details=doom.details,
+                            ).to_dict() if AgentTurnEvent else {
                                 "reason": doom.reason, "turn": turn, **doom.details,
                             })
+                            self._log_agent_event(task_id, "doom_loop_detected", doom_data)
                             result_text = f"[DOOM LOOP: {doom.reason}] Agent terminated after {turn} turns"
                             break
                     except Exception as e:
@@ -302,13 +330,20 @@ class TaskExecutor:
 
             elif isinstance(message, ResultMessage):
                 result_text = message.result or ""
-                self._log_agent_event(task_id, "agent_result", {
+                result_data = (AgentResultEvent(
+                    task_id=task_id, source=EventSource.AGENT,
+                    status="failed" if message.is_error else "done",
+                    num_turns=message.num_turns or 0,
+                    duration_ms=message.duration_ms or 0,
+                    cost_usd=message.total_cost_usd or 0.0,
+                ).to_dict() if AgentTurnEvent else {
                     "num_turns": message.num_turns,
                     "duration_ms": message.duration_ms,
                     "cost_usd": message.total_cost_usd,
                     "stop_reason": message.stop_reason,
                     "is_error": message.is_error,
                 })
+                self._log_agent_event(task_id, "agent_result", result_data)
 
         return result_text
 
