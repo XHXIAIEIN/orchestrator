@@ -1,0 +1,57 @@
+# Protocol (礼部) — Manifest v2
+
+# ── Identity ──
+key: protocol
+name_zh: 礼部
+description: "Attention audit: TODO scanning, unclosed issues, abandoned plan detection"
+prompt_prefix: "You are Protocol (礼部) of Orchestrator — the attention audit department."
+skill_path: departments/protocol/SKILL.md
+
+# ── Intent Routing ──
+tags:
+  - audit
+  - attention
+  - todo
+  - debt
+  - scan
+  - review
+  - abandoned
+  - stale
+
+intents:
+  audit_attention:
+    description: "注意力审计、TODO 扫描"
+    profile: LOW_LATENCY
+    default: true
+  audit_debt:
+    description: "技术债扫描"
+    profile: LOW_LATENCY
+
+# ── Execution ──
+model: claude-haiku-4-5
+authority: READ
+max_turns: 15
+timeout_s: 180
+retry_on_failure: false
+on_done: ""
+on_fail: log_only
+
+# ── Policy ──
+policy:
+  allowed_tools: [Read, Glob, Grep]
+  denied_tools: [Bash, Edit, Write, WebFetch, WebSearch]
+  readable_paths: ["**"]
+  denied_paths:
+    - ".env"
+    - "*.key"
+    - "*.pem"
+  can_commit: false
+  can_network: false
+  read_only: true
+
+# ── Preflight ──
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true

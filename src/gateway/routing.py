@@ -62,61 +62,46 @@ class IntentRoute:
     requires_approval: bool = False  # 是否需要人工批准
 
 
-# ── Intent Route Table ──
-# 声明式路由：intent → department + policy profile
-INTENT_ROUTES: dict[str, IntentRoute] = {
-    # 工部 — 代码变更
-    "code_fix": IntentRoute("code_fix", "engineering", PolicyProfile.BALANCED,
-                            "Bug 修复、错误处理"),
-    "code_feature": IntentRoute("code_feature", "engineering", PolicyProfile.HIGH_QUALITY,
-                                "新功能开发"),
-    "code_refactor": IntentRoute("code_refactor", "engineering", PolicyProfile.HIGH_QUALITY,
-                                 "代码重构"),
-    "code_config": IntentRoute("code_config", "engineering", PolicyProfile.LOW_LATENCY,
-                               "配置调整、改名、清理"),
+# ── Intent Route Table (manifest-driven auto-discovery) ──
+# Built from departments/*/manifest.yaml by registry.py.
+# Bridges IntentEntry → IntentRoute with proper PolicyProfile enums.
 
-    # 户部 — 运维
-    "ops_repair": IntentRoute("ops_repair", "operations", PolicyProfile.BALANCED,
-                              "采集器/服务修复"),
-    "ops_deploy": IntentRoute("ops_deploy", "operations", PolicyProfile.BALANCED,
-                              "部署、配置更新", requires_approval=True),
-    "ops_health": IntentRoute("ops_health", "operations", PolicyProfile.LOW_LATENCY,
-                              "健康检查、状态查询"),
+from src.governance.registry import INTENT_ENTRIES, DEPT_DEFAULT_INTENTS
 
-    # 礼部 — 审计
-    "audit_attention": IntentRoute("audit_attention", "protocol", PolicyProfile.LOW_LATENCY,
-                                   "注意力审计、TODO 扫描"),
-    "audit_debt": IntentRoute("audit_debt", "protocol", PolicyProfile.LOW_LATENCY,
-                              "技术债扫描"),
-
-    # 兵部 — 安全
-    "security_scan": IntentRoute("security_scan", "security", PolicyProfile.LOW_LATENCY,
-                                 "安全扫描、依赖审计"),
-    "security_incident": IntentRoute("security_incident", "security", PolicyProfile.HIGH_QUALITY,
-                                     "安全事件响应", requires_approval=True),
-
-    # 刑部 — 质量
-    "quality_review": IntentRoute("quality_review", "quality", PolicyProfile.BALANCED,
-                                  "Code review、测试执行"),
-    "quality_regression": IntentRoute("quality_regression", "quality", PolicyProfile.HIGH_QUALITY,
-                                      "回归测试、完整验收"),
-
-    # 吏部 — 绩效
-    "perf_report": IntentRoute("perf_report", "personnel", PolicyProfile.LOW_LATENCY,
-                               "绩效报告、趋势分析"),
-    "perf_deep": IntentRoute("perf_deep", "personnel", PolicyProfile.BALANCED,
-                             "深度能力评估"),
+_PROFILE_MAP = {
+    "LOW_LATENCY": PolicyProfile.LOW_LATENCY,
+    "BALANCED": PolicyProfile.BALANCED,
+    "HIGH_QUALITY": PolicyProfile.HIGH_QUALITY,
 }
+
+
+def _build_routes() -> dict[str, IntentRoute]:
+    """Convert registry IntentEntries to IntentRoutes."""
+    routes = {}
+    for name, entry in INTENT_ENTRIES.items():
+        profile = _PROFILE_MAP.get(entry.profile, PolicyProfile.BALANCED)
+        routes[name] = IntentRoute(
+            intent=name,
+            department=entry.department,
+            profile=profile,
+            description=entry.description,
+            requires_approval=entry.requires_approval,
+        )
+    return routes
+
+
+INTENT_ROUTES: dict[str, IntentRoute] = _build_routes()
 
 # 部门默认 intent（当 LLM 只返回部门名时的 fallback）
-_DEPT_DEFAULT_INTENT: dict[str, str] = {
-    "engineering": "code_fix",
-    "operations": "ops_repair",
-    "protocol": "audit_attention",
-    "security": "security_scan",
-    "quality": "quality_review",
-    "personnel": "perf_report",
-}
+_DEPT_DEFAULT_INTENT: dict[str, str] = dict(DEPT_DEFAULT_INTENTS)
+
+
+def _fallback_route() -> IntentRoute:
+    """Return the first available route as ultimate fallback (no hardcoded keys)."""
+    if INTENT_ROUTES:
+        return next(iter(INTENT_ROUTES.values()))
+    # Absolute last resort — should never happen if any manifest exists
+    return IntentRoute("unknown", "engineering", PolicyProfile.BALANCED, "fallback")
 
 
 def resolve_route(intent: str = "", department: str = "") -> IntentRoute:
@@ -126,10 +111,11 @@ def resolve_route(intent: str = "", department: str = "") -> IntentRoute:
 
     # Fallback: department → default intent
     if department:
-        default_intent = _DEPT_DEFAULT_INTENT.get(department, "code_fix")
-        return INTENT_ROUTES.get(default_intent, INTENT_ROUTES["code_fix"])
+        default_intent = _DEPT_DEFAULT_INTENT.get(department)
+        if default_intent and default_intent in INTENT_ROUTES:
+            return INTENT_ROUTES[default_intent]
 
-    return INTENT_ROUTES["code_fix"]
+    return _fallback_route()
 
 
 def get_policy_config(route: IntentRoute) -> PolicyConfig:

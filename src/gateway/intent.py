@@ -13,54 +13,63 @@ from src.core.llm_router import get_router
 
 log = logging.getLogger(__name__)
 
-# Governor 支持的六部
-VALID_DEPARTMENTS = {"engineering", "operations", "protocol", "security", "quality", "personnel"}
+# Governor 支持的部门 (manifest-driven)
+from src.governance.registry import VALID_DEPARTMENTS, get_tags_for_prompt, get_intents_for_prompt
 VALID_COGNITIVE_MODES = {"direct", "react", "hypothesis", "designer"}
 VALID_PRIORITIES = {"low", "medium", "high", "critical"}
 
-INTENT_PROMPT = """你是 Orchestrator 的意图解析器。用户会用自然语言发指令，你需要翻译成结构化任务。
+def _build_intent_prompt() -> str:
+    """Build intent prompt dynamically from manifest-discovered departments."""
+    dept_section = get_tags_for_prompt()
+    intent_section = get_intents_for_prompt()
+    n_depts = len(VALID_DEPARTMENTS)
+    return f"""You are Orchestrator's intent parser. Translate natural-language user commands into structured task specifications.
 
-## Orchestrator 六部
-- engineering（工部）：代码修改、bug 修复、功能开发、重构
-- operations（户部）：运维、部署、配置、系统健康
-- protocol（礼部）：注意力审计、时间分析、债务扫描
-- security（兵部）：安全扫描、依赖审计、漏洞检测
-- quality（刑部）：测试、code review、质量验收
-- personnel（吏部）：绩效分析、能力评估、发现层
+## Departments (matched by semantic tags)
+{dept_section}
 
-## 意图类型（intent）
-工部: code_fix / code_feature / code_refactor / code_config
-户部: ops_repair / ops_deploy / ops_health
-礼部: audit_attention / audit_debt
-兵部: security_scan / security_incident
-刑部: quality_review / quality_regression
-吏部: perf_report / perf_deep
+## Intent types
+{intent_section}
 
-## 认知模式
-- direct: 简单任务（改名、清理、配置调整）
-- react: 中等复杂（边做边想）
-- hypothesis: 诊断类（先假设后验证 — "为什么X不工作"）
-- designer: 大型改动（先设计后实现 — "重构X系统"）
+## Cognitive modes"""
 
-## 输出格式（严格 JSON）
+
+# Lazy-build on first use to avoid import-time issues
+_intent_prompt_cache = None
+
+
+def _get_intent_prompt():
+    global _intent_prompt_cache
+    if _intent_prompt_cache is None:
+        _intent_prompt_cache = _build_intent_prompt() + _INTENT_PROMPT_SUFFIX
+    return _intent_prompt_cache
+
+
+_INTENT_PROMPT_SUFFIX = """
+- direct: trivial tasks (rename, cleanup, config tweak)
+- react: moderate complexity (think as you go)
+- hypothesis: diagnostic (form hypothesis, then verify — "why does X fail")
+- designer: large changes (design first, then implement — "refactor system X")
+
+## Output format (strict JSON)
 {{
-  "action": "一句话描述要做什么",
-  "intent": "意图类型（上面的列表之一）",
-  "department": "目标部门（上面六个之一）",
-  "cognitive_mode": "认知模式",
+  "action": "one-line description of what to do",
+  "intent": "intent type (one from the list above)",
+  "department": "target department (one from the list above)",
+  "cognitive_mode": "cognitive mode",
   "priority": "low/medium/high/critical",
-  "problem": "问题描述",
-  "expected": "期望结果",
+  "problem": "problem description",
+  "expected": "expected outcome",
   "needs_clarification": false,
   "clarification_question": null
 }}
 
-如果用户指令太模糊无法确定行动，设置 needs_clarification=true 并在 clarification_question 中用中文提问。
+If the user's command is too vague to determine an action, set needs_clarification=true and ask a clarifying question in clarification_question (respond in the user's language).
 
-## 上下文
+## Context
 {context}
 
-## 用户指令
+## User command
 {user_input}
 """
 
@@ -99,7 +108,7 @@ class IntentGateway:
     def parse(self, user_input: str, context: dict = None) -> TaskIntent:
         """解析用户自然语言指令。"""
         ctx_str = json.dumps(context or {}, ensure_ascii=False, indent=2)
-        prompt = INTENT_PROMPT.format(user_input=user_input, context=ctx_str)
+        prompt = _get_intent_prompt().format(user_input=user_input, context=ctx_str)
 
         raw = self._call_llm(prompt)
         return self._validate(raw)

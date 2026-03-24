@@ -146,10 +146,13 @@ def _parse_preflight(raw: list) -> list[PreflightCheck]:
 
 
 def load_blueprint(department: str) -> Blueprint | None:
-    """Load a department's blueprint.yaml. Returns None if not found."""
+    """Load a department's blueprint.yaml (or manifest.yaml fallback). Returns None if not found."""
     bp_path = _DEPT_ROOT / department / "blueprint.yaml"
     if not bp_path.exists():
-        return None
+        # Manifest v2: manifest.yaml is the single source of truth
+        bp_path = _DEPT_ROOT / department / "manifest.yaml"
+        if not bp_path.exists():
+            return None
 
     try:
         raw = yaml.safe_load(bp_path.read_text(encoding="utf-8"))

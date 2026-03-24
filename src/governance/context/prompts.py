@@ -61,46 +61,10 @@ COGNITIVE_MODE_PROMPTS = load_cognitive_modes()
 # ── Second opinion model ──
 SECOND_OPINION_MODEL = "claude-haiku-4-5-20251001"
 
-# ── 六部路由表 ──
-# Department prompt_prefix is the inline fallback; SKILL.md files take priority at runtime.
-DEPARTMENTS = {
-    "engineering": {
-        "name": "工部",
-        "skill_path": "departments/engineering/SKILL.md",
-        "prompt_prefix": "你是 Orchestrator 工部——代码工程部门。",
-        "tools": "Bash,Read,Edit,Write,Glob,Grep",
-    },
-    "operations": {
-        "name": "户部",
-        "skill_path": "departments/operations/SKILL.md",
-        "prompt_prefix": "你是 Orchestrator 户部——系统运维部门。",
-        "tools": "Bash,Read,Edit,Write,Glob,Grep",
-    },
-    "protocol": {
-        "name": "礼部",
-        "skill_path": "departments/protocol/SKILL.md",
-        "prompt_prefix": "你是 Orchestrator 礼部——注意力审计部门。",
-        "tools": "Read,Glob,Grep",
-    },
-    "security": {
-        "name": "兵部",
-        "skill_path": "departments/security/SKILL.md",
-        "prompt_prefix": "你是 Orchestrator 兵部——安全防御部门。",
-        "tools": "Bash,Read,Glob,Grep",
-    },
-    "quality": {
-        "name": "刑部",
-        "skill_path": "departments/quality/SKILL.md",
-        "prompt_prefix": "你是 Orchestrator 刑部——质量验收部门。",
-        "tools": "Bash,Read,Glob,Grep",
-    },
-    "personnel": {
-        "name": "吏部",
-        "skill_path": "departments/personnel/SKILL.md",
-        "prompt_prefix": "你是 Orchestrator 吏部——绩效管理部门。",
-        "tools": "Read,Glob,Grep",
-    },
-}
+# ── 六部路由表 (manifest-driven auto-discovery) ──
+# Loaded from departments/*/manifest.yaml by registry.py.
+# This import replaces the former hardcoded DEPARTMENTS dict.
+from src.governance.registry import DEPARTMENTS
 
 # ── Parallel dispatch scenarios ──
 PARALLEL_SCENARIOS = {

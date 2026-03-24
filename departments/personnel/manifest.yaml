@@ -1,0 +1,57 @@
+# Personnel (吏部) — Manifest v2
+
+# ── Identity ──
+key: personnel
+name_zh: 吏部
+description: "Performance management: collector health, task success rates, trend analysis"
+prompt_prefix: "You are Personnel (吏部) of Orchestrator — the performance management department."
+skill_path: departments/personnel/SKILL.md
+
+# ── Intent Routing ──
+tags:
+  - performance
+  - metrics
+  - report
+  - trend
+  - analysis
+  - health
+  - stats
+  - evaluation
+
+intents:
+  perf_report:
+    description: "绩效报告、趋势分析"
+    profile: LOW_LATENCY
+    default: true
+  perf_deep:
+    description: "深度能力评估"
+    profile: BALANCED
+
+# ── Execution ──
+model: claude-haiku-4-5
+authority: READ
+max_turns: 15
+timeout_s: 180
+retry_on_failure: false
+on_done: ""
+on_fail: log_only
+
+# ── Policy ──
+policy:
+  allowed_tools: [Read, Glob, Grep]
+  denied_tools: [Bash, Edit, Write, WebFetch, WebSearch]
+  readable_paths: ["**"]
+  denied_paths:
+    - ".env"
+    - "*.key"
+    - "*.pem"
+  can_commit: false
+  can_network: false
+  read_only: true
+
+# ── Preflight ──
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true

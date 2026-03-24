@@ -1,0 +1,79 @@
+# Engineering (工部) — Manifest v2
+# Single source of truth: identity + routing + policy + execution config.
+# Replaces both DEPARTMENTS dict entry and blueprint.yaml.
+
+# ── Identity ──
+key: engineering
+name_zh: 工部
+description: "Code engineering: development, bug fixes, refactoring, optimization"
+prompt_prefix: "You are Engineering (工部) of Orchestrator — the code engineering department."
+skill_path: departments/engineering/SKILL.md
+
+# ── Intent Routing (偷自 G-Assist manifest tags) ──
+tags:
+  - code
+  - implement
+  - build
+  - refactor
+  - debug
+  - fix
+  - feature
+  - architecture
+  - optimize
+  - config
+
+intents:
+  code_fix:
+    description: "Bug 修复、错误处理"
+    profile: BALANCED
+    default: true  # 部门默认 intent
+  code_feature:
+    description: "新功能开发"
+    profile: HIGH_QUALITY
+  code_refactor:
+    description: "代码重构"
+    profile: HIGH_QUALITY
+  code_config:
+    description: "配置调整、改名、清理"
+    profile: LOW_LATENCY
+
+# ── Execution ──
+model: claude-sonnet-4-6
+authority: MUTATE
+max_turns: 25
+timeout_s: 300
+retry_on_failure: false
+on_done: quality_review
+on_fail: log_only
+
+# ── Policy ──
+policy:
+  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]
+  denied_tools: [WebFetch, WebSearch]
+  writable_paths:
+    - "src/**"
+    - "departments/**"
+    - "dashboard/**"
+    - "tests/**"
+    - "SOUL/**"
+    - "scripts/**"
+  denied_paths:
+    - ".env"
+    - "*.key"
+    - "*.pem"
+    - "credentials.*"
+    - "data/events.db"
+  can_commit: true
+  can_network: false
+  read_only: false
+
+# ── Preflight ──
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
+  - check: disk_space
+    target: "100"
+    required: false
+    message: "Need at least 100MB free for code changes"

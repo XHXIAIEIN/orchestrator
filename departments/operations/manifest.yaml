@@ -1,0 +1,73 @@
+# Operations (户部) — Manifest v2
+
+# ── Identity ──
+key: operations
+name_zh: 户部
+description: "System operations: collector repairs, DB management, deployment config"
+prompt_prefix: "You are Operations (户部) of Orchestrator — the system operations department."
+skill_path: departments/operations/SKILL.md
+
+# ── Intent Routing ──
+tags:
+  - ops
+  - deploy
+  - repair
+  - collector
+  - docker
+  - database
+  - health
+  - monitoring
+  - service
+  - restart
+
+intents:
+  ops_repair:
+    description: "采集器/服务修复"
+    profile: BALANCED
+    default: true
+  ops_deploy:
+    description: "部署、配置更新"
+    profile: BALANCED
+    requires_approval: true
+  ops_health:
+    description: "健康检查、状态查询"
+    profile: LOW_LATENCY
+
+# ── Execution ──
+model: claude-sonnet-4-6
+authority: MUTATE
+max_turns: 25
+timeout_s: 300
+retry_on_failure: true
+on_done: ""
+on_fail: alert
+
+# ── Policy ──
+policy:
+  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]
+  denied_tools: [WebFetch, WebSearch]
+  writable_paths:
+    - "src/collectors/**"
+    - "src/scheduler.py"
+    - "data/**"
+    - "docker-compose.yml"
+    - "Dockerfile"
+    - ".env"
+  denied_paths:
+    - "SOUL/private/**"
+    - "departments/*/SKILL.md"
+  can_commit: true
+  can_network: false
+  read_only: false
+  max_file_changes: 10
+
+# ── Preflight ──
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
+  - check: disk_space
+    target: "200"
+    required: true
+    message: "Operations needs 200MB+ for DB/data work"

@@ -1,0 +1,53 @@
+# Quality (刑部) — Manifest v2
+
+# ── Identity ──
+key: quality
+name_zh: 刑部
+description: "Quality assurance: code review, test execution, regression detection"
+prompt_prefix: "You are Quality (刑部) of Orchestrator — the quality assurance department."
+skill_path: departments/quality/SKILL.md
+
+# ── Intent Routing ──
+tags:
+  - quality
+  - test
+  - review
+  - regression
+  - lint
+  - coverage
+  - verify
+
+intents:
+  quality_review:
+    description: "Code review、测试执行"
+    profile: BALANCED
+    default: true
+  quality_regression:
+    description: "回归测试、完整验收"
+    profile: HIGH_QUALITY
+
+# ── Execution ──
+model: claude-sonnet-4-6
+authority: READ
+max_turns: 25
+timeout_s: 300
+retry_on_failure: false
+on_done: ""
+on_fail: log_only
+
+# ── Policy ──
+policy:
+  allowed_tools: [Bash, Read, Glob, Grep]
+  denied_tools: [Edit, Write, WebFetch, WebSearch]
+  readable_paths: ["**"]
+  denied_paths: []
+  can_commit: false
+  can_network: false
+  read_only: true
+
+# ── Preflight ──
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true

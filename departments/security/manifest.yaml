@@ -1,0 +1,56 @@
+# Security (兵部) — Manifest v2
+
+# ── Identity ──
+key: security
+name_zh: 兵部
+description: "Security defense: secret scanning, permission audit, dependency vulnerability detection"
+prompt_prefix: "You are Security (兵部) of Orchestrator — the security defense department."
+skill_path: departments/security/SKILL.md
+
+# ── Intent Routing ──
+tags:
+  - security
+  - vulnerability
+  - secret
+  - permission
+  - dependency
+  - audit
+  - incident
+  - threat
+  - leak
+
+intents:
+  security_scan:
+    description: "安全扫描、依赖审计"
+    profile: LOW_LATENCY
+    default: true
+  security_incident:
+    description: "安全事件响应"
+    profile: HIGH_QUALITY
+    requires_approval: true
+
+# ── Execution ──
+model: claude-haiku-4-5
+authority: READ
+max_turns: 20
+timeout_s: 240
+retry_on_failure: false
+on_done: ""
+on_fail: alert
+
+# ── Policy ──
+policy:
+  allowed_tools: [Bash, Read, Glob, Grep]
+  denied_tools: [Edit, Write, WebFetch, WebSearch]
+  readable_paths: ["**"]
+  denied_paths: []
+  can_commit: false
+  can_network: false
+  read_only: true
+
+# ── Preflight ──
+preflight:
+  - check: cwd_exists
+    required: true
+  - check: skill_exists
+    required: true
