@@ -167,14 +167,13 @@ sends scouts), two-layer review, file signal protocol.
 
 > "Good artists copy, great artists steal." — Picasso (probably)
 
-We studied 50+ open-source orchestrators and took what worked. The 三省六部
-governance model came from edict and danghuangshang; the SOUL identity system
-from SoulFlow; manifest discovery from G-Assist. Every major subsystem traces
-back to someone else's insight.
+We don't just copy code — we study *patterns* and *principles*, then adapt
+them to our architecture. The 三省六部 governance model came from edict and
+danghuangshang; the SOUL identity system from SoulFlow; manifest discovery
+from G-Assist. Every major subsystem traces back to someone else's insight.
 
-But stealing well is its own craft. For every pattern we took, three were
-rejected. Every pattern listed here has been significantly adapted — G-Assist
-uses JSON-RPC over stdin, we use YAML at import time; OpenHands has a monolithic
+Every pattern listed here has been significantly adapted — G-Assist uses
+JSON-RPC over stdin, we use YAML at import time; OpenHands has a monolithic
 EventStream, we have department-scoped fan-out; edict runs on Discord, we run
 Agent SDK in Docker. The best ideas are the ones you can't tell where they
 came from.
