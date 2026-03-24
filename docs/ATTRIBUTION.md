@@ -218,6 +218,23 @@ sends scouts), two-layer review, file signal protocol.
 
 ---
 
+## Evaluated but Not Adopted
+
+Projects we studied during selection that informed our decisions, even if
+their code didn't make the final cut. Knowing what *not* to use is part
+of the design process.
+
+| Project | URL | What we evaluated | Why we passed |
+|---------|-----|-------------------|---------------|
+| [ChatTTS](https://github.com/2noise/ChatTTS) | TTS with prosody control | Fish S2 Pro had better emotion tag support |
+| [CosyVoice](https://github.com/FunAudioLLM/CosyVoice) | Alibaba's multilingual TTS | Heavier deployment, Fish was simpler |
+| [HumeAI/tada](https://github.com/HumeAI/tada) | Empathic voice with emotion detection | Inspired `infer_emotion()` concept, but API-dependent |
+| [Suna/Kortix](https://github.com/kortix-ai/suna) | Full-stack agent platform | Too heavy for our use case |
+| [Chroma](https://github.com/chroma-core/chroma) | Vector DB | Markdown + SQLite was sufficient |
+| [Cognee](https://github.com/topoteretes/cognee) | Knowledge graph | Not needed at current scale |
+
+---
+
 ## Philosophy
 
 > "Good artists copy, great artists steal." — Picasso (probably)
