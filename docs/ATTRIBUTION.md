@@ -1,7 +1,8 @@
-# Attribution — 偷师簿
+# Attribution — The Steal Sheet
 
-管家的手艺不是凭空来的。这份文档记录了每一个被偷走的模式——
-从哪个项目来，改成了什么样，现在住在代码库的哪个角落。
+A butler's craft doesn't come from nowhere. This document tracks every
+stolen pattern — where it came from, how it was adapted, and where it
+lives in our codebase now.
 
 All URLs verified 2026-03-24. One project (Lucentia) has since been deleted.
 
