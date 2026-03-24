@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 MODEL_TIERS = {
+    "ollama/qwen2.5:7b":         {"cost": 0,    "capability": 0.5,  "multimodal": False},
     "ollama/qwen3.5:9b":         {"cost": 0,    "capability": 0.55, "multimodal": False},
     "ollama/deepseek-r1:14b":    {"cost": 0,    "capability": 0.6,  "multimodal": False},
     "claude-haiku-4-5-20251001": {"cost": 0.25, "capability": 0.7,  "multimodal": False},
@@ -35,8 +36,8 @@ ROUTES = {
     "ocr":           {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},
     # GUI 自动化推理 — 多模态，优先 Ollama，fallback 到 Claude
     "gui_reason":    {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 60,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
-    # Channel 闲聊 — 本地优先，Claude fallback
-    "chat":          {"cascade": ["ollama/qwen3.5:9b", "claude-haiku-4-5-20251001"], "timeout": 30, "no_think": True},
+    # Channel 闲聊 — 非推理模型更快更稳（qwen3.5 的 thinking 对闲聊是浪费）
+    "chat":          {"cascade": ["ollama/qwen2.5:7b", "claude-haiku-4-5-20251001"], "timeout": 15, "no_think": True},
     # Channel 需要推理的对话 — deepseek-r1
     "chat_reason":   {"cascade": ["ollama/deepseek-r1:14b", "ollama/qwen3.5:9b"], "timeout": 90},
 }
