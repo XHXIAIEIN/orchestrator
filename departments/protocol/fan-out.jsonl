@@ -1,1 +1,0 @@
-{"event_type": "task.failed", "ts": "2026-03-22T19:59:42.544888+00:00", "task_id": 123, "department": "protocol", "status": "failed", "project": "orchestrator", "summary": "Protocol debt scan + security audit + personnel metrics"}

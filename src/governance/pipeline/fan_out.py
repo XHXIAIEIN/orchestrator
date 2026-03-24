@@ -38,7 +38,9 @@ class FanOutTarget:
 DEFAULT_TARGETS = [
     FanOutTarget("db", "db", True),
     FanOutTarget("event_bus", "event_bus", True),
-    FanOutTarget("jsonl_backup", "file", True, {"dir": "departments/{department}"}),
+    # File target disabled — run-log.jsonl + event_bus.db already cover this.
+    # fan-out.jsonl was write-only with zero readers.
+    FanOutTarget("jsonl_backup", "file", False, {"dir": "departments/{department}"}),
     FanOutTarget("channels", "channel", True),
 ]
 
