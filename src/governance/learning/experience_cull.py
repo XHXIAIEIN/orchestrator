@@ -82,7 +82,8 @@ def run_cull(db) -> CullReport:
         with db._connect() as conn:
             rows = conn.execute(
                 "SELECT id, pattern_key, recurrence, status, created_at, "
-                "COALESCE(hit_count, 0) as hit_count, last_hit_at "
+                "COALESCE(hit_count, 0) as hit_count, last_hit_at, "
+                "COALESCE(ttl_days, 0) as ttl_days, expires_at "
                 "FROM learnings WHERE status IN ('pending', 'promoted')"
             ).fetchall()
     except Exception as e:
@@ -98,6 +99,7 @@ def run_cull(db) -> CullReport:
     for l in active:
         created = _parse_iso(l.get("created_at", ""))
         last_hit = _parse_iso(l.get("last_hit_at", ""))
+        expires = _parse_iso(l.get("expires_at", ""))
         hit_count = l.get("hit_count", 0)
 
         age_days = (now - created).days if created else 0
@@ -105,6 +107,12 @@ def run_cull(db) -> CullReport:
 
         l["age_days"] = age_days
         l["days_since_hit"] = days_since_hit
+
+        # Rule 0: TTL expiry — temporary facts past their expiration date
+        if expires and now > expires:
+            l["_retire_reason"] = "ttl_expired"
+            to_retire.append(l)
+            continue
 
         # Rule 1: Never-hit learning older than MAX_UNHIT_AGE_DAYS → retire
         if hit_count == 0 and age_days > MAX_UNHIT_AGE_DAYS:

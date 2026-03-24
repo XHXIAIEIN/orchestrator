@@ -275,8 +275,13 @@ class EventsDB:
                     conn.execute(f"ALTER TABLE logs ADD COLUMN {col} {typ}")
                 except sqlite3.OperationalError:
                     pass
-            # Learnings: add hit tracking columns for usage-based culling
-            for col, typ in [("hit_count", "INTEGER DEFAULT 0"), ("last_hit_at", "TEXT")]:
+            # Learnings: add hit tracking + TTL columns
+            for col, typ in [
+                ("hit_count", "INTEGER DEFAULT 0"),
+                ("last_hit_at", "TEXT"),
+                ("ttl_days", "INTEGER DEFAULT 0"),
+                ("expires_at", "TEXT"),
+            ]:
                 try:
                     conn.execute(f"ALTER TABLE learnings ADD COLUMN {col} {typ}")
                 except sqlite3.OperationalError:
@@ -827,9 +832,22 @@ class EventsDB:
         source_type: str = "error",
         department: str = None,
         task_id: int = None,
+        ttl_days: int = 0,
     ) -> int:
-        """Record a learning. If pattern_key exists, bump recurrence instead."""
+        """Record a learning. If pattern_key exists, bump recurrence instead.
+
+        Args:
+            ttl_days: Time-to-live in days. 0 = permanent. >0 = auto-expires.
+                      Temporary facts (config values, perf numbers) should use TTL.
+        """
         now = datetime.now(timezone.utc).isoformat()
+
+        # Compute expiry if TTL set
+        expires_at = None
+        if ttl_days > 0:
+            from datetime import timedelta
+            expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat()
+
         with self._connect() as conn:
             existing = conn.execute(
                 "SELECT id, recurrence, status FROM learnings WHERE pattern_key = ?",
@@ -842,10 +860,29 @@ class EventsDB:
                     (new_count, context, context, existing["id"]),
                 )
                 return existing["id"]
+
+            # Contradiction check: find active learnings with similar pattern_key prefix
+            # that might conflict (same area, same department, different rule)
+            prefix = pattern_key.split(":")[0] if ":" in pattern_key else pattern_key
+            conflicts = conn.execute(
+                "SELECT id, pattern_key, rule FROM learnings "
+                "WHERE pattern_key LIKE ? AND status IN ('pending', 'promoted') "
+                "AND area = ? AND rule != ? LIMIT 5",
+                (f"{prefix}:%", area, rule),
+            ).fetchall()
+            if conflicts:
+                # Log contradiction but don't block — newer fact wins
+                for c in conflicts:
+                    log.info(
+                        f"learnings: potential contradiction — new '{pattern_key}' vs existing '{c['pattern_key']}'"
+                    )
+
             cursor = conn.execute(
-                "INSERT INTO learnings (pattern_key, area, rule, context, source_type, status, recurrence, department, task_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?)",
-                (pattern_key, area, rule, context, source_type, department, task_id, now),
+                "INSERT INTO learnings (pattern_key, area, rule, context, source_type, "
+                "status, recurrence, department, task_id, created_at, ttl_days, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?)",
+                (pattern_key, area, rule, context, source_type, department, task_id,
+                 now, ttl_days, expires_at),
             )
             return cursor.lastrowid
 
