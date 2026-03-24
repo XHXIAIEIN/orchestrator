@@ -98,29 +98,35 @@ def assemble_context(department: str, task: dict) -> str:
     """组装完整的动态上下文。返回应该追加到 prompt 后面的额外上下文字符串。"""
     task_text = f"{task.get('action', '')} {task.get('spec', {}).get('problem', '')} {task.get('spec', {}).get('summary', '')}"
 
-    parts = []
+    # ── HOT/WARM/COLD attention tiers (claude-cognitive inspired) ──
+    # HOT: always kept, never compressed — learnings + recent run context
+    # WARM: kept if space allows — matched guidelines + shared knowledge
+    # COLD: first to be dropped — extended memory + learned skills
+    hot_parts = []
+    warm_parts = []
+    cold_parts = []
 
-    # 1. 匹配的 guidelines
+    # 1. Matched guidelines → WARM
     guidelines = match_guidelines(department, task_text)
     if guidelines:
-        parts.extend(guidelines)
+        warm_parts.extend(guidelines)
 
-    # 2. 共享知识
+    # 2. Shared knowledge → WARM
     shared = load_shared_knowledge(task_text)
     if shared:
-        parts.append(shared)
+        warm_parts.append(shared)
 
-    # 3. 部门学到的 skills
+    # 3. Learned skills → COLD (historical, less urgent)
     learned_path = Path("departments") / department / "learned-skills.md"
     if learned_path.exists():
         try:
             learned = learned_path.read_text(encoding="utf-8").strip()
             if learned:
-                parts.append(f"【经验积累】\n{learned}")
+                cold_parts.append(f"[Learned Skills]\n{learned}")
         except Exception:
             pass
 
-    # 4. Extended Memory（按需加载）
+    # 4. Extended Memory → COLD
     try:
         from src.governance.context.memory_tier import (
             resolve_tags_from_spec, load_extended_memory, format_extended_for_prompt,
@@ -132,44 +138,38 @@ def assemble_context(department: str, task: dict) -> str:
             if extended:
                 formatted = format_extended_for_prompt(extended)
                 if formatted:
-                    parts.append(formatted)
+                    cold_parts.append(formatted)
     except Exception:
-        pass  # extended memory is optional
+        pass
 
-    # 5. Learnings（前车之鉴，从 spec 注入）
+    # 5. Learnings → HOT (past mistakes, must never be dropped)
     spec = task.get("spec", {}) if isinstance(task.get("spec"), dict) else {}
     learnings = spec.get("learnings", [])
     if learnings:
-        parts.append("【Learnings】Rules from past mistakes. Violating these will likely cause the same failures:\n" + "\n".join(learnings))
+        hot_parts.append("[Learnings] Rules from past mistakes. Violating these will likely cause the same failures:\n" + "\n".join(learnings))
 
-    if not parts:
+    if not hot_parts and not warm_parts and not cold_parts:
         return ""
 
-    assembled = "\n\n---\n\n".join(parts)
+    # ── Assemble with tier-aware compression ──
+    MAX_CONTEXT_CHARS = 12000  # ~3400 tokens
 
-    # ── Condenser: if context exceeds token budget, compress ──
-    MAX_CONTEXT_CHARS = 12000  # ~3400 tokens, reasonable context budget
-    if len(assembled) > MAX_CONTEXT_CHARS:
-        try:
-            from src.governance.condenser.base import Event, View
-            from src.governance.condenser.amortized_forgetting import AmortizedForgettingCondenser
+    # HOT always included
+    hot_text = "\n\n---\n\n".join(hot_parts) if hot_parts else ""
+    remaining_budget = MAX_CONTEXT_CHARS - len(hot_text)
 
-            # Convert assembled parts into Events
-            events = []
-            for i, part in enumerate(parts):
-                events.append(Event(
-                    id=i, event_type="system", source="context_assembler",
-                    content=part,
-                ))
+    # WARM: include if budget allows
+    warm_text = "\n\n---\n\n".join(warm_parts) if warm_parts else ""
+    if len(warm_text) > remaining_budget > 0:
+        warm_text = warm_text[:remaining_budget] + "\n\n[...warm context truncated...]"
+    remaining_budget -= len(warm_text)
 
-            view = View(events)
-            condenser = AmortizedForgettingCondenser(
-                max_events=len(events), keep_head=2, keep_tail=3,
-            )
-            compressed = condenser.condense(view)
-            assembled = "\n\n---\n\n".join(e.content for e in compressed.events)
-        except Exception:
-            # Fallback: simple truncation
-            assembled = assembled[:MAX_CONTEXT_CHARS] + "\n\n[...context truncated...]"
+    # COLD: include only if budget remains
+    cold_text = ""
+    if remaining_budget > 500 and cold_parts:  # need at least 500 chars to be useful
+        cold_text = "\n\n---\n\n".join(cold_parts)
+        if len(cold_text) > remaining_budget:
+            cold_text = cold_text[:remaining_budget] + "\n\n[...cold context truncated...]"
 
-    return assembled
+    parts = [p for p in [hot_text, warm_text, cold_text] if p]
+    return "\n\n---\n\n".join(parts)
