@@ -166,8 +166,10 @@ sends scouts), two-layer review, file signal protocol.
 ## Philosophy
 
 We don't just copy code — we study *patterns* and *principles*, then adapt them
-to our unique architecture. The 三省六部 governance metaphor is ours; the
-specific mechanisms that make it work are often inspired by others.
+to our architecture. Even the 三省六部 governance metaphor came from edict and
+danghuangshang — what's ours is the specific combination: imperial bureaucracy +
+SOUL identity system + manifest-driven discovery + intent routing, all running
+as an autonomous butler in Docker.
 
 Every pattern listed here has been significantly adapted:
 - G-Assist uses JSON-RPC 2.0 over stdin/stdout; we use YAML manifests loaded at import time
