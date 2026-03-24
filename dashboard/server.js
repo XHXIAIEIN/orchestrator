@@ -16,6 +16,15 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// CORS for Claw desktop shell (claw.local virtual host)
+app.use('/api', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // Clean URL routes (Pipeline and Agents merged into main Dashboard)
 app.get('/pipeline', (req, res) => res.redirect('/'));
 app.get('/agents', (req, res) => res.redirect('/'));
@@ -217,6 +226,93 @@ app.post('/api/tasks/:id/approve', (req, res) => {
       res.status(500).json({ error: err || out || 'unknown error' });
     }
   });
+});
+
+// Approval gateway — Claw / Telegram / API can submit decisions
+app.post('/api/approval/:taskId', (req, res) => {
+  const { taskId } = req.params;
+  const { decision, source } = req.body || {};
+  if (!decision || !['approve', 'deny'].includes(decision)) {
+    return res.status(400).json({ error: 'decision must be "approve" or "deny"' });
+  }
+
+  // Forward to Python approval gateway
+  const proc = spawn('python3', ['-c', `
+import sys, json
+sys.path.insert(0, '/orchestrator')
+from src.governance.approval import get_approval_gateway
+gw = get_approval_gateway()
+gw.submit_decision("${taskId}", "${decision}", "${source || 'api'}")
+print(json.dumps({"ok": True, "task_id": "${taskId}", "decision": "${decision}"}))
+`]);
+
+  let out = '';
+  proc.stdout.on('data', d => { out += d; });
+  proc.on('close', () => {
+    try {
+      broadcast({ type: 'approval_result', task_id: taskId, decision, source: source || 'api' });
+      res.json(JSON.parse(out));
+    } catch {
+      // Gateway might not be initialized if no task is waiting; still broadcast
+      broadcast({ type: 'approval_result', task_id: taskId, decision, source: source || 'api' });
+      res.json({ ok: true, task_id: taskId, decision, note: 'broadcast sent' });
+    }
+  });
+});
+
+// Test endpoint: broadcast approval_request to Claw (WS) + Telegram/WeChat (Channel layer)
+app.post('/api/approval-test', async (req, res) => {
+  const taskId = `test-${Date.now()}`;
+  const description = req.body?.description || '[测试] 审批流程验证';
+  const payload = {
+    type: 'approval_request',
+    task_id: taskId,
+    description,
+    authority_level: 4,
+    risk: 'HIGH',
+  };
+
+  // 1. WebSocket broadcast (Claw picks this up)
+  broadcast(payload);
+
+  // 2. Telegram direct (use Bot API if token is set)
+  const tgToken = process.env.TELEGRAM_BOT_TOKEN;
+  const tgChat = process.env.TELEGRAM_CHAT_ID;
+  let tgResult = 'no_token';
+
+  if (tgToken && tgChat) {
+    const tgBody = JSON.stringify({
+      chat_id: tgChat,
+      text: `*需要审批* (高风险)\n\n${description}\n\n权限等级: 4/4 (APPROVE)\nTask: \`${taskId}\``,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '批准', callback_data: `approve:${taskId}` },
+          { text: '拒绝', callback_data: `deny:${taskId}` },
+        ]]
+      }
+    });
+
+    try {
+      const https = require('https');
+      await new Promise((resolve) => {
+        const tgReq = https.request(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }, (tgRes) => {
+          let d = '';
+          tgRes.on('data', c => d += c);
+          tgRes.on('end', () => { tgResult = d.includes('"ok":true') ? 'sent' : d.substring(0, 100); resolve(); });
+        });
+        tgReq.write(tgBody);
+        tgReq.end();
+      });
+    } catch (e) {
+      tgResult = `error: ${e.message}`;
+    }
+  }
+
+  res.json({ ok: true, ws: 'sent', telegram: tgResult, payload });
 });
 
 app.get('/api/scenarios', (req, res) => {
@@ -1454,6 +1550,7 @@ wss.on('connection', (ws, req) => {
   const sessionId = crypto.randomBytes(8).toString('hex');
   ws.sessionId = sessionId;
   ws.lastSeq = wsMessageSeq;
+  ws.clientType = 'dashboard'; // default; Claw overrides via hello message
 
   // 客户端可以带 ?lastSeq=N 来请求补发
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -1473,6 +1570,18 @@ wss.on('connection', (ws, req) => {
       if (ws.readyState === 1) ws.send(JSON.stringify(m));
     });
   }
+
+  // Handle messages from clients (Claw identity, approval responses, etc.)
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === 'claw') {
+        ws.clientType = 'claw';
+        ws.clawVersion = msg.version || '0';
+        console.log(`[ws] Claw v${ws.clawVersion} connected (${sessionId})`);
+      }
+    } catch {}
+  });
 });
 
 function broadcast(data) {

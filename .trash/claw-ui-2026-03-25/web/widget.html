@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Claw Widget</title>
+<style>
+  :root {
+    --bg: #18181c;
+    --bg-card: #1e1e24;
+    --border: #2a2a34;
+    --text: #e0e0e6;
+    --text-dim: #78788a;
+    --accent: #6c8aff;
+    --success: #4ade80;
+    --warn: #fbbf24;
+    --error: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    -webkit-app-region: drag;
+    cursor: grab;
+  }
+
+  .widget {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 12px 14px 10px;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .header .left { display: flex; align-items: center; gap: 7px; }
+  .logo { font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--error); transition: background 0.5s;
+  }
+  .dot.online { background: var(--success); }
+  .uptime { font-size: 10.5px; color: var(--text-dim); }
+
+  .header .right {
+    -webkit-app-region: no-drag;
+  }
+  .header .right button {
+    background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 12px; padding: 2px 5px;
+    border-radius: 3px; transition: all 0.15s;
+  }
+  .header .right button:hover { background: var(--bg-card); color: var(--text); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    flex: 1;
+    -webkit-app-region: no-drag;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 9px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .stat:hover { border-color: var(--accent); }
+  .stat .label {
+    font-size: 9.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .stat .val {
+    font-size: 17px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    margin-top: 1px;
+  }
+  .val.ok { color: var(--success); }
+  .val.warn { color: var(--warn); }
+  .val.err { color: var(--error); }
+
+  .ticker {
+    margin-top: 7px;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -webkit-app-region: no-drag;
+  }
+  .ticker a {
+    color: var(--accent);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .ticker a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="widget">
+  <div class="header">
+    <div class="left">
+      <div class="dot" id="dot"></div>
+      <span class="logo">Claw</span>
+      <span class="uptime" id="uptime"></span>
+    </div>
+    <div class="right">
+      <button onclick="openDashboard()" title="Dashboard">&#x2197;</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat" onclick="openDashboard()">
+      <div class="label">Events</div>
+      <div class="val" id="vEvents">--</div>
+    </div>
+    <div class="stat" onclick="openDashboard()">
+      <div class="label">Tasks</div>
+      <div class="val" id="vTasks">--</div>
+    </div>
+    <div class="stat" onclick="openDashboard()">
+      <div class="label">DB</div>
+      <div class="val" id="vDb">--</div>
+    </div>
+  </div>
+
+  <div class="ticker" id="ticker">Loading...</div>
+</div>
+
+<script>
+const API = 'http://localhost:23714';
+
+function openDashboard() {
+  window.chrome?.webview?.postMessage('dashboard');
+}
+
+async function poll() {
+  try {
+    const [health, stats] = await Promise.all([
+      fetch(`${API}/api/health`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()),
+      fetch(`${API}/api/stats`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => null),
+    ]);
+
+    document.getElementById('dot').classList.add('online');
+
+    // Uptime
+    if (health.uptime) {
+      const h = Math.floor(health.uptime / 3600);
+      const m = Math.floor((health.uptime % 3600) / 60);
+      document.getElementById('uptime').textContent = h > 0 ? `${h}h${m}m` : `${m}m`;
+    }
+
+    // Events
+    const ve = document.getElementById('vEvents');
+    ve.textContent = health.event_count ?? '--';
+    ve.className = 'val ok';
+
+    // DB
+    const vd = document.getElementById('vDb');
+    vd.textContent = health.db_size || '--';
+    vd.className = 'val';
+
+    // Tasks (try to get count)
+    const vt = document.getElementById('vTasks');
+    try {
+      const tasks = await fetch(`${API}/api/tasks?limit=50`, { signal: AbortSignal.timeout(2000) }).then(r => r.json());
+      const pending = Array.isArray(tasks) ? tasks.filter(t => t.status === 'pending').length : 0;
+      vt.textContent = pending;
+      vt.className = pending > 0 ? 'val warn' : 'val ok';
+    } catch {
+      vt.textContent = '--';
+    }
+
+    // Ticker
+    const ticker = document.getElementById('ticker');
+    if (stats && stats.categories) {
+      const parts = Object.entries(stats.categories).slice(0, 4).map(([k,v]) => `${k}: ${v}`);
+      ticker.textContent = parts.join('  ·  ') || 'Online';
+    } else {
+      ticker.innerHTML = 'Online · <a onclick="openDashboard()">Alt+O Spotlight</a>';
+    }
+
+  } catch {
+    document.getElementById('dot').classList.remove('online');
+    document.getElementById('vEvents').textContent = '--';
+    document.getElementById('vEvents').className = 'val err';
+    document.getElementById('vTasks').textContent = '--';
+    document.getElementById('vDb').textContent = '--';
+    document.getElementById('uptime').textContent = '';
+    document.getElementById('ticker').textContent = 'Offline';
+  }
+}
+
+poll();
+setInterval(poll, 8000);
+</script>
+</body>
+</html>

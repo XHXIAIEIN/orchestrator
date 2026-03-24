@@ -34,8 +34,38 @@ def register_inbound_handlers(db_path: str = ""):
         )
         thread.start()
 
+    def _handle_approve(event: Event):
+        """处理 /approve <task_id> 命令。"""
+        task_id = event.payload.get("task_id", "").strip()
+        source = event.payload.get("source", "channel")
+        if not task_id:
+            return
+        log.info(f"inbound: /approve '{task_id}' from {source}")
+        try:
+            from src.governance.approval import get_approval_gateway
+            gw = get_approval_gateway()
+            gw.submit_decision(task_id, "approve", source)
+        except Exception as e:
+            log.error(f"inbound: approve failed: {e}")
+
+    def _handle_deny(event: Event):
+        """处理 /deny <task_id> 命令。"""
+        task_id = event.payload.get("task_id", "").strip()
+        source = event.payload.get("source", "channel")
+        if not task_id:
+            return
+        log.info(f"inbound: /deny '{task_id}' from {source}")
+        try:
+            from src.governance.approval import get_approval_gateway
+            gw = get_approval_gateway()
+            gw.submit_decision(task_id, "deny", source)
+        except Exception as e:
+            log.error(f"inbound: deny failed: {e}")
+
     bus.subscribe("channel.command.run", _handle_run)
-    log.info("inbound: registered handler for channel.command.run")
+    bus.subscribe("channel.command.approve", _handle_approve)
+    bus.subscribe("channel.command.deny", _handle_deny)
+    log.info("inbound: registered handlers for run/approve/deny")
 
 
 def _notify(text: str):

@@ -57,6 +57,15 @@ def start():
         channel_reg = get_channel_registry()
         channel_reg.start_all()
         register_inbound_handlers(db_path=DB_PATH)
+
+        # ApprovalGateway — 可选，连接 Channel 层实现多通道审批
+        try:
+            from src.governance.approval import init_approval_gateway
+            init_approval_gateway(channel_registry=channel_reg)
+            log.info("ApprovalGateway initialized with channel registry")
+        except Exception as e:
+            log.debug(f"ApprovalGateway init skipped: {e}")
+
         channel_status = channel_reg.get_status()
         if channel_status:
             db.write_log(f"Channel 层已启动: {', '.join(channel_status.keys())}", "INFO", "channels")

@@ -17,3 +17,6 @@ dashboard/node_modules/
 node_modules/
 .firecrawl/
 tmp/
+claw/Claw/bin/
+claw/Claw/obj/
+*.csproj.user

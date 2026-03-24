@@ -81,6 +81,11 @@ try:
 except ImportError:
     AgentSemaphore = None
 
+try:
+    from src.governance.approval import get_approval_gateway
+except ImportError:
+    get_approval_gateway = None
+
 log = logging.getLogger(__name__)
 
 CLAUDE_TIMEOUT = 300
@@ -442,6 +447,40 @@ class TaskExecutor:
         # ── Heartbeat prompt injection ──
         if HEARTBEAT_PROMPT:
             prompt += "\n" + HEARTBEAT_PROMPT
+
+        # ── Approval Gate: tasks requiring APPROVE authority need human sign-off ──
+        needs_approval = False
+        if blueprint and blueprint.authority >= AuthorityCeiling.APPROVE:
+            needs_approval = True
+        elif spec.get("requires_approval"):
+            needs_approval = True
+
+        if needs_approval and get_approval_gateway:
+            gateway = get_approval_gateway()
+            description = f"[{dept_key}] {task.get('action', '')[:120]}"
+            auth_level = blueprint.authority.value if blueprint else 4
+            log.info(f"TaskExecutor: task #{task_id} requires approval (authority={auth_level})")
+            self.db.write_log(f"任务 #{task_id} 等待人工审批", "INFO", "governor")
+
+            async def _await_approval():
+                return await gateway.request_approval(
+                    task_id=str(task_id),
+                    description=description,
+                    authority_level=auth_level,
+                    timeout=300,
+                )
+            decision = anyio.run(_await_approval)
+
+            if decision != "approve":
+                log.warning(f"TaskExecutor: task #{task_id} {decision} by human")
+                self.db.update_task(task_id, status="denied", output=f"Human decision: {decision}")
+                self.db.write_log(f"任务 #{task_id} 被人工{decision}", "WARN", "governor")
+                if self.punch_clock and punch_files:
+                    self.punch_clock.release(task_id)
+                return {"task_id": task_id, "status": "denied", "decision": decision}
+
+            log.info(f"TaskExecutor: task #{task_id} approved, proceeding")
+            self.db.write_log(f"任务 #{task_id} 已获人工批准，开始执行", "INFO", "governor")
 
         output = "(no output)"
         status = "failed"

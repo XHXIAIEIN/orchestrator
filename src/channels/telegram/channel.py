@@ -77,8 +77,49 @@ class TelegramChannel(Channel):
             role = ch_cfg.ALLOWED_USERS.get(target_id, "admin")
             if role == "viewer" and msg_priority > 1:
                 continue
-            ok = self._send_text(target_id, message.text) and ok
+            # Approval requests get inline keyboard buttons
+            if message.event_type == "approval.request":
+                ok = self._send_approval_with_buttons(target_id, message.text) and ok
+            else:
+                ok = self._send_text(target_id, message.text) and ok
         return ok
+
+    def _send_approval_with_buttons(self, chat_id: str, text: str) -> bool:
+        """Send approval message with Approve/Deny inline keyboard."""
+        import re
+        # Extract task_id from the message text (format: Task: `xxx`)
+        match = re.search(r'Task:\s*`([^`]+)`', text)
+        task_id = match.group(1) if match else "unknown"
+
+        body = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True,
+            "reply_markup": {
+                "inline_keyboard": [[
+                    {"text": "批准", "callback_data": f"approve:{task_id}"},
+                    {"text": "拒绝", "callback_data": f"deny:{task_id}"},
+                ]]
+            }
+        }
+        payload = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self._base_url}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
+            result = json.loads(resp.read())
+            if not result.get("ok"):
+                log.warning(f"telegram: sendMessage (approval) failed: {result}")
+                return False
+            return True
+        except Exception as e:
+            log.warning(f"telegram: approval send failed: {e}")
+            return False
 
     def _send_text(self, chat_id: str, text: str) -> bool:
         chunks = self._split_message(text)
@@ -254,7 +295,7 @@ class TelegramChannel(Channel):
             self._stop_event.wait(timeout=2)
 
     def _get_updates(self) -> list:
-        params = f"offset={self._last_update_id + 1}&timeout={ch_cfg.POLL_TIMEOUT}&allowed_updates=[\"message\"]"
+        params = f"offset={self._last_update_id + 1}&timeout={ch_cfg.POLL_TIMEOUT}&allowed_updates=[\"message\",\"callback_query\"]"
         req = urllib.request.Request(
             f"{self._base_url}/getUpdates?{params}", method="GET",
         )
@@ -269,6 +310,13 @@ class TelegramChannel(Channel):
 
     def _handle_update(self, update: dict):
         self._last_update_id = update.get("update_id", self._last_update_id)
+
+        # Handle inline keyboard callback (approval buttons)
+        callback = update.get("callback_query")
+        if callback:
+            self._handle_callback_query(callback)
+            return
+
         message = update.get("message", {})
         chat_id = str(message.get("chat", {}).get("id", ""))
         if not chat_id:
@@ -478,6 +526,52 @@ class TelegramChannel(Channel):
         threading.Thread(target=_chat_with_typing, name="tg-chat", daemon=True).start()
 
     # ── Typing 指示器 ──────────────────────────────────────────────────────
+
+    def _handle_callback_query(self, callback: dict):
+        """Handle inline keyboard button press (approval decisions)."""
+        callback_id = callback.get("id", "")
+        data = callback.get("data", "")
+        chat_id = str(callback.get("from", {}).get("id", ""))
+        message_id = callback.get("message", {}).get("message_id")
+
+        # Auth check
+        if ch_cfg.ALLOWED_USERS and not ch_cfg.user_can(chat_id, "chat"):
+            self._tg_api("answerCallbackQuery", {"callback_query_id": callback_id, "text": "Unauthorized"})
+            return
+
+        # Parse callback_data: "approve:task-id" or "deny:task-id"
+        if ":" not in data:
+            return
+        action, task_id = data.split(":", 1)
+        if action not in ("approve", "deny"):
+            return
+
+        # Submit decision to approval gateway
+        try:
+            from src.governance.approval import get_approval_gateway
+            gw = get_approval_gateway()
+            gw.submit_decision(task_id, action, f"telegram:{chat_id}")
+        except Exception as e:
+            log.warning(f"telegram: approval callback failed: {e}")
+
+        # Answer callback (removes loading spinner on button)
+        label = "已批准" if action == "approve" else "已拒绝"
+        self._tg_api("answerCallbackQuery", {
+            "callback_query_id": callback_id,
+            "text": f"{label}: {task_id}",
+        })
+
+        # Update the original message to show the decision
+        if message_id:
+            self._tg_api("editMessageReplyMarkup", {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reply_markup": {"inline_keyboard": [[
+                    {"text": f"{label} ✓", "callback_data": "noop"}
+                ]]}
+            })
+
+        log.info(f"telegram: approval callback {action} for {task_id} from {chat_id}")
 
     def _send_typing(self, chat_id: str):
         try:
