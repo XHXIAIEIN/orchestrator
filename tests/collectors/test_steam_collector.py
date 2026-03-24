@@ -1,5 +1,5 @@
 import pytest
-from src.collectors.steam_collector import SteamCollector, parse_vdf_simple
+from src.collectors.steam.collector import SteamCollector, parse_vdf_simple
 from src.storage.events_db import EventsDB
 
 

@@ -1,7 +1,7 @@
 import subprocess
 import sys
 import pytest
-from src.collectors.git_collector import GitCollector
+from src.collectors.git.collector import GitCollector
 from src.storage.events_db import EventsDB
 
 _flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0

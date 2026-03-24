@@ -1,6 +1,6 @@
 import sqlite3
 import pytest
-from src.collectors.youtube_music_collector import YouTubeMusicCollector, _parse_title
+from src.collectors.youtube_music.collector import YouTubeMusicCollector, _parse_title
 from src.storage.events_db import EventsDB
 
 CHROME_EPOCH_OFFSET = 11644473600 * 1_000_000

@@ -44,22 +44,24 @@ def _find_collector_class(module) -> type[ICollector] | None:
 
 
 def discover_collectors() -> dict[str, dict]:
-    """Auto-discover collectors from manifest files.
+    """Auto-discover collectors from {name}/manifest.yaml directories.
 
-    Supports two layouts:
-      1. Directory: {name}/manifest.yaml + {name}/collector.py  (new, preferred)
-      2. Flat:      {name}.manifest.yaml + {name}_collector.py  (legacy)
-      3. YAML-only: {name}/manifest.yaml (no .py, uses yaml_runner)
-         or legacy:  yaml/{name}.yaml
+    Same pattern as departments/. Each collector lives in:
+        src/collectors/{name}/
+        ├── manifest.yaml   (identity + config)
+        ├── collector.py    (ICollector subclass)
+        └── __init__.py
+
+    YAML-only collectors have manifest.yaml but no collector.py (uses yaml_runner).
 
     Returns {name: {"manifest": dict, "cls": type[ICollector], "path": Path}}.
     """
     registry = {}
 
-    # Layout 1: Directory-based ({name}/manifest.yaml)
     for subdir in sorted(_COLLECTORS_DIR.iterdir()):
-        if not subdir.is_dir() or subdir.name.startswith(("_", ".", "yaml")):
+        if not subdir.is_dir() or subdir.name.startswith(("_", ".")):
             continue
+
         manifest_path = subdir / "manifest.yaml"
         if not manifest_path.exists():
             continue
@@ -78,47 +80,11 @@ def discover_collectors() -> dict[str, dict]:
                 cls = _find_collector_class(module)
                 if cls:
                     registry[name] = {"manifest": manifest, "cls": cls, "path": manifest_path}
-                    log.debug(f"registry: discovered {name} (dir layout)")
+                    log.debug(f"registry: discovered {name}")
             except Exception as e:
                 log.warning(f"registry: {name}/collector.py import failed: {e}")
         else:
-            # YAML-only collector in directory layout
             _register_yaml_collector(registry, name, manifest, manifest_path)
-
-    # Layout 2: Flat legacy ({name}.manifest.yaml + {name}_collector.py)
-    for manifest_path in sorted(_COLLECTORS_DIR.glob("*.manifest.yaml")):
-        manifest = _load_manifest(manifest_path)
-        if not manifest or "name" not in manifest:
-            continue
-
-        name = manifest["name"]
-        if name in registry:
-            continue  # Directory layout takes precedence
-
-        module_name = f"src.collectors.{name}_collector"
-        try:
-            module = importlib.import_module(module_name)
-            cls = _find_collector_class(module)
-            if cls:
-                registry[name] = {"manifest": manifest, "cls": cls, "path": manifest_path}
-                log.debug(f"registry: discovered {name} (flat layout)")
-        except Exception as e:
-            log.warning(f"registry: {name}_collector.py import failed: {e}")
-
-    # Layout 3: Legacy YAML directory (yaml/*.yaml)
-    yaml_dir = _COLLECTORS_DIR / "yaml"
-    if yaml_dir.exists():
-        for yaml_file in sorted(yaml_dir.glob("*.yaml")):
-            try:
-                from src.collectors.yaml_runner import YAMLCollector
-                meta = YAMLCollector.meta_from_yaml(yaml_file)
-                if meta.name not in registry:
-                    _register_yaml_collector(registry, meta.name, {
-                        "name": meta.name, "display_name": meta.display_name,
-                        "category": meta.category, "enabled": meta.default_enabled,
-                    }, yaml_file)
-            except Exception as e:
-                log.warning(f"registry: YAML collector {yaml_file.name} failed: {e}")
 
     return registry
 

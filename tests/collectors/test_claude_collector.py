@@ -1,7 +1,7 @@
 import json
 import pytest
 from pathlib import Path
-from src.collectors.claude_collector import ClaudeCollector
+from src.collectors.claude.collector import ClaudeCollector
 from src.storage.events_db import EventsDB
 
 

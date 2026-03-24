@@ -2,7 +2,7 @@ import sqlite3
 import time
 import pytest
 from pathlib import Path
-from src.collectors.browser_collector import BrowserCollector, categorize_url
+from src.collectors.browser.collector import BrowserCollector, categorize_url
 from src.storage.events_db import EventsDB
 
 CHROME_EPOCH_OFFSET = 11644473600 * 1_000_000
