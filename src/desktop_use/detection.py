@@ -108,7 +108,12 @@ class GrayscaleStage(DetectionStage):
 
 
 class TopHatStage(DetectionStage):
-    """Top-Hat transform — extract foreground from uneven background."""
+    """Adaptive Top-Hat / Black-Hat based on background brightness.
+
+    Dark background (median < 128) → TopHat (extract bright elements).
+    Light background (median >= 128) → BlackHat (extract dark elements).
+    Auto-selects based on grayscale median — works on any theme.
+    """
 
     def __init__(self, kernel_size: int = 80):
         self.kernel_size = kernel_size
@@ -119,7 +124,13 @@ class TopHatStage(DetectionStage):
             ctx = GrayscaleStage().process(ctx)
         kernel = cv2.getStructuringElement(
             cv2.MORPH_RECT, (self.kernel_size, self.kernel_size))
-        ctx.gray = cv2.morphologyEx(ctx.gray, cv2.MORPH_TOPHAT, kernel)
+        median = float(np.median(ctx.gray))
+        if median < 128:
+            # Dark background → TopHat extracts bright foreground
+            ctx.gray = cv2.morphologyEx(ctx.gray, cv2.MORPH_TOPHAT, kernel)
+        else:
+            # Light background → BlackHat extracts dark foreground
+            ctx.gray = cv2.morphologyEx(ctx.gray, cv2.MORPH_BLACKHAT, kernel)
         return ctx
 
 
