@@ -1,4 +1,4 @@
-"""Tests for src/gui/trajectory.py — TDD first."""
+"""Tests for src/desktop_use/trajectory.py -- Trajectory data structure."""
 
 import base64
 import json
@@ -6,7 +6,8 @@ import time
 
 import pytest
 
-from src.gui.trajectory import Trajectory, TrajectoryStep
+from src.desktop_use.trajectory import Trajectory
+from src.desktop_use.types import TrajectoryStep
 
 
 # ---------------------------------------------------------------------------
@@ -15,7 +16,6 @@ from src.gui.trajectory import Trajectory, TrajectoryStep
 
 def _make_step(action: dict = None, result: str = "success") -> TrajectoryStep:
     """Return a minimal TrajectoryStep with a tiny fake JPEG thumbnail."""
-    # Minimal valid JPEG header bytes (will not render, but enough for b64 tests)
     fake_jpeg = bytes([0xFF, 0xD8, 0xFF, 0xE0]) + b"\x00" * 16 + bytes([0xFF, 0xD9])
     return TrajectoryStep(
         screenshot_thumbnail=fake_jpeg,
@@ -72,7 +72,6 @@ class TestSlidingWindow:
         for s in steps:
             t.append(s)
         assert len(t) == 2
-        # Should keep last 2 (index 3 and 4)
         assert t.steps[0] is steps[3]
         assert t.steps[1] is steps[4]
 
@@ -141,7 +140,6 @@ class TestToPromptContext:
         img_key = "image" if "image" in ctx[0] else "screenshot"
         img_val = ctx[0][img_key]
         assert isinstance(img_val, str)
-        # Must be valid base64
         decoded = base64.b64decode(img_val)
         assert len(decoded) > 0
 

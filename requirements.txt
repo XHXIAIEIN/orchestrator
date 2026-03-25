@@ -14,7 +14,7 @@ pytest>=8.0.0
 # Optional: vector search (only used by src/storage/vector_db.py)
 # numpy
 
-# GUI Engine (src/gui/) — Windows only, not installed in Docker
+# GUI Engine (src/desktop_use/) — Windows only, not installed in Docker
 # Install separately: pip install -r requirements-gui.txt
 # mss>=9.0.0
 # pyautogui>=0.9.54

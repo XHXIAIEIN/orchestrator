@@ -1,4 +1,4 @@
-"""Sliding window trajectory for GUI engine context.
+"""Sliding window trajectory for desktop automation engine context.
 
 Keeps the last N (screenshot, action, result) steps and provides
 helpers for turning them into LLM-ready context.
@@ -9,15 +9,8 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass, field
-from typing import Any
 
-
-@dataclass
-class TrajectoryStep:
-    screenshot_thumbnail: bytes  # resized JPEG, ~80-120 KB
-    action: dict                 # the action that was taken
-    result: str                  # "success" / error string
-    timestamp: float
+from .types import TrajectoryStep
 
 
 @dataclass
@@ -59,7 +52,7 @@ class Trajectory:
         ctx: list[dict] = []
         for idx, step in enumerate(self.steps, start=1):
             action_json = json.dumps(step.action, ensure_ascii=False)
-            text = f"Step {idx}: {action_json} → {step.result}"
+            text = f"Step {idx}: {action_json} -> {step.result}"
             b64 = base64.b64encode(step.screenshot_thumbnail).decode("ascii")
             ctx.append({"text": text, "image": b64, "screenshot": b64})
         return ctx
@@ -74,7 +67,7 @@ class Trajectory:
     def get_action_summary(self) -> str:
         """Return a multi-line text summary of all steps.
 
-        Format: ``Step 1: {...} → success\\nStep 2: {...} → error``
+        Format: ``Step 1: {...} -> success\\nStep 2: {...} -> error``
         """
         if not self.steps:
             return ""
@@ -82,5 +75,5 @@ class Trajectory:
         lines: list[str] = []
         for idx, step in enumerate(self.steps, start=1):
             action_json = json.dumps(step.action, ensure_ascii=False)
-            lines.append(f"Step {idx}: {action_json} → {step.result}")
+            lines.append(f"Step {idx}: {action_json} -> {step.result}")
         return "\n".join(lines)

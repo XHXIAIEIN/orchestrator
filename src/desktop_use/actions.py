@@ -1,12 +1,14 @@
-"""
-Whitelist-based GUI action executor.
+"""Action executor interface + pyautogui default implementation.
 
-Only dispatches pre-approved pyautogui operations — never executes raw code.
+Only dispatches pre-approved operations -- never executes raw code.
 """
+
+from __future__ import annotations
 
 import subprocess
 import threading
 import time
+from abc import ABC, abstractmethod
 
 import pyautogui
 
@@ -30,7 +32,23 @@ ALLOWED_ACTIONS = {
 }
 
 
-class ActionExecutor:
+# ---------------------------------------------------------------------------
+# Interface
+# ---------------------------------------------------------------------------
+
+class ActionExecutor(ABC):
+    """Pluggable action executor backend."""
+
+    @abstractmethod
+    def execute(self, action: dict) -> str:
+        """Execute a single action. Returns a status string."""
+
+
+# ---------------------------------------------------------------------------
+# Default implementation: pyautogui
+# ---------------------------------------------------------------------------
+
+class PyAutoGUIExecutor(ActionExecutor):
     """Dispatch GUI actions from an explicit whitelist.
 
     Args:
@@ -45,13 +63,13 @@ class ActionExecutor:
         """Execute a single whitelisted action.
 
         Returns a status string:
-          - "INTERRUPTED: kill switch active"  — kill switch was set before dispatch
-          - "REJECTED: unknown action 'X'"     — action not in whitelist
-          - "DONE: <summary>"                  — done control signal
-          - "FAIL: <reason>"                   — fail control signal
-          - "screenshot_requested"             — screenshot action
-          - "success"                          — pyautogui call completed
-          - "INTERRUPTED: FailSafe triggered"  — pyautogui moved mouse to corner
+          - "INTERRUPTED: kill switch active"  -- kill switch was set before dispatch
+          - "REJECTED: unknown action 'X'"     -- action not in whitelist
+          - "DONE: <summary>"                  -- done control signal
+          - "FAIL: <reason>"                   -- fail control signal
+          - "screenshot_requested"             -- screenshot action
+          - "success"                          -- pyautogui call completed
+          - "INTERRUPTED: FailSafe triggered"  -- pyautogui moved mouse to corner
         """
         if self._kill.is_set():
             return "INTERRUPTED: kill switch active"
@@ -93,9 +111,6 @@ class ActionExecutor:
 
         elif name == "type_text":
             # Clipboard paste instead of pyautogui.write() to bypass IME.
-            # pyautogui.write() simulates individual key presses, which get
-            # eaten by Chinese/Japanese/Korean input methods and produce
-            # garbled text (e.g. "Hello" → "热车时突然投入").
             text = action["text"]
             _clipboard_paste(text)
 
@@ -154,6 +169,5 @@ def _clipboard_paste(text: str) -> None:
 
 def _ps_escape(text: str) -> str:
     """Escape a string for safe embedding in a PowerShell -Command argument."""
-    # Single-quote the string, doubling any internal single quotes
     escaped = text.replace("'", "''")
     return f"'{escaped}'"

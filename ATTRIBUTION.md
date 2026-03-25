@@ -132,7 +132,7 @@ perception-action loop pattern (screenshot → grounding → action execution),
 OCR-first grounding strategy, and trajectory-based action context. UI-TARS
 from ByteDance contributed UI understanding model concepts and grounding
 approaches for desktop interaction.
-**Where it lives:** `src/gui/` — `engine.py` (perception-action loop),
+**Where it lives:** `src/desktop_use/` — `engine.py` (perception-action loop),
 `grounder.py` + `grounder_ocr.py` (OCR grounding with fuzzy match),
 `trajectory.py` (sliding window action context), `actions.py` (whitelist
 ACL + kill switch), `screen.py` (multi-monitor capture + DPI mapping).

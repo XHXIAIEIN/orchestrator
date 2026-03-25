@@ -42,7 +42,7 @@ _Auto-generated: 2026-03-24 13:30 UTC_
         (10 files)
     - **signals/** (2 py)
         (2 files)
-  - **gui/** (10 py)
+  - **desktop_use/** (10 py)
   - **jobs/** (6 py)
   - **storage/** (3 py)
   - **tmp/**

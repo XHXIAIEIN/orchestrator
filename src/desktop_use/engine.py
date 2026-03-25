@@ -1,7 +1,9 @@
-"""GUIEngine — perception-action loop for GUI automation.
+"""DesktopEngine -- perception-action loop for GUI automation.
 
-Orchestrates screenshot capture, LLM reasoning, element grounding,
+Orchestrates screenshot capture, LLM reasoning, element grounding (OCR),
 and action execution in a kill-switch-protected loop.
+
+All components are pluggable via constructor injection.
 """
 
 from __future__ import annotations
@@ -13,15 +15,15 @@ import logging
 import re
 import threading
 import time
-from dataclasses import dataclass
 
-from src.gui.actions import ActionExecutor
-from src.gui.grounder import GroundingRouter
-from src.gui.prompts import REASONER_SYSTEM, build_reasoner_prompt
-from src.gui.screen import ScreenManager
-from src.gui.trajectory import Trajectory, TrajectoryStep
-from src.gui.window import WindowManager
-from src.core.llm_router import get_router
+from .types import GUIResult, MonitorInfo, LocateResult, OCRWord, TrajectoryStep
+from .ocr import OCREngine, WinOCREngine
+from .match import MatchStrategy, FuzzyMatchStrategy
+from .screen import ScreenCapture, MSSScreenCapture
+from .window import WindowManager, Win32WindowManager
+from .actions import ActionExecutor, PyAutoGUIExecutor
+from .trajectory import Trajectory
+from .prompts import REASONER_SYSTEM, build_reasoner_prompt
 
 try:
     from PIL import Image as _PIL_Image
@@ -31,32 +33,46 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class GUIResult:
-    success: bool
-    summary: str
-    steps_taken: int
-    trajectory: Trajectory | None = None
+class DesktopEngine:
+    """Main desktop automation engine.
 
-
-class GUIEngine:
-    """Main GUI automation engine.
+    All components are injectable. If not provided, defaults are used.
 
     Args:
-        max_steps: Maximum number of perception-action steps before giving up.
+        max_steps: Maximum perception-action steps before giving up.
         trajectory_size: How many recent steps to keep in the sliding window.
+        background: If True, use background input (PostMessage/SendMessage).
+        ocr_engine: OCR backend (default: WinOCREngine).
+        match_strategy: Text matching (default: FuzzyMatchStrategy).
+        screen: Screen capture backend (default: MSSScreenCapture).
+        window: Window management backend (default: Win32WindowManager).
+        executor: Action executor (default: PyAutoGUIExecutor).
+        ocr_lang: Language code for OCR (default: "zh-Hans-CN").
     """
 
-    def __init__(self, max_steps: int = 15, trajectory_size: int = 8,
-                 background: bool = False) -> None:
+    def __init__(
+        self,
+        max_steps: int = 15,
+        trajectory_size: int = 8,
+        background: bool = False,
+        ocr_engine: OCREngine | None = None,
+        match_strategy: MatchStrategy | None = None,
+        screen: ScreenCapture | None = None,
+        window: WindowManager | None = None,
+        executor: ActionExecutor | None = None,
+        ocr_lang: str = "zh-Hans-CN",
+    ) -> None:
         self.max_steps = max_steps
         self.background = background
         self.kill_event = threading.Event()
-        self.screen = ScreenManager()
-        self.grounder = GroundingRouter(screen_manager=self.screen)
-        self.executor = ActionExecutor(self.kill_event)
+
+        self.ocr_engine = ocr_engine or WinOCREngine()
+        self.match_strategy = match_strategy or FuzzyMatchStrategy()
+        self.screen = screen or MSSScreenCapture()
+        self.window = window or Win32WindowManager()
+        self.executor = executor or PyAutoGUIExecutor(self.kill_event)
         self.trajectory = Trajectory(max_steps=trajectory_size)
-        self.window = WindowManager()
+        self.ocr_lang = ocr_lang
         self._kill_listener = None
 
     # ------------------------------------------------------------------
@@ -86,8 +102,7 @@ class GUIEngine:
                 title_contains=window_title or target_app,
             )
             if info:
-                log.info("engine: locked onto '%s' (hwnd=%d, bg=%s)",
-                         info.title, info.hwnd, self.background)
+                log.info("engine: locked onto '%s' (bg=%s)", info.title, self.background)
             else:
                 log.warning("engine: could not find window '%s', running unlocked",
                             target_spec)
@@ -100,6 +115,43 @@ class GUIEngine:
             self.window.unlock()
         return result
 
+    def read_text(self, window_title: str = "", monitor_id: int = 1) -> list[str]:
+        """Convenience: capture a window (or screen) and OCR all text lines.
+
+        No LLM loop -- just capture + OCR.
+        """
+        screenshot_png = b""
+
+        if window_title:
+            info = self.window.lock(title_contains=window_title)
+            if info:
+                png = self.window.capture_window()
+                if png:
+                    screenshot_png = png
+            self.window.unlock()
+
+        if not screenshot_png:
+            screenshot_png, _ = self.screen.capture(monitor_id)
+
+        if not screenshot_png:
+            return []
+
+        img = _PIL_Image.open(io.BytesIO(screenshot_png))
+        words = self.ocr_engine.extract_words(img, self.ocr_lang)
+        if not words:
+            return []
+
+        # Group by line
+        by_line: dict[int, list[OCRWord]] = {}
+        for w in words:
+            by_line.setdefault(w.line_num, []).append(w)
+
+        lines = []
+        for line_num in sorted(by_line.keys()):
+            line_words = sorted(by_line[line_num], key=lambda w: w.left)
+            lines.append("".join(w.text for w in line_words))
+        return lines
+
     # ------------------------------------------------------------------
     # Internal loop
     # ------------------------------------------------------------------
@@ -109,7 +161,7 @@ class GUIEngine:
         for step_num in range(1, self.max_steps + 1):
             # 1. Kill-switch check
             if self.kill_event.is_set():
-                log.info("engine: kill event set — aborting at step %d", step_num)
+                log.info("engine: kill event set -- aborting at step %d", step_num)
                 return GUIResult(
                     success=False,
                     summary="INTERRUPTED by kill switch",
@@ -117,7 +169,7 @@ class GUIEngine:
                     trajectory=self.trajectory,
                 )
 
-            # 2. Capture screenshot (window-specific if locked, else full screen)
+            # 2. Capture screenshot
             screenshot_png = self._capture(monitor_id)
 
             # 3. Make thumbnail
@@ -139,6 +191,7 @@ class GUIEngine:
             images_b64 = images_b64[-3:]
 
             # Call LLM
+            from src.core.llm_router import get_router
             raw_response = get_router().generate(
                 REASONER_SYSTEM + "\n\n" + prompt,
                 task_type="gui_reason",
@@ -148,7 +201,8 @@ class GUIEngine:
             # 6. Parse action
             action = self._parse_action(raw_response)
             if action is None:
-                log.warning("engine: step %d — failed to parse LLM response: %r", step_num, raw_response[:200])
+                log.warning("engine: step %d -- failed to parse LLM response: %r",
+                            step_num, raw_response[:200])
                 self.trajectory.append(TrajectoryStep(
                     screenshot_thumbnail=thumbnail,
                     action={"action": "parse_error", "raw": raw_response[:200]},
@@ -159,10 +213,10 @@ class GUIEngine:
 
             action_name = action.get("action", "")
 
-            # 7. Done / Fail signals — handled before execution
+            # 7. Done / Fail signals
             if action_name == "done":
                 summary = action.get("summary", "Task completed")
-                log.info("engine: step %d — DONE: %s", step_num, summary)
+                log.info("engine: step %d -- DONE: %s", step_num, summary)
                 return GUIResult(
                     success=True,
                     summary=summary,
@@ -172,7 +226,7 @@ class GUIEngine:
 
             if action_name == "fail":
                 reason = action.get("reason", "Unknown failure")
-                log.info("engine: step %d — FAIL: %s", step_num, reason)
+                log.info("engine: step %d -- FAIL: %s", step_num, reason)
                 return GUIResult(
                     success=False,
                     summary=reason,
@@ -180,12 +234,13 @@ class GUIEngine:
                     trajectory=self.trajectory,
                 )
 
-            # 8. Target-based grounding — resolve "target" → x/y
+            # 8. Target-based grounding -- resolve "target" -> x/y via OCR
             if "target" in action and "x" not in action:
                 target_text = action["target"]
-                locate_result = self.grounder.locate(target_text, screenshot_png, monitor_id)
+                locate_result = self._locate(target_text, screenshot_png, monitor_id)
                 if locate_result is None:
-                    log.warning("engine: step %d — grounder failed to locate %r", step_num, target_text)
+                    log.warning("engine: step %d -- OCR failed to locate %r",
+                                step_num, target_text)
                     self.trajectory.append(TrajectoryStep(
                         screenshot_thumbnail=thumbnail,
                         action=action,
@@ -195,24 +250,26 @@ class GUIEngine:
                     continue
 
                 # Convert to global logical coords
-                gx, gy = self.screen.to_global_coords(locate_result.x, locate_result.y, monitor_id)
-                action = dict(action)  # shallow copy to avoid mutating original
+                gx, gy = self.screen.to_global_coords(
+                    locate_result.x, locate_result.y, monitor_id
+                )
+                action = dict(action)
                 action["x"] = gx
                 action["y"] = gy
                 del action["target"]
 
-            # 9. Execute action (background via WindowManager, or foreground via pyautogui)
+            # 9. Execute action
             if self.background and self.window.target:
                 result_str = self._execute_background(action)
             else:
-                # Foreground: focus target window first if locked
                 if self.window.target:
                     self.window.focus()
                 result_str = self.executor.execute(action)
 
             # 10. Kill check after execution
             if result_str.startswith("INTERRUPTED"):
-                log.warning("engine: step %d — execution interrupted: %s", step_num, result_str)
+                log.warning("engine: step %d -- execution interrupted: %s",
+                            step_num, result_str)
                 return GUIResult(
                     success=False,
                     summary=result_str,
@@ -238,11 +295,39 @@ class GUIEngine:
         )
 
     # ------------------------------------------------------------------
+    # OCR-based grounding
+    # ------------------------------------------------------------------
+
+    def _locate(self, target_text: str, screenshot_png: bytes,
+                monitor_id: int) -> LocateResult | None:
+        """Locate a text element in the screenshot using OCR + match strategy."""
+        if _PIL_Image is None:
+            return None
+        img = _PIL_Image.open(io.BytesIO(screenshot_png))
+        words = self.ocr_engine.extract_words(img, self.ocr_lang)
+        hit = self.match_strategy.match(target_text, words)
+        if hit is None:
+            return None
+
+        cx = hit.left + hit.width // 2
+        cy = hit.top + hit.height // 2
+
+        # Apply DPI coordinate transform
+        lx, ly = self.screen.to_logical_coords(cx, cy, monitor_id)
+
+        return LocateResult(
+            x=lx, y=ly,
+            confidence=hit.conf,
+            monitor_id=monitor_id,
+            method="ocr",
+        )
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
     def _capture(self, monitor_id: int) -> bytes:
-        """Capture screenshot — window-specific if locked, else full monitor."""
+        """Capture screenshot -- window-specific if locked, else full monitor."""
         if self.window.target:
             if not self.window.is_alive():
                 log.warning("engine: target window is gone")
@@ -286,8 +371,6 @@ class GUIEngine:
                 return "screenshot_requested"
 
             elif name in ("done", "fail", "double_click", "right_click", "drag"):
-                # Control signals handled before this point;
-                # complex actions fall back to foreground
                 wm.focus()
                 return self.executor.execute(action)
 
@@ -298,7 +381,8 @@ class GUIEngine:
             log.error("engine: background action '%s' failed: %s", name, e)
             return f"ERROR: {e}"
 
-    def _parse_action(self, raw: str) -> dict | None:
+    @staticmethod
+    def _parse_action(raw: str) -> dict | None:
         """Parse JSON action from LLM response.
 
         Handles:
@@ -337,7 +421,7 @@ class GUIEngine:
     def _make_thumbnail(png_bytes: bytes) -> bytes:
         """Resize PNG to 640px wide and return JPEG bytes."""
         if _PIL_Image is None:
-            return png_bytes  # fallback: return original if Pillow unavailable
+            return png_bytes
 
         img = _PIL_Image.open(io.BytesIO(png_bytes))
         target_width = 640
@@ -356,7 +440,7 @@ class GUIEngine:
 
             def on_press(key):
                 if key == keyboard.Key.esc:
-                    log.info("engine: ESC pressed — setting kill event")
+                    log.info("engine: ESC pressed -- setting kill event")
                     self.kill_event.set()
 
             listener = keyboard.Listener(on_press=on_press)
@@ -364,7 +448,7 @@ class GUIEngine:
             listener.start()
             self._kill_listener = listener
         except ImportError:
-            log.debug("engine: pynput not available — ESC kill listener disabled")
+            log.debug("engine: pynput not available -- ESC kill listener disabled")
             self._kill_listener = None
         except Exception as exc:
             log.warning("engine: failed to start kill listener: %s", exc)

@@ -1,8 +1,8 @@
-"""ScreenManager — multi-monitor screenshot capture with DPI-aware coordinate mapping.
+"""Screen capture interface + mss default implementation.
 
 Coordinate spaces
 -----------------
-- Physical pixels : what mss captures, what Tesseract / UI-TARS return
+- Physical pixels : what mss captures, what OCR returns
 - Logical pixels  : what pyautogui.moveTo / click expect
 
 All coords returned to callers are in **logical** pixels.
@@ -10,11 +10,14 @@ All coords returned to callers are in **logical** pixels.
 
 from __future__ import annotations
 
-import io
 import ctypes
+import io
 import sys
-from dataclasses import dataclass
+import logging
+from abc import ABC, abstractmethod
 from typing import List, Tuple
+
+from .types import MonitorInfo
 
 try:
     import mss as mss_module
@@ -26,28 +29,38 @@ try:
 except ImportError:
     Image = None  # type: ignore[assignment]
 
-
-# ---------------------------------------------------------------------------
-# Data model
-# ---------------------------------------------------------------------------
-
-@dataclass
-class MonitorInfo:
-    id: int
-    x_offset: int        # global offset in logical pixels
-    y_offset: int
-    width: int           # physical pixels
-    height: int
-    width_logical: int   # logical pixels
-    height_logical: int
-    scale_factor: int    # Windows scale percentage (100, 125, 150, 200 …)
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# ScreenManager
+# Interface
 # ---------------------------------------------------------------------------
 
-class ScreenManager:
+class ScreenCapture(ABC):
+    """Pluggable screen capture backend."""
+
+    @abstractmethod
+    def capture(self, monitor_id: int = 0) -> Tuple[bytes, MonitorInfo]:
+        """Capture a specific monitor. Returns (PNG bytes, MonitorInfo).
+
+        monitor_id=0 -> virtual screen (all monitors stitched)
+        monitor_id>=1 -> individual monitor
+        """
+
+    @abstractmethod
+    def to_logical_coords(self, phys_x: int, phys_y: int, monitor_id: int) -> Tuple[int, int]:
+        """Convert physical pixel coordinates to logical pixels."""
+
+    @abstractmethod
+    def to_global_coords(self, local_x: int, local_y: int, monitor_id: int) -> Tuple[int, int]:
+        """Convert monitor-local logical coordinates to global logical coordinates."""
+
+
+# ---------------------------------------------------------------------------
+# Default implementation: mss + Win32 DPI APIs
+# ---------------------------------------------------------------------------
+
+class MSSScreenCapture(ScreenCapture):
     """Probe monitors, capture screenshots, and map between coordinate spaces."""
 
     def __init__(self) -> None:
@@ -58,11 +71,6 @@ class ScreenManager:
     # ------------------------------------------------------------------
 
     def capture(self, monitor_id: int = 0) -> Tuple[bytes, MonitorInfo]:
-        """Capture a specific monitor and return (PNG bytes, MonitorInfo).
-
-        monitor_id=0  → virtual screen (all monitors stitched together by mss)
-        monitor_id>=1 → individual monitor
-        """
         if mss_module is None:
             raise RuntimeError("mss is not installed")
 
@@ -104,7 +112,6 @@ class ScreenManager:
     def to_logical_coords(
         self, phys_x: int, phys_y: int, monitor_id: int
     ) -> Tuple[int, int]:
-        """Convert physical pixel coordinates to logical pixels."""
         mon = self._get_monitor(monitor_id)
         scale = mon.scale_factor / 100
         return int(phys_x / scale), int(phys_y / scale)
@@ -112,7 +119,6 @@ class ScreenManager:
     def to_global_coords(
         self, local_x: int, local_y: int, monitor_id: int
     ) -> Tuple[int, int]:
-        """Convert monitor-local logical coordinates to global logical coordinates."""
         mon = self._get_monitor(monitor_id)
         return mon.x_offset + local_x, mon.y_offset + local_y
 
@@ -168,7 +174,6 @@ class ScreenManager:
             return 100
 
         try:
-            # EnumDisplayMonitors to get HMONITOR handles
             user32 = ctypes.windll.user32
             shcore = ctypes.windll.shcore
 
@@ -194,7 +199,6 @@ class ScreenManager:
 
             hmon = monitors_found[monitor_index]
             scale_factor = ctypes.c_uint(0)
-            # GetScaleFactorForMonitor returns SCALE_FACTOR enum (100, 125, 150 …)
             result = shcore.GetScaleFactorForMonitor(
                 ctypes.c_ulong(hmon),
                 ctypes.byref(scale_factor),
@@ -214,6 +218,5 @@ class ScreenManager:
             img.save(buf, format="PNG")
             return buf.getvalue()
 
-        # Fallback: return raw RGB bytes wrapped in a minimal pseudo-PNG marker
-        # so callers always get bytes (real PNG only when Pillow is available)
+        # Fallback: return raw RGB bytes
         return shot.rgb

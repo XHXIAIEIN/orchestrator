@@ -1,15 +1,13 @@
-"""
-Tests for src/gui/actions.py — ActionExecutor whitelist ACL.
+"""Tests for src/desktop_use/actions.py -- PyAutoGUIExecutor whitelist ACL.
 All pyautogui calls are mocked to avoid real mouse/keyboard movement.
 """
 
 import threading
-import time
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.gui.actions import ALLOWED_ACTIONS, ActionExecutor
+from src.desktop_use.actions import ALLOWED_ACTIONS, PyAutoGUIExecutor
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +42,7 @@ def kill_event():
 
 @pytest.fixture
 def executor(kill_event):
-    return ActionExecutor(kill_event)
+    return PyAutoGUIExecutor(kill_event)
 
 
 # ---------------------------------------------------------------------------
@@ -52,13 +50,13 @@ def executor(kill_event):
 # ---------------------------------------------------------------------------
 
 class TestClick:
-    @patch("src.gui.actions.pyautogui")
+    @patch("src.desktop_use.actions.pyautogui")
     def test_click_calls_pyautogui_click(self, mock_pg, executor):
         result = executor.execute({"action": "click", "x": 100, "y": 200})
         mock_pg.click.assert_called_once_with(100, 200, button="left")
         assert result == "success"
 
-    @patch("src.gui.actions.pyautogui")
+    @patch("src.desktop_use.actions.pyautogui")
     def test_click_right_button(self, mock_pg, executor):
         result = executor.execute({"action": "click", "x": 50, "y": 60, "button": "right"})
         mock_pg.click.assert_called_once_with(50, 60, button="right")
@@ -70,10 +68,10 @@ class TestClick:
 # ---------------------------------------------------------------------------
 
 class TestTypeText:
-    @patch("src.gui.actions._clipboard_paste")
+    @patch("src.desktop_use.actions._clipboard_paste")
     def test_type_text_uses_clipboard(self, mock_paste, executor):
         """type_text must use clipboard paste, not pyautogui.write(),
-        to avoid IME interference (e.g. 'Hello' → '热车时突然投入')."""
+        to avoid IME interference."""
         result = executor.execute({"action": "type_text", "text": "hello"})
         mock_paste.assert_called_once_with("hello")
         assert result == "success"
@@ -84,7 +82,7 @@ class TestTypeText:
 # ---------------------------------------------------------------------------
 
 class TestHotkey:
-    @patch("src.gui.actions.pyautogui")
+    @patch("src.desktop_use.actions.pyautogui")
     def test_hotkey_unpacks_keys(self, mock_pg, executor):
         result = executor.execute({"action": "hotkey", "keys": ["ctrl", "s"]})
         mock_pg.hotkey.assert_called_once_with("ctrl", "s")
@@ -96,7 +94,7 @@ class TestHotkey:
 # ---------------------------------------------------------------------------
 
 class TestScroll:
-    @patch("src.gui.actions.pyautogui")
+    @patch("src.desktop_use.actions.pyautogui")
     def test_scroll_passes_clicks_and_coords(self, mock_pg, executor):
         result = executor.execute({"action": "scroll", "x": 300, "y": 400, "clicks": -3})
         mock_pg.scroll.assert_called_once_with(-3, x=300, y=400)
@@ -108,7 +106,7 @@ class TestScroll:
 # ---------------------------------------------------------------------------
 
 class TestDrag:
-    @patch("src.gui.actions.pyautogui")
+    @patch("src.desktop_use.actions.pyautogui")
     def test_drag_calls_moveto_then_drag_with_delta(self, mock_pg, executor):
         result = executor.execute({"action": "drag", "x1": 10, "y1": 20, "x2": 110, "y2": 70})
         mock_pg.moveTo.assert_called_once_with(10, 20)
@@ -121,13 +119,13 @@ class TestDrag:
 # ---------------------------------------------------------------------------
 
 class TestWait:
-    @patch("src.gui.actions.time")
+    @patch("src.desktop_use.actions.time")
     def test_wait_capped_at_10s(self, mock_time, executor):
         result = executor.execute({"action": "wait", "seconds": 999})
         mock_time.sleep.assert_called_once_with(10)
         assert result == "success"
 
-    @patch("src.gui.actions.time")
+    @patch("src.desktop_use.actions.time")
     def test_wait_under_cap(self, mock_time, executor):
         result = executor.execute({"action": "wait", "seconds": 3})
         mock_time.sleep.assert_called_once_with(3)
@@ -173,14 +171,14 @@ class TestUnknown:
 # ---------------------------------------------------------------------------
 
 class TestKillSwitch:
-    @patch("src.gui.actions.pyautogui")
+    @patch("src.desktop_use.actions.pyautogui")
     def test_kill_switch_prevents_execution(self, mock_pg, kill_event, executor):
         kill_event.set()
         result = executor.execute({"action": "click", "x": 1, "y": 1})
         mock_pg.click.assert_not_called()
         assert result == "INTERRUPTED: kill switch active"
 
-    @patch("src.gui.actions.pyautogui")
+    @patch("src.desktop_use.actions.pyautogui")
     def test_failsafe_sets_kill_event_and_returns_interrupted(self, mock_pg, kill_event, executor):
         import pyautogui as real_pg
         mock_pg.FailSafeException = real_pg.FailSafeException

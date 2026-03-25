@@ -1,19 +1,22 @@
-"""WindowManager — find, focus, capture, and send input to specific windows.
+"""Window management interface + Win32 default implementation.
 
 Two operating modes:
-- Foreground: focus the window, then use pyautogui (existing behavior)
-- Background: use Win32 SendMessage / pywinauto to interact without focusing
-
-Background mode works for most standard Win32 apps (Notepad, Explorer, Office).
-Some apps (DirectX, UWP, Electron) may need foreground mode.
+- Foreground: focus the window, then use pyautogui
+- Background: use Win32 PostMessage / SendMessage to interact without focusing
 """
+
+from __future__ import annotations
+
 import ctypes
 import ctypes.wintypes
 import logging
 import subprocess
 import time
-from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 from io import BytesIO
+from typing import Optional
+
+from .types import WindowInfo
 
 try:
     from PIL import Image
@@ -22,54 +25,90 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Interface
+# ---------------------------------------------------------------------------
+
+class WindowManager(ABC):
+    """Pluggable window management backend."""
+
+    @abstractmethod
+    def find_windows(self, title_contains: str = "", process_name: str = "",
+                     class_name: str = "") -> list[WindowInfo]:
+        """Find all visible windows matching the given criteria."""
+
+    @abstractmethod
+    def lock(self, title_contains: str = "", process_name: str = "",
+             hwnd: int = 0) -> WindowInfo | None:
+        """Lock onto a target window. Returns WindowInfo or None if not found."""
+
+    @abstractmethod
+    def unlock(self) -> None:
+        """Release window lock."""
+
+    @abstractmethod
+    def focus(self) -> bool:
+        """Bring target window to foreground."""
+
+    @abstractmethod
+    def capture_window(self) -> bytes | None:
+        """Capture the target window as PNG bytes."""
+
+    @abstractmethod
+    def send_text(self, text: str) -> bool:
+        """Send text to target window (background, no focus required)."""
+
+    @abstractmethod
+    def send_click(self, x: int, y: int, button: str = "left") -> bool:
+        """Send a click at window-local coords (background, no focus required)."""
+
+    @abstractmethod
+    def send_hotkey(self, *keys: str) -> bool:
+        """Send a hotkey combination (background, no focus required)."""
+
+    @abstractmethod
+    def is_alive(self) -> bool:
+        """Check if the target window still exists."""
+
+    @property
+    @abstractmethod
+    def target(self) -> WindowInfo | None:
+        """Currently locked target window."""
+
+
+# ---------------------------------------------------------------------------
+# Default implementation: Win32 API via ctypes
+# ---------------------------------------------------------------------------
+
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
 
 
-@dataclass
-class WindowInfo:
-    hwnd: int
-    title: str
-    pid: int
-    class_name: str
-    rect: tuple[int, int, int, int]  # (left, top, right, bottom)
-
-    @property
-    def width(self) -> int:
-        return self.rect[2] - self.rect[0]
-
-    @property
-    def height(self) -> int:
-        return self.rect[3] - self.rect[1]
-
-
-class WindowManager:
-    """Find and interact with specific windows by title, PID, or HWND."""
+class Win32WindowManager(WindowManager):
+    """Find and interact with specific windows using Win32 API."""
 
     def __init__(self):
         self._target: WindowInfo | None = None
 
     @property
     def target(self) -> WindowInfo | None:
-        """Currently locked target window."""
         return self._target
 
     # ------------------------------------------------------------------
     # Window discovery
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def find_windows(title_contains: str = "", process_name: str = "",
+    def find_windows(self, title_contains: str = "", process_name: str = "",
                      class_name: str = "") -> list[WindowInfo]:
-        """Find all visible windows matching the given criteria."""
         results: list[WindowInfo] = []
         title_lower = title_contains.lower()
         proc_lower = process_name.lower()
 
-        # Get PID→process name mapping if needed
+        # Get PID->process name mapping if needed
         pid_map: dict[int, str] = {}
         if proc_lower:
-            pid_map = WindowManager._build_pid_map()
+            pid_map = self._build_pid_map()
 
         def enum_callback(hwnd, _lparam):
             if not user32.IsWindowVisible(hwnd):
@@ -123,27 +162,26 @@ class WindowManager:
 
     def lock(self, title_contains: str = "", process_name: str = "",
              hwnd: int = 0) -> WindowInfo | None:
-        """Lock onto a target window. Returns WindowInfo or None if not found."""
         if hwnd:
             self._target = self._info_from_hwnd(hwnd)
             if self._target:
-                log.info(f"WindowManager: locked onto hwnd={hwnd} '{self._target.title}'")
+                log.info("Win32WindowManager: locked onto hwnd=%d '%s'",
+                         hwnd, self._target.title)
             return self._target
 
         wins = self.find_windows(title_contains=title_contains,
                                  process_name=process_name)
         if not wins:
-            log.warning(f"WindowManager: no window found "
-                        f"(title='{title_contains}', process='{process_name}')")
+            log.warning("Win32WindowManager: no window found "
+                        "(title='%s', process='%s')", title_contains, process_name)
             return None
 
         self._target = wins[0]
-        log.info(f"WindowManager: locked onto '{self._target.title}' "
-                 f"(hwnd={self._target.hwnd}, pid={self._target.pid})")
+        log.info("Win32WindowManager: locked onto '%s' (hwnd=%d, pid=%d)",
+                 self._target.title, self._target.hwnd, self._target.pid)
         return self._target
 
-    def unlock(self):
-        """Release window lock."""
+    def unlock(self) -> None:
         self._target = None
 
     def refresh(self) -> WindowInfo | None:
@@ -154,7 +192,6 @@ class WindowManager:
         return self._target
 
     def is_alive(self) -> bool:
-        """Check if the target window still exists."""
         if not self._target:
             return False
         return bool(user32.IsWindow(self._target.hwnd))
@@ -164,7 +201,6 @@ class WindowManager:
     # ------------------------------------------------------------------
 
     def focus(self) -> bool:
-        """Bring target window to foreground. Returns True on success."""
         if not self._target:
             return False
         hwnd = self._target.hwnd
@@ -255,7 +291,7 @@ class WindowManager:
         gdi32.DeleteDC(mem_dc)
         user32.ReleaseDC(hwnd, hwnd_dc)
 
-        # Convert BGRA → RGB PIL Image → PNG bytes
+        # Convert BGRA -> RGB PIL Image -> PNG bytes
         img = Image.frombuffer("RGBA", (w, h), buf, "raw", "BGRA", 0, 1)
         img = img.convert("RGB")
         out = BytesIO()
@@ -267,15 +303,14 @@ class WindowManager:
     # ------------------------------------------------------------------
 
     def send_text(self, text: str) -> bool:
-        """Send text to target window via clipboard + WM_PASTE. No focus required.
+        """Send text via clipboard + WM_PASTE. No focus required.
 
         Uses clipboard because:
         - WM_CHAR doesn't work on modern controls (RichEditD2DPT, DirectWrite)
         - Bypasses IME interference (CJK input methods)
         - Works on virtually all editable controls
 
-        Automatically finds the deepest editable child control (Edit, RichEdit,
-        RichEditD2DPT, NotepadTextBox, etc.) to send WM_PASTE to.
+        Automatically finds the deepest editable child control.
         """
         if not self._target:
             return False
@@ -284,9 +319,9 @@ class WindowManager:
         edit_hwnd = self._find_edit_control(self._target.hwnd)
         target_hwnd = edit_hwnd or self._target.hwnd
         if edit_hwnd:
-            log.debug(f"WindowManager: send_text to edit control hwnd={edit_hwnd}")
+            log.debug("Win32WindowManager: send_text to edit control hwnd=%d", edit_hwnd)
 
-        # Set clipboard via Win32 API (faster than PowerShell subprocess)
+        # Set clipboard via PowerShell
         if not self._set_clipboard(text):
             return False
 
@@ -319,7 +354,7 @@ class WindowManager:
         if not found:
             return None
 
-        # Prefer the most specific control (RichEditD2DPT > Edit > NotepadTextBox)
+        # Prefer the most specific control
         priority = ["richeditd2dpt", "richedit20w", "richedit", "edit",
                      "scintilla", "notepadtextbox", "textbox"]
         for pclass in priority:
@@ -330,7 +365,7 @@ class WindowManager:
 
     @staticmethod
     def _set_clipboard(text: str) -> bool:
-        """Set clipboard content. Uses PowerShell Set-Clipboard for reliable Unicode."""
+        """Set clipboard content via PowerShell Set-Clipboard."""
         escaped = text.replace("'", "''")
         try:
             r = subprocess.run(
@@ -340,7 +375,7 @@ class WindowManager:
             )
             return r.returncode == 0
         except Exception as e:
-            log.error(f"WindowManager: Set-Clipboard failed: {e}")
+            log.error("Win32WindowManager: Set-Clipboard failed: %s", e)
             return False
 
     def send_click(self, x: int, y: int, button: str = "left") -> bool:
@@ -419,7 +454,7 @@ class WindowManager:
 
     @staticmethod
     def _build_pid_map() -> dict[int, str]:
-        """Build PID → process name mapping via tasklist."""
+        """Build PID -> process name mapping via tasklist."""
         try:
             out = subprocess.run(
                 ["tasklist", "/FO", "CSV", "/NH"],
@@ -439,7 +474,7 @@ class WindowManager:
 
     @staticmethod
     def _vk_map() -> dict[str, int]:
-        """Common key name → Win32 virtual key code."""
+        """Common key name -> Win32 virtual key code."""
         return {
             "ctrl": 0x11, "control": 0x11,
             "alt": 0x12, "menu": 0x12,
