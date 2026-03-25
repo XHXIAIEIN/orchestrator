@@ -643,6 +643,145 @@ class GroundingDINOStage(DetectionStage):
         return ctx
 
 
+class ListQuantizeStage(DetectionStage):
+    """Detect list items by template propagation from a reference element.
+
+    Strategy:
+    1. Find a reference item (highlighted selection via HSV, or estimated from
+       existing rects' spacing)
+    2. Use its height as step
+    3. Expand UP from reference → stop at first empty slot
+    4. Expand DOWN from reference → stop at first empty slot
+    5. Output: only items with content (no wasted checks on blank area)
+    """
+
+    def __init__(self, zone_rect: tuple[int,int,int,int] | None = None,
+                 min_density: float = 0.02):
+        self.zone_rect = zone_rect
+        self.min_density = min_density
+
+    def process(self, ctx):
+        import cv2
+
+        if self.zone_rect is None:
+            # Try to auto-detect list zones from existing zones/rects
+            return ctx
+
+        zx1, zy1, zx2, zy2 = self.zone_rect
+        zone_img = ctx.img[zy1:zy2, zx1:zx2]
+        zh = zy2 - zy1
+
+        # Step 1: find reference item
+        ref = self._find_highlight(zone_img)
+        if ref is None:
+            ref = self._estimate_from_rects(ctx.rects, self.zone_rect)
+        if ref is None:
+            return ctx
+
+        ref_h = ref[3] - ref[1]
+        if ref_h < 20:
+            return ctx
+
+        # Prepare foreground map
+        fg = self._get_foreground(zone_img)
+
+        items = []
+
+        # Step 2: expand UP — stop at first empty
+        y = ref[1] - ref_h
+        while y >= 0:
+            if not self._has_content(fg, y, y + ref_h):
+                break
+            items.insert(0, (zx1, zy1 + y, zx2, zy1 + y + ref_h))
+            y -= ref_h
+
+        # Reference item itself
+        items.append((zx1, zy1 + ref[1], zx2, zy1 + ref[3]))
+
+        # Step 3: expand DOWN — stop at first empty
+        y = ref[3]
+        while y + ref_h <= zh:
+            if not self._has_content(fg, y, y + ref_h):
+                break
+            items.append((zx1, zy1 + y, zx2, zy1 + y + ref_h))
+            y += ref_h
+
+        ctx.rects.extend(items)
+        return ctx
+
+    def _find_highlight(self, zone_img) -> tuple[int,int,int,int] | None:
+        """Find highlighted/selected item via HSV saturation."""
+        import cv2
+        hsv = cv2.cvtColor(zone_img, cv2.COLOR_BGR2HSV)
+        # High saturation = colored highlight (green selection, blue focus, etc.)
+        mask = cv2.inRange(hsv, (0, 50, 50), (180, 255, 255))
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        best = None
+        best_area = 0
+        zw = zone_img.shape[1]
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            area = w * h
+            if w > zw * 0.5 and h > 30 and area > best_area:
+                best = (x, y, x + w, y + h)
+                best_area = area
+        return best
+
+    def _estimate_from_rects(self, rects, zone_rect) -> tuple[int,int,int,int] | None:
+        """Estimate item height from spacing of existing rects in zone."""
+        zx1, zy1, zx2, zy2 = zone_rect
+        # Find rects that fall within the zone
+        zone_rects = [
+            r for r in rects
+            if r[0] >= zx1 and r[2] <= zx2 and r[1] >= zy1 and r[3] <= zy2
+        ]
+        if len(zone_rects) < 2:
+            return None
+
+        # Sort by Y center
+        zone_rects.sort(key=lambda r: (r[1] + r[3]) // 2)
+
+        # Compute Y-gaps between consecutive rects
+        gaps = []
+        for i in range(len(zone_rects) - 1):
+            cy1 = (zone_rects[i][1] + zone_rects[i][3]) // 2
+            cy2 = (zone_rects[i+1][1] + zone_rects[i+1][3]) // 2
+            gap = cy2 - cy1
+            if gap > 20:
+                gaps.append(gap)
+
+        if not gaps:
+            return None
+
+        step = int(np.median(gaps))
+        # Use first rect position as reference
+        r = zone_rects[0]
+        local_y = r[1] - zy1
+        return (0, local_y, zone_rect[2] - zone_rect[0], local_y + step)
+
+    @staticmethod
+    def _get_foreground(zone_img):
+        """Extract foreground using adaptive TopHat/BlackHat."""
+        import cv2
+        gray = cv2.cvtColor(zone_img, cv2.COLOR_BGR2GRAY)
+        median = float(np.median(gray))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 40))
+        if median >= 128:
+            return cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
+        else:
+            return cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
+
+    def _has_content(self, fg, y_start: int, y_end: int) -> bool:
+        """Check if a row region has enough foreground content."""
+        if y_start < 0 or y_end > fg.shape[0]:
+            return False
+        region = fg[y_start:y_end, :]
+        if region.size == 0:
+            return False
+        density = np.count_nonzero(region > 10) / region.size
+        return density > self.min_density
+
+
 # ---------------------------------------------------------------------------
 # Preset pipelines
 # ---------------------------------------------------------------------------

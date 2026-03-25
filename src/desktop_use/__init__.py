@@ -25,7 +25,7 @@ from .detection import (
     GrayscaleStage, TopHatStage, OtsuStage, DilateStage,
     ConnectedComponentStage, RectFilterStage, MergeStage,
     NestedStage, ClassifyStage, ChannelAnalysisStage, DiffStage,
-    OmniParserStage, GroundingDINOStage,
+    OmniParserStage, GroundingDINOStage, ListQuantizeStage,
     fast_pipeline, standard_pipeline, full_pipeline, grounding_pipeline,
 )
 
@@ -60,6 +60,6 @@ __all__ = [
     "GrayscaleStage", "TopHatStage", "OtsuStage", "DilateStage",
     "ConnectedComponentStage", "RectFilterStage", "MergeStage",
     "NestedStage", "ClassifyStage", "ChannelAnalysisStage", "DiffStage",
-    "OmniParserStage", "GroundingDINOStage",
+    "OmniParserStage", "GroundingDINOStage", "ListQuantizeStage",
     "fast_pipeline", "standard_pipeline", "full_pipeline", "grounding_pipeline",
 ]

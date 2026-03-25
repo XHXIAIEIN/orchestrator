@@ -442,3 +442,68 @@ class TestPresetPipelines:
         p = grounding_pipeline("button")
         assert len(p.stages) == 1
         assert isinstance(p.stages[0], GroundingDINOStage)
+
+
+from src.desktop_use.detection import ListQuantizeStage
+
+
+class TestListQuantizeStage:
+    def test_finds_items_from_highlight(self):
+        """6 equal-height items with one highlighted → detect all 6."""
+        img = np.full((600, 400, 3), 240, dtype=np.uint8)
+        for i in range(6):
+            y = 50 + i * 80
+            img[y+10:y+30, 20:60] = (100, 100, 100)    # avatar
+            img[y+10:y+25, 70:200] = (60, 60, 60)       # name
+            img[y+30:y+42, 70:250] = (120, 120, 120)    # subtitle
+        # Highlight item 2 (y=210-290) with green bg
+        img[210:290, 0:400] = (50, 180, 80)
+        img[220:240, 20:60] = (255, 255, 255)
+        img[220:235, 70:200] = (255, 255, 255)
+
+        ctx = DetectionContext(img=img)
+        ctx = ListQuantizeStage(zone_rect=(0, 50, 400, 530)).process(ctx)
+        assert len(ctx.rects) >= 5
+
+    def test_stops_at_empty(self):
+        """3 items then blank → no rects in blank area."""
+        img = np.full((600, 400, 3), 240, dtype=np.uint8)
+        for i in range(3):
+            y = 50 + i * 80
+            img[y+10:y+30, 20:200] = (60, 60, 60)
+            img[y+30:y+42, 20:250] = (120, 120, 120)
+        # Highlight item 1
+        img[130:210, 0:400] = (50, 180, 80)
+        img[140:160, 20:200] = (255, 255, 255)
+
+        ctx = DetectionContext(img=img)
+        ctx = ListQuantizeStage(zone_rect=(0, 50, 400, 530)).process(ctx)
+        # Should find 3, not extend into blank area
+        assert len(ctx.rects) <= 4
+
+    def test_no_highlight_uses_rects(self):
+        """No highlight → estimate from existing rects spacing."""
+        img = np.full((400, 300, 3), 240, dtype=np.uint8)
+        for i in range(4):
+            y = 30 + i * 70
+            img[y+5:y+20, 10:100] = (60, 60, 60)
+
+        ctx = DetectionContext(img=img)
+        # Pre-populate rects (as if ConnectedComponentStage ran first)
+        ctx.rects = [
+            (10, 35, 100, 50),
+            (10, 105, 100, 120),
+            (10, 175, 100, 190),
+            (10, 245, 100, 260),
+        ]
+        ctx = ListQuantizeStage(zone_rect=(0, 30, 300, 310)).process(ctx)
+        assert len(ctx.rects) >= 4  # original rects + list items
+
+    def test_no_zone_returns_unchanged(self):
+        ctx = DetectionContext(img=np.zeros((100, 100, 3), dtype=np.uint8))
+        ctx.rects = [(10, 10, 50, 50)]
+        ctx = ListQuantizeStage(zone_rect=None).process(ctx)
+        assert len(ctx.rects) == 1
+
+    def test_is_detection_stage(self):
+        assert issubclass(ListQuantizeStage, DetectionStage)
