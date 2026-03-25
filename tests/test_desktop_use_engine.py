@@ -227,3 +227,17 @@ class TestDesktopEngineKillSwitch:
         result = engine._run_loop("Do something", "", 1)
         assert result.success is False
         assert "INTERRUPTED" in result.summary
+
+
+class TestDesktopEngineBlueprint:
+    def test_engine_has_analyze(self):
+        from src.desktop_use.engine import DesktopEngine
+        engine = DesktopEngine()
+        assert hasattr(engine, 'analyze')
+        assert callable(engine.analyze)
+
+    def test_engine_has_read_zone(self):
+        from src.desktop_use.engine import DesktopEngine
+        engine = DesktopEngine()
+        assert hasattr(engine, 'read_zone')
+        assert callable(engine.read_zone)

@@ -50,3 +50,85 @@ class TestUIBlueprint:
         bp = UIBlueprint("Test", (1024, 768), [], [z], ["cv"], 0.0)
         assert bp.zone("chat") == z
         assert bp.zone("nope") is None
+
+
+from src.desktop_use.blueprint import BlueprintBuilder
+from src.desktop_use.perception import PerceptionLayer, PerceptionResult
+
+
+class FakeLayer(PerceptionLayer):
+    def __init__(self, result):
+        self._result = result
+    def analyze(self, hwnd, rect):
+        return self._result
+
+
+class TestBlueprintBuilder:
+    def test_builds_from_single_layer(self):
+        layer = FakeLayer(PerceptionResult(
+            elements=[UIElement("btn", (10, 20, 60, 40), "button", "click", "OK", "test", 1.0)],
+            zones=[UIZone("main", (0, 0, 800, 600), "panel", False)],
+            needs_fallback=False,
+            layer_name="test",
+        ))
+        builder = BlueprintBuilder(layers=[layer])
+        bp = builder.build(hwnd=0, window_class="Test", rect=(0, 0, 800, 600))
+        assert isinstance(bp, UIBlueprint)
+        assert len(bp.elements) == 1
+        assert len(bp.zones) == 1
+
+    def test_fallback_chain(self):
+        layer1 = FakeLayer(PerceptionResult(
+            elements=[], needs_fallback=True, layer_name="layer1",
+        ))
+        layer2 = FakeLayer(PerceptionResult(
+            elements=[UIElement("x", (0,0,10,10), "text", "display", "X", "l2", 1.0)],
+            zones=[UIZone("z", (0,0,100,100), "panel", False)],
+            needs_fallback=False, layer_name="layer2",
+        ))
+        builder = BlueprintBuilder(layers=[layer1, layer2])
+        bp = builder.build(hwnd=0, window_class="Test", rect=(0, 0, 100, 100))
+        assert len(bp.elements) == 1
+        assert "layer1" in bp.perception_layers
+        assert "layer2" in bp.perception_layers
+
+    def test_cache_hit(self):
+        call_count = [0]
+        class CountingLayer(PerceptionLayer):
+            def analyze(self, hwnd, rect):
+                call_count[0] += 1
+                return PerceptionResult(
+                    elements=[UIElement("a", (0,0,1,1), "label", "display", "A", "t", 1.0)],
+                    needs_fallback=False, layer_name="counting",
+                )
+        builder = BlueprintBuilder(layers=[CountingLayer()])
+        bp1 = builder.build(hwnd=0, window_class="C", rect=(0, 0, 800, 600))
+        bp2 = builder.build(hwnd=0, window_class="C", rect=(0, 0, 800, 600))
+        assert call_count[0] == 1
+        assert bp1 is bp2
+
+    def test_cache_invalidate_on_resize(self):
+        call_count = [0]
+        class CountingLayer(PerceptionLayer):
+            def analyze(self, hwnd, rect):
+                call_count[0] += 1
+                return PerceptionResult(
+                    elements=[], needs_fallback=False, layer_name="counting",
+                )
+        builder = BlueprintBuilder(layers=[CountingLayer()])
+        builder.build(hwnd=0, window_class="C", rect=(0, 0, 800, 600))
+        builder.build(hwnd=0, window_class="C", rect=(0, 0, 1024, 768))
+        assert call_count[0] == 2
+
+    def test_invalidate_by_class(self):
+        class SimpleLayer(PerceptionLayer):
+            def analyze(self, hwnd, rect):
+                return PerceptionResult(needs_fallback=False, layer_name="simple")
+        builder = BlueprintBuilder(layers=[SimpleLayer()])
+        builder.build(hwnd=0, window_class="A", rect=(0,0,100,100))
+        builder.build(hwnd=0, window_class="B", rect=(0,0,100,100))
+        assert len(builder._cache) == 2
+        builder.invalidate("A")
+        assert len(builder._cache) == 1
+        builder.invalidate()
+        assert len(builder._cache) == 0

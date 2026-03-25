@@ -463,3 +463,62 @@ class DesktopEngine:
                 log.debug("engine: error stopping kill listener: %s", exc)
             finally:
                 self._kill_listener = None
+
+    def analyze(self, window_title: str = "", process_name: str = "",
+                force: bool = False):
+        """Analyze a window and return its UIBlueprint.
+
+        Uses multi-layer perception: Win32 API -> CV edge detection -> OCR.
+        Results are cached by window_class + size.
+        """
+        from .blueprint import BlueprintBuilder
+        from .perception import Win32Layer, CVLayer, OCRLayer
+        from .types import UIBlueprint
+
+        # Lock onto window
+        info = self.window.lock(title_contains=window_title, process_name=process_name)
+        if not info:
+            return UIBlueprint("unknown", (0, 0))
+
+        # Build perception layers (lazy init)
+        if not hasattr(self, '_blueprint_builder'):
+            layers = [Win32Layer(), CVLayer(), OCRLayer(engine=self.ocr_engine)]
+            self._blueprint_builder = BlueprintBuilder(layers=layers)
+
+        rect = info.rect
+        bp = self._blueprint_builder.build(
+            hwnd=info.hwnd,
+            window_class=info.class_name,
+            rect=rect,
+            force=force,
+        )
+        return bp
+
+    def read_zone(self, blueprint, zone_name: str) -> list[str]:
+        """Read text from a dynamic zone using cropped OCR."""
+        zone = blueprint.zone(zone_name)
+        if not zone:
+            return []
+
+        # Capture window
+        png = self.window.capture_window()
+        if not png:
+            return []
+
+        # Crop to zone
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(png))
+        zx1, zy1, zx2, zy2 = zone.rect
+        cropped = img.crop((zx1, zy1, zx2, zy2))
+
+        # OCR the crop
+        words = self.ocr_engine.extract_words(cropped, "zh-Hans-CN")
+        by_line = {}
+        for w in words:
+            by_line.setdefault(w.line_num, []).append(w)
+        lines = []
+        for ln in sorted(by_line):
+            line_words = sorted(by_line[ln], key=lambda w: w.left)
+            lines.append("".join(w.text for w in line_words))
+        return lines

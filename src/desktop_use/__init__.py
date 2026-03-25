@@ -16,6 +16,9 @@ from .actions import ActionExecutor, PyAutoGUIExecutor, ALLOWED_ACTIONS
 from .trajectory import Trajectory
 from .engine import DesktopEngine
 from .prompts import REASONER_SYSTEM, build_reasoner_prompt
+from .types import UIElement, UIZone, UIBlueprint
+from .perception import PerceptionLayer, Win32Layer, CVLayer, OCRLayer, PerceptionResult
+from .blueprint import BlueprintBuilder
 
 __all__ = [
     # Types
@@ -37,4 +40,8 @@ __all__ = [
     "DesktopEngine",
     # Prompts
     "REASONER_SYSTEM", "build_reasoner_prompt",
+    # Blueprint
+    "UIElement", "UIZone", "UIBlueprint",
+    "PerceptionLayer", "Win32Layer", "CVLayer", "OCRLayer", "PerceptionResult",
+    "BlueprintBuilder",
 ]
