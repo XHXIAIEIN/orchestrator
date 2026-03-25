@@ -156,12 +156,25 @@ class BrowserRuntime:
 
     @property
     def available(self) -> bool:
-        """True 当且仅当：enabled=True 且 Chrome 进程存活。"""
+        """True 当且仅当：enabled=True 且 CDP 端口可响应。
+        注意：Chrome 主进程在 Windows 上可能立即退出（多进程架构），
+        实际工作由子进程完成，所以不能只检查 _process.poll()。
+        """
         if not self.enabled:
             return False
-        if self._process is None:
+        if not self._cdp_alive:
             return False
-        return self._process.poll() is None
+        return True
+
+    @property
+    def _cdp_alive(self) -> bool:
+        """检查 CDP 端口是否响应。"""
+        try:
+            url = f"http://127.0.0.1:{self.debug_port}/json/version"
+            with urllib.request.urlopen(url, timeout=2) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
 
     def _find_chrome(self) -> str | None:
         """自动检测系统中可用的 Chrome/Chromium 路径。"""
@@ -229,10 +242,13 @@ class BrowserRuntime:
 
         log.info(f"browser: launching Chrome on port {self.debug_port} (headless={self.headless})")
         try:
+            # Windows 某些环境下 subprocess.DEVNULL 会触发 [WinError 6] 句柄无效
+            # 改用显式打开 os.devnull 文件句柄
+            devnull = open(os.devnull, 'w')
             self._process = subprocess.Popen(
                 args,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=devnull,
+                stderr=devnull,
             )
         except OSError as e:
             log.error(f"browser: failed to launch Chrome: {e}")
@@ -247,23 +263,41 @@ class BrowserRuntime:
         return True
 
     def stop(self) -> None:
-        """优雅地终止 Chrome 进程。"""
-        if self._process is None:
-            return
-
-        pid = self._process.pid
-        if self._process.poll() is None:
-            log.info(f"browser: terminating Chrome PID={pid}")
-            self._process.terminate()
+        """优雅地终止 Chrome 进程。
+        Windows 上 Chrome 主进程可能已退出（子进程接管），
+        所以还需要通过 CDP 发送关闭命令或杀进程树。
+        """
+        # 先尝试通过 CDP 关闭浏览器（最可靠的方式）
+        if self._cdp_alive:
             try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                log.warning(f"browser: Chrome PID={pid} didn't exit in 5s, killing")
-                self._process.kill()
-                self._process.wait()
+                ws_url = self.cdp_url()
+                if ws_url:
+                    cdp = CDPClient(ws_url, timeout=5)
+                    cdp.connect()
+                    try:
+                        cdp.send("Browser.close")
+                    except Exception:
+                        pass
+                    finally:
+                        cdp.close()
+                    time.sleep(1)
+            except Exception:
+                pass
 
-        self._process = None
-        log.info(f"browser: Chrome PID={pid} stopped")
+        # 再处理主进程
+        if self._process is not None:
+            pid = self._process.pid
+            if self._process.poll() is None:
+                log.info(f"browser: terminating Chrome PID={pid}")
+                self._process.terminate()
+                try:
+                    self._process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    log.warning(f"browser: Chrome PID={pid} didn't exit in 5s, killing")
+                    self._process.kill()
+                    self._process.wait()
+            self._process = None
+            log.info(f"browser: Chrome stopped (original PID={pid})")
 
     def _wait_for_cdp(self, timeout: int = 15) -> bool:
         """轮询 CDP /json/version 直到就绪或超时。"""

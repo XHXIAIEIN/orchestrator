@@ -77,29 +77,21 @@ def test_available_false_when_disabled():
     assert runtime.available is False
 
 
-def test_available_false_when_process_none():
-    """enabled=True 但无进程时，available 应为 False。"""
+def test_available_false_when_cdp_not_responding():
+    """CDP 端口无响应时，available 应为 False。"""
     runtime = BrowserRuntime(enabled=True)
-    assert runtime._process is None
     assert runtime.available is False
 
 
-def test_available_false_when_process_exited():
-    """进程已退出时，available 应为 False。"""
+def test_available_true_when_cdp_responding():
+    """CDP 端口可响应时，available 应为 True。"""
     runtime = BrowserRuntime(enabled=True)
-    mock_proc = MagicMock(spec=subprocess.Popen)
-    mock_proc.poll.return_value = 0  # 进程已退出
-    runtime._process = mock_proc
-    assert runtime.available is False
-
-
-def test_available_true_when_process_running():
-    """进程存活时，available 应为 True。"""
-    runtime = BrowserRuntime(enabled=True)
-    mock_proc = MagicMock(spec=subprocess.Popen)
-    mock_proc.poll.return_value = None  # 进程存活
-    runtime._process = mock_proc
-    assert runtime.available is True
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        assert runtime.available is True
 
 
 def test_start_returns_false_when_disabled():
@@ -142,14 +134,17 @@ def test_stop_terminates_process():
 
 
 def test_health_running():
-    """进程存活且 CDP 可达时，health() 应返回 status='running' 及版本信息。"""
+    """CDP 可达时，health() 应返回 status='running' 及版本信息。"""
     import json
     import urllib.request
 
     runtime = BrowserRuntime(enabled=True, debug_port=9222)
-    mock_proc = MagicMock(spec=subprocess.Popen)
-    mock_proc.poll.return_value = None
-    runtime._process = mock_proc
+
+    # _cdp_alive 检查（available 属性用）
+    alive_resp = MagicMock()
+    alive_resp.status = 200
+    alive_resp.__enter__ = lambda s: s
+    alive_resp.__exit__ = MagicMock(return_value=False)
 
     version_resp = MagicMock()
     version_resp.read.return_value = json.dumps({"Browser": "Chrome/120.0.0.0"}).encode()
@@ -165,7 +160,7 @@ def test_health_running():
     list_resp.__enter__ = lambda s: s
     list_resp.__exit__ = MagicMock(return_value=False)
 
-    responses = [version_resp, list_resp]
+    responses = [alive_resp, version_resp, list_resp]
     with patch("urllib.request.urlopen", side_effect=responses):
         result = runtime.health()
 
