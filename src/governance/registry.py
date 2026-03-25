@@ -16,6 +16,8 @@ from pathlib import Path
 
 import yaml
 
+from src.core.llm_router import MODEL_SONNET
+
 log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent
@@ -36,7 +38,7 @@ class DepartmentEntry:
     skill_path: str
     tools: str  # comma-separated for backward compat
     tags: list[str] = field(default_factory=list)
-    model: str = "claude-sonnet-4-6"
+    model: str = MODEL_SONNET
 
 
 @dataclass

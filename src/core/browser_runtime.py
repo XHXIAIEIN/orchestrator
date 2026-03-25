@@ -242,13 +242,13 @@ class BrowserRuntime:
 
         log.info(f"browser: launching Chrome on port {self.debug_port} (headless={self.headless})")
         try:
-            # Windows 某些环境下 subprocess.DEVNULL 会触发 [WinError 6] 句柄无效
-            # 改用显式打开 os.devnull 文件句柄
-            devnull = open(os.devnull, 'w')
+            # Windows 某些非交互环境下 DEVNULL 和 open(os.devnull) 都会触发
+            # [WinError 6] 句柄无效。用 PIPE 最安全（不读就行）。
             self._process = subprocess.Popen(
                 args,
-                stdout=devnull,
-                stderr=devnull,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL if os.name != "nt" else subprocess.PIPE,
             )
         except OSError as e:
             log.error(f"browser: failed to launch Chrome: {e}")

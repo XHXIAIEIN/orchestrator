@@ -16,6 +16,8 @@ try:
 except ImportError:
     _HAS_ANTHROPIC = False
 
+from src.core.llm_router import MODEL_SONNET
+
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     denom = np.linalg.norm(a) * np.linalg.norm(b)
@@ -56,7 +58,7 @@ class VectorDB:
             return vec
         client = _anthropic.Anthropic(api_key=self.api_key)
         response = client.beta.messages.create(
-            model="claude-sonnet-4-6",
+            model=MODEL_SONNET,
             max_tokens=1,
             messages=[{"role": "user", "content": text}],
             betas=["embeddings-2025-03-05"],

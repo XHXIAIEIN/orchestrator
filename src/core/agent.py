@@ -2,6 +2,7 @@ import json
 from src.core.config import get_anthropic_client
 from src.core.db import Database
 from src.core.tools import SYSTEM_TOOLS, TOOL_HANDLERS, CLARIFY_TOOL  # noqa: F401
+from src.core.llm_router import MODEL_SONNET
 
 SYSTEM_PROMPT = """你是一个问题澄清专家。帮助用户把模糊的想法变成清晰、可执行的问题定义。
 
@@ -34,7 +35,7 @@ class ClarificationAgent:
 
         for _ in range(30):  # 最多 30 次 API 调用（含系统工具）
             response = self.client.messages.create(
-                model="claude-sonnet-4-6",
+                model=MODEL_SONNET,
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
                 tools=ALL_TOOLS,

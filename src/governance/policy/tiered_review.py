@@ -7,6 +7,8 @@ orc-spencer 启发：bead 级快审 + goal 级独立 sub-agent 深审。
 """
 import logging
 
+from src.core.llm_router import MODEL_SONNET, MODEL_HAIKU
+
 log = logging.getLogger(__name__)
 
 
@@ -43,7 +45,7 @@ def get_review_config(tier: str) -> dict:
         return {
             "max_turns": 30,
             "timeout_s": 300,
-            "model": "claude-sonnet-4-6",
+            "model": MODEL_SONNET,
             "instructions": (
                 "这是一个大型改动的深度审查。请：\n"
                 "1. 逐文件检查每个改动\n"
@@ -57,7 +59,7 @@ def get_review_config(tier: str) -> dict:
         return {
             "max_turns": 15,
             "timeout_s": 120,
-            "model": "claude-haiku-4-5-20251001",
+            "model": MODEL_HAIKU,
             "instructions": (
                 "快速审查小改动。重点：\n"
                 "1. git diff 检查实际改动\n"

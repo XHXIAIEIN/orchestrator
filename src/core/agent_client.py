@@ -10,10 +10,11 @@ from claude_agent_sdk import (
 )
 
 from src.governance.context.prompts import find_git_bash
+from src.core.llm_router import MODEL_SONNET
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = MODEL_SONNET
 
 
 async def _agent_query_async(
