@@ -491,6 +491,7 @@ class DesktopEngine:
             window_class=info.class_name,
             rect=rect,
             force=force,
+            screenshot_fn=self.window.capture_window,
         )
         return bp
 
