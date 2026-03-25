@@ -24,6 +24,11 @@ preflight:
   - check: skill_exists
     required: true
 
+output_schema:
+  required_fields:
+    - done_summary
+  optional_fields: []
+
 max_turns: 15  # read-only scans don't need many turns
 timeout_s: 180
 
