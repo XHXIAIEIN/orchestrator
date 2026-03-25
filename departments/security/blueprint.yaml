@@ -21,6 +21,16 @@ preflight:
   - check: skill_exists
     required: true
 
+output_schema:
+  required_fields:
+    - verdict
+    - findings
+  optional_fields:
+    - risk_level
+    - affected_files
+  format_hints:
+    verdict: "PASS | FAIL | NEEDS_REVIEW"
+
 max_turns: 20
 timeout_s: 240
 

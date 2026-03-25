@@ -10,6 +10,7 @@ from src.storage.events_db import EventsDB
 from src.governance.scrutiny import classify_cognitive_mode
 from src.governance.policy.blueprint import load_blueprint
 from src.governance.pipeline.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
+from src.governance.output_validator import validate_output
 
 # Optional imports
 try:
@@ -159,6 +160,27 @@ class ReviewManager:
 
         # ── Pipeline-aware stage checks ──
         _has = lambda stage: has_stage(dept_key, stage) if has_stage else False
+
+        # ── Output Schema Validation: Constraint Paradox ──
+        try:
+            validation = validate_output(dept_key, output)
+            if not validation["valid"]:
+                log.warning(
+                    f"review: output schema validation failed for {dept_key} task#{task_id}: "
+                    f"missing {validation['missing_fields']}"
+                )
+                self.db.add_agent_event(task_id, "output_validation", {
+                    "valid": False,
+                    "missing_fields": validation["missing_fields"],
+                    "score": validation["score"],
+                })
+            else:
+                log.info(
+                    f"review: output schema valid for {dept_key} task#{task_id} "
+                    f"(score={validation['score']})"
+                )
+        except Exception as e:
+            log.debug(f"ReviewManager: output schema validation error for task #{task_id}: {e}")
 
         # ── Verify Gates: non-negotiable 质量门控 ──
         if status == "done" and _has("verify_gates") and run_gates:
