@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 from src.core.browser_tools import (
     browser_navigate, browser_screenshot, browser_snapshot,
     browser_read_page, browser_click, browser_fill, browser_evaluate,
+    browser_scroll, browser_send_keys, browser_find_text,
+    browser_click_at, browser_search,
 )
 
 def _mock_runtime(page_id="PAGE1", ws_url="ws://fake/page"):
@@ -78,3 +80,146 @@ def test_browser_read_page():
     result = browser_read_page(rt, "http://example.com")
     assert "Hello World" in result
     rt.close_page.assert_called_once_with("PAGE1")
+
+
+# ------------------------------------------------------------------
+# 新增工具测试
+# ------------------------------------------------------------------
+
+def test_browser_scroll_down():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {"result": {"value": json.dumps({
+        "scrollY": 500, "scrollHeight": 3000, "innerHeight": 800,
+    })}}
+    result = browser_scroll(rt, "PAGE1", "down", 500)
+    assert result["status"] == "ok"
+    assert result["scrollY"] == 500
+    assert result["atBottom"] is False
+
+
+def test_browser_scroll_up():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {"result": {"value": json.dumps({
+        "scrollY": 0, "scrollHeight": 3000, "innerHeight": 800,
+    })}}
+    result = browser_scroll(rt, "PAGE1", "up", 500)
+    assert result["status"] == "ok"
+    assert result["scrollY"] == 0
+
+
+def test_browser_scroll_at_bottom():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {"result": {"value": json.dumps({
+        "scrollY": 2200, "scrollHeight": 3000, "innerHeight": 800,
+    })}}
+    result = browser_scroll(rt, "PAGE1", "down")
+    assert result["atBottom"] is True
+
+
+def test_browser_scroll_page_not_found():
+    rt, cdp = _mock_runtime()
+    result = browser_scroll(rt, "NONEXISTENT")
+    assert "error" in result
+
+
+def test_browser_send_keys_enter():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {}
+    result = browser_send_keys(rt, "PAGE1", "Enter")
+    assert result["status"] == "ok"
+    assert result["keys"] == "Enter"
+    # keyDown + keyUp = 2 calls
+    calls = [c for c in cdp.send.call_args_list if c[0][0] == "Input.dispatchKeyEvent"]
+    assert len(calls) == 2
+    assert calls[0][0][1]["type"] == "keyDown"
+    assert calls[1][0][1]["type"] == "keyUp"
+
+
+def test_browser_send_keys_text():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {}
+    result = browser_send_keys(rt, "PAGE1", "hi")
+    assert result["status"] == "ok"
+    # 2 chars × (keyDown + keyUp) = 4 calls
+    calls = [c for c in cdp.send.call_args_list if c[0][0] == "Input.dispatchKeyEvent"]
+    assert len(calls) == 4
+
+
+def test_browser_send_keys_page_not_found():
+    rt, cdp = _mock_runtime()
+    result = browser_send_keys(rt, "NONEXISTENT", "Enter")
+    assert "error" in result
+
+
+def test_browser_find_text_found():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {"result": {"value": json.dumps({
+        "found": True, "tag": "p", "text": "Hello World", "y": 1200,
+    })}}
+    result = browser_find_text(rt, "PAGE1", "Hello")
+    assert result["status"] == "ok"
+    assert result["found"] is True
+    assert result["tag"] == "p"
+
+
+def test_browser_find_text_not_found():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {"result": {"value": json.dumps({"found": False})}}
+    result = browser_find_text(rt, "PAGE1", "Nonexistent")
+    assert result["status"] == "not_found"
+
+
+def test_browser_find_text_page_not_found():
+    rt, cdp = _mock_runtime()
+    result = browser_find_text(rt, "NONEXISTENT", "text")
+    assert "error" in result
+
+
+def test_browser_click_at():
+    rt, cdp = _mock_runtime()
+    cdp.send.return_value = {}
+    result = browser_click_at(rt, "PAGE1", 100, 200)
+    assert result["status"] == "ok"
+    assert result["x"] == 100
+    assert result["y"] == 200
+    # mousePressed + mouseReleased = 2 calls
+    calls = [c for c in cdp.send.call_args_list if c[0][0] == "Input.dispatchMouseEvent"]
+    assert len(calls) == 2
+
+
+def test_browser_click_at_page_not_found():
+    rt, cdp = _mock_runtime()
+    result = browser_click_at(rt, "NONEXISTENT", 0, 0)
+    assert "error" in result
+
+
+def test_browser_search_google():
+    rt, cdp = _mock_runtime()
+    cdp.send.side_effect = [
+        {},  # Page.enable
+        {},  # Page.navigate
+        {"result": {"value": "complete"}},
+        {"result": {"value": "python web scraping - Google Search"}},
+    ]
+    result = browser_search(rt, "python web scraping")
+    assert result["query"] == "python web scraping"
+    assert result["engine"] == "google"
+    assert "page_id" in result
+
+
+def test_browser_search_bing():
+    rt, cdp = _mock_runtime()
+    cdp.send.side_effect = [
+        {},  # Page.enable
+        {},  # Page.navigate
+        {"result": {"value": "complete"}},
+        {"result": {"value": "Results - Bing"}},
+    ]
+    result = browser_search(rt, "test query", engine="bing")
+    assert result["engine"] == "bing"
+
+
+def test_browser_search_unknown_engine():
+    rt, cdp = _mock_runtime()
+    result = browser_search(rt, "test", engine="yahoo")
+    assert "error" in result
