@@ -266,3 +266,105 @@ class TestMiniPipeline:
         ])
         ctx = pipeline.run(self._make_ui_image())
         assert len(ctx.rects) >= 1
+
+
+from src.desktop_use.detection import (
+    NestedStage, ClassifyStage, ChannelAnalysisStage, DiffStage,
+)
+
+
+class TestNestedStage:
+    def test_detects_children(self):
+        img = np.zeros((400, 600, 3), dtype=np.uint8)
+        img[:] = (30, 30, 30)
+        img[50:350, 50:550] = (60, 60, 60)
+        img[80:110, 80:200] = (180, 180, 180)
+        img[150:190, 80:120] = (160, 160, 160)
+        ctx = DetectionContext(img=img)
+        ctx.rects = [(50, 50, 550, 350)]
+        ctx = NestedStage().process(ctx)
+        assert len(ctx.rects) > 1
+
+    def test_skips_small_rects(self):
+        img = np.zeros((400, 600, 3), dtype=np.uint8)
+        ctx = DetectionContext(img=img)
+        ctx.rects = [(10, 10, 30, 30)]  # too small for nesting
+        original_count = len(ctx.rects)
+        ctx = NestedStage().process(ctx)
+        assert len(ctx.rects) == original_count
+
+
+class TestClassifyStage:
+    def test_icon(self):
+        ctx = DetectionContext(img=np.zeros((600, 800, 3), dtype=np.uint8))
+        ctx.rects = [(10, 10, 40, 40)]  # 30x30 square
+        ctx = ClassifyStage().process(ctx)
+        assert ctx.classifications[0] == "icon"
+
+    def test_text(self):
+        ctx = DetectionContext(img=np.zeros((600, 800, 3), dtype=np.uint8))
+        ctx.rects = [(10, 10, 210, 30)]  # 200x20 wide
+        ctx = ClassifyStage().process(ctx)
+        assert ctx.classifications[0] == "text"
+
+    def test_image(self):
+        ctx = DetectionContext(img=np.zeros((600, 800, 3), dtype=np.uint8))
+        ctx.rects = [(0, 0, 500, 400)]  # large
+        ctx = ClassifyStage().process(ctx)
+        assert ctx.classifications[0] == "image"
+
+    def test_container(self):
+        ctx = DetectionContext(img=np.zeros((600, 800, 3), dtype=np.uint8))
+        ctx.rects = [(10, 10, 200, 100)]  # medium, not square
+        ctx = ClassifyStage().process(ctx)
+        assert ctx.classifications[0] in ("container", "element")
+
+
+class TestChannelAnalysisStage:
+    def test_detects_green_highlight(self):
+        img = np.zeros((200, 400, 3), dtype=np.uint8)
+        img[:] = (40, 40, 40)
+        img[20:50, 20:200, 1] = 150  # G channel high (BGR: index 1 = G)
+        ctx = ChannelAnalysisStage().process(DetectionContext(img=img))
+        assert len(ctx.ui_states.get("highlight", [])) >= 1
+
+    def test_detects_red_badge(self):
+        img = np.zeros((200, 400, 3), dtype=np.uint8)
+        img[:] = (40, 40, 40)
+        img[10:25, 350:370, 2] = 200  # R channel high (BGR: index 2 = R)
+        ctx = ChannelAnalysisStage().process(DetectionContext(img=img))
+        assert len(ctx.ui_states.get("badge", [])) >= 1
+
+    def test_no_false_positives_on_gray(self):
+        img = np.full((100, 100, 3), 128, dtype=np.uint8)
+        ctx = ChannelAnalysisStage().process(DetectionContext(img=img))
+        assert len(ctx.ui_states.get("highlight", [])) == 0
+        assert len(ctx.ui_states.get("badge", [])) == 0
+
+
+class TestDiffStage:
+    def test_detects_change(self):
+        prev = np.full((200, 300, 3), 40, dtype=np.uint8)
+        curr = prev.copy()
+        curr[100:150, 100:200] = 180
+        ctx = DiffStage(prev_img=prev).process(DetectionContext(img=curr))
+        assert len(ctx.rects) >= 1
+
+    def test_no_change(self):
+        img = np.full((200, 300, 3), 40, dtype=np.uint8)
+        stage = DiffStage(prev_img=img.copy())
+        ctx = stage.process(DetectionContext(img=img))
+        assert len(ctx.rects) == 0
+        assert stage.should_continue(ctx) is False
+
+    def test_no_prev_continues(self):
+        stage = DiffStage(prev_img=None)
+        ctx = stage.process(DetectionContext(img=np.zeros((100, 100, 3), dtype=np.uint8)))
+        assert stage.should_continue(ctx) is True
+
+    def test_different_shape_continues(self):
+        prev = np.zeros((100, 100, 3), dtype=np.uint8)
+        curr = np.zeros((200, 200, 3), dtype=np.uint8)
+        stage = DiffStage(prev_img=prev)
+        ctx = stage.process(DetectionContext(img=curr))
+        assert stage.should_continue(ctx) is True

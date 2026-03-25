@@ -242,3 +242,135 @@ class MergeStage(DetectionStage):
                 used.add(i)
             result = [list(b) for b in new]
         return [tuple(b) for b in result]
+
+
+class NestedStage(DetectionStage):
+    """Recursively detect elements inside large containers."""
+
+    def __init__(self, min_block_area_ratio: float = 0.05, max_depth: int = 2):
+        self.min_block_area_ratio = min_block_area_ratio
+        self.max_depth = max_depth
+
+    def process(self, ctx):
+        import cv2
+        total_area = ctx.width * ctx.height
+        min_area = total_area * self.min_block_area_ratio
+        new_rects = list(ctx.rects)
+
+        for r in ctx.rects:
+            rw, rh = r[2] - r[0], r[3] - r[1]
+            if rw * rh < min_area:
+                continue
+            sub_img = ctx.img[r[1]:r[3], r[0]:r[2]]
+            if sub_img.size == 0:
+                continue
+            sub_pipeline = DetectionPipeline([
+                GrayscaleStage(), TopHatStage(kernel_size=40), OtsuStage(),
+                DilateStage(h_kernel=(2, 8), v_kernel=(4, 2)),
+                ConnectedComponentStage(min_w=10, min_h=8),
+            ])
+            sub_ctx = sub_pipeline.run(sub_img)
+            for sr in sub_ctx.rects:
+                gx1, gy1 = sr[0] + r[0], sr[1] + r[1]
+                gx2, gy2 = sr[2] + r[0], sr[3] + r[1]
+                # Skip if child is basically the parent
+                if (gx2 - gx1) > rw * 0.9 and (gy2 - gy1) > rh * 0.9:
+                    continue
+                new_rects.append((gx1, gy1, gx2, gy2))
+
+        ctx.rects = new_rects
+        return ctx
+
+
+class ClassifyStage(DetectionStage):
+    """Heuristic classification by aspect ratio and area."""
+
+    def process(self, ctx):
+        for i, r in enumerate(ctx.rects):
+            w, h = r[2] - r[0], r[3] - r[1]
+            ctx.classifications[i] = self._classify(w, h, ctx.width, ctx.height)
+        return ctx
+
+    @staticmethod
+    def _classify(w: int, h: int, img_w: int, img_h: int) -> str:
+        area_ratio = (w * h) / max(img_w * img_h, 1)
+        aspect = w / max(h, 1)
+        if area_ratio > 0.1:
+            return "image"
+        if 0.7 < aspect < 1.4 and w < 80:
+            return "icon"
+        if aspect > 3:
+            return "text"
+        if area_ratio > 0.02:
+            return "container"
+        return "element"
+
+
+class ChannelAnalysisStage(DetectionStage):
+    """Extract UI states from color channel differences."""
+
+    def process(self, ctx):
+        import cv2
+        b, g, r = cv2.split(ctx.img)
+        ctx.ui_states["highlight"] = self._find_regions(
+            cv2.subtract(g, r), threshold=30)
+        ctx.ui_states["badge"] = self._find_regions(
+            cv2.subtract(r, b), threshold=50, max_area=3000)
+        ctx.ui_states["link"] = self._find_regions(
+            cv2.subtract(b, r), threshold=30)
+        return ctx
+
+    @staticmethod
+    def _find_regions(
+        diff, threshold: int = 30, min_area: int = 50, max_area: int = 50000
+    ) -> list[tuple[int, int, int, int]]:
+        import cv2
+        mask = (diff > threshold).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(
+            mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        rects = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if min_area < area < max_area:
+                x, y, w, h = cv2.boundingRect(cnt)
+                rects.append((x, y, x + w, y + h))
+        return rects
+
+
+class DiffStage(DetectionStage):
+    """Compare with previous frame, only flag changed regions."""
+
+    def __init__(self, prev_img: np.ndarray | None = None,
+                 change_threshold: int = 20, min_change_ratio: float = 0.02):
+        self.prev_img = prev_img
+        self.change_threshold = change_threshold
+        self.min_change_ratio = min_change_ratio
+        self._has_changes = True
+
+    def process(self, ctx):
+        import cv2
+        if self.prev_img is None or self.prev_img.shape != ctx.img.shape:
+            self._has_changes = True
+            return ctx
+
+        prev_gray = cv2.cvtColor(self.prev_img, cv2.COLOR_BGR2GRAY)
+        curr_gray = cv2.cvtColor(ctx.img, cv2.COLOR_BGR2GRAY)
+        diff = cv2.absdiff(prev_gray, curr_gray)
+        _, mask = cv2.threshold(diff, self.change_threshold, 255, cv2.THRESH_BINARY)
+
+        change_ratio = np.count_nonzero(mask) / max(mask.size, 1)
+        if change_ratio < self.min_change_ratio:
+            self._has_changes = False
+            return ctx
+
+        self._has_changes = True
+        contours, _ = cv2.findContours(
+            mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            if w > 20 and h > 20:
+                ctx.rects.append((x, y, x + w, y + h))
+        return ctx
+
+    def should_continue(self, ctx):
+        return self._has_changes
