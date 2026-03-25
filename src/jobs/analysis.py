@@ -15,10 +15,15 @@ def run_analysis(db: EventsDB):
         db.write_log("开始每日分析", "INFO", "analyst")
         analyst = DailyAnalyst(db=db)
         result = analyst.run()
-        log.info(f"Analysis done: {result.get('summary', '')[:80]}")
-        db.write_log(f"每日分析完成：{result.get('summary','')[:60]}", "INFO", "analyst")
+        if result and result.get("summary"):
+            log.info(f"Analysis done: {result['summary'][:80]}")
+            db.write_log(f"每日分析完成：{result['summary'][:60]}", "INFO", "analyst")
+        else:
+            log.warning("Analysis returned empty result")
+            db.write_log("每日分析失败：Claude 返回空结果，日报未生成", "WARNING", "analyst")
     except Exception as e:
         log.error(f"Analysis failed: {e}")
+        db.write_log(f"每日分析异常：{e}", "ERROR", "analyst")
     try:
         db.write_log("开始生成洞察", "INFO", "insights")
         engine = InsightEngine(db=db)

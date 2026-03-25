@@ -319,8 +319,9 @@ class EventsDB:
         except sqlite3.IntegrityError:
             return False
 
-    def get_recent_events(self, days: int = 7, source: str = None) -> list:
-        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    def get_recent_events(self, days: int = 7, source: str = None, since: str = None) -> list:
+        if since is None:
+            since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             if source:
                 rows = conn.execute(

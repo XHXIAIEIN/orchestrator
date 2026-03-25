@@ -1,9 +1,12 @@
 import json
 import logging
 import subprocess
-from datetime import date
+from datetime import datetime, timezone, timedelta
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
+
+# Orchestrator serves a UTC+8 user — all daily boundaries use this offset
+_LOCAL_TZ = timezone(timedelta(hours=8))
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +21,12 @@ class DailyAnalyst:
         self.db = db or (EventsDB(db_path) if db_path else EventsDB())
 
     def run(self) -> dict:
-        events = self.db.get_recent_events(days=1)
+        # Pull events for "yesterday" in local timezone (UTC+8), not last-24h-UTC
+        now_local = datetime.now(_LOCAL_TZ)
+        yesterday_start = (now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+                           - timedelta(days=1))
+        since_utc = yesterday_start.astimezone(timezone.utc).isoformat()
+        events = self.db.get_recent_events(since=since_utc)
         profile = self.db.get_latest_profile()
 
         events_text = json.dumps(events[:50], ensure_ascii=False, indent=2, default=str)
@@ -63,7 +71,7 @@ class DailyAnalyst:
             log.error(f"DailyAnalyst: unexpected error: {e}")
             return {}
 
-        today = date.today().isoformat()
+        today = datetime.now(_LOCAL_TZ).date().isoformat()
         self.db.save_daily_summary(today, json.dumps(result, ensure_ascii=False))
         if result.get("profile_update"):
             updated = {**(profile or {}), **result["profile_update"]}
