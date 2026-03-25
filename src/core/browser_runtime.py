@@ -12,7 +12,10 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +47,21 @@ _MACOS_CHROME_PATHS = [
 
 _CHROME_WHICH_NAMES = ["chromium", "google-chrome", "chromium-browser", "chrome"]
 
+_TTL = {"read": 300, "interact": 600}
+
+
+@dataclass
+class TabLease:
+    tab_id: str
+    purpose: str           # "read" | "interact"
+    department: str
+    ttl_s: int = 300
+    _created_at: float = field(default_factory=time.monotonic)
+
+    @property
+    def expired(self) -> bool:
+        return (time.monotonic() - self._created_at) > self.ttl_s
+
 
 class BrowserRuntime:
     def __init__(
@@ -63,6 +81,7 @@ class BrowserRuntime:
         self.max_tabs = max_tabs
 
         self._process: subprocess.Popen | None = None
+        self._tabs: dict[str, TabLease] = {}
 
     @classmethod
     def from_env(cls) -> "BrowserRuntime":
@@ -274,6 +293,37 @@ class BrowserRuntime:
             "headless": self.headless,
             "tabs": tabs_count,
         }
+
+    # ------------------------------------------------------------------
+    # Tab pool management
+    # ------------------------------------------------------------------
+
+    def _reap_zombie_tabs_internal(self) -> int:
+        """清除已过期的 tab lease，返回清除数量。"""
+        expired_ids = [tid for tid, lease in self._tabs.items() if lease.expired]
+        for tid in expired_ids:
+            log.debug(f"browser: reaping zombie tab {tid} (purpose={self._tabs[tid].purpose}, dept={self._tabs[tid].department})")
+            del self._tabs[tid]
+        return len(expired_ids)
+
+    def _acquire_tab_internal(self, purpose: str, department: str) -> Optional[TabLease]:
+        """申请一个 tab lease。先清理僵尸，再检查容量上限。池满返回 None。"""
+        self._reap_zombie_tabs_internal()
+        if len(self._tabs) >= self.max_tabs:
+            log.warning(f"browser: tab pool exhausted (max_tabs={self.max_tabs}), cannot acquire for {department}/{purpose}")
+            return None
+        ttl = _TTL.get(purpose, 300)
+        tab_id = str(uuid.uuid4())
+        lease = TabLease(tab_id=tab_id, purpose=purpose, department=department, ttl_s=ttl)
+        self._tabs[tab_id] = lease
+        log.debug(f"browser: acquired tab {tab_id} for {department}/{purpose} (ttl={ttl}s)")
+        return lease
+
+    def _release_tab_internal(self, tab_id: str) -> None:
+        """释放指定 tab lease。"""
+        if tab_id in self._tabs:
+            lease = self._tabs.pop(tab_id)
+            log.debug(f"browser: released tab {tab_id} (purpose={lease.purpose}, dept={lease.department})")
 
 
 # 模块级单例

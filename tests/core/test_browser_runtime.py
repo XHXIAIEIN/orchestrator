@@ -1,8 +1,9 @@
 import os
 import subprocess
+import time
 import pytest
 from unittest.mock import patch, MagicMock
-from src.core.browser_runtime import BrowserRuntime
+from src.core.browser_runtime import BrowserRuntime, TabLease
 
 
 def test_find_chrome_returns_path_when_exists():
@@ -172,3 +173,56 @@ def test_health_running():
     assert result["chrome_version"] == "Chrome/120.0.0.0"
     assert result["tabs"] == 2
     assert result["debug_port"] == 9222
+
+
+# ------------------------------------------------------------------
+# Tab pool tests
+# ------------------------------------------------------------------
+
+def test_tab_lease_expired():
+    lease = TabLease(tab_id="page1", purpose="read", department="engineering", ttl_s=0)
+    # ttl_s=0 means immediately expired
+    time.sleep(0.01)
+    assert lease.expired
+
+
+def test_tab_lease_not_expired():
+    lease = TabLease(tab_id="page1", purpose="read", department="engineering", ttl_s=300)
+    assert not lease.expired
+
+
+def test_tab_pool_acquire_within_limit():
+    rt = BrowserRuntime(enabled=True, max_tabs=2)
+    tab = rt._acquire_tab_internal("read", "engineering")
+    assert tab is not None
+    assert len(rt._tabs) == 1
+    assert tab.purpose == "read"
+    assert tab.department == "engineering"
+
+
+def test_tab_pool_acquire_over_limit():
+    rt = BrowserRuntime(enabled=True, max_tabs=1)
+    t1 = rt._acquire_tab_internal("read", "engineering")
+    assert t1 is not None
+    t2 = rt._acquire_tab_internal("read", "operations")
+    assert t2 is None
+
+
+def test_release_tab():
+    rt = BrowserRuntime(enabled=True, max_tabs=5)
+    t1 = rt._acquire_tab_internal("read", "engineering")
+    assert len(rt._tabs) == 1
+    rt._release_tab_internal(t1.tab_id)
+    assert len(rt._tabs) == 0
+
+
+def test_reap_zombie_tabs():
+    rt = BrowserRuntime(enabled=True, max_tabs=5)
+    t1 = rt._acquire_tab_internal("read", "engineering")
+    t2 = rt._acquire_tab_internal("interact", "operations")
+    # Make t1 expired by setting _created_at in the past
+    rt._tabs[t1.tab_id]._created_at = time.monotonic() - 400
+    reaped = rt._reap_zombie_tabs_internal()
+    assert reaped == 1
+    assert t1.tab_id not in rt._tabs
+    assert t2.tab_id in rt._tabs
