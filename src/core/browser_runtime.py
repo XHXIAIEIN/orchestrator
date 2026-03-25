@@ -136,6 +136,29 @@ class BrowserRuntime:
         self._process: subprocess.Popen | None = None
         self._tabs: dict[str, TabLease] = {}
 
+    # ------------------------------------------------------------------
+    # Session profile 管理（从 GoLogin 偷师：按平台隔离 session）
+    # ------------------------------------------------------------------
+
+    def profile_dir(self, profile: str = "default") -> str:
+        """返回指定 profile 的 user-data-dir 路径。
+
+        按平台隔离 Chrome session（cookie/localStorage/IndexedDB），
+        避免跨平台 session 污染，同时实现登录状态持久化。
+
+        profile: 'default' | 'qq-music' | 'xiaohongshu' | 自定义名称
+        """
+        base = Path(self.user_data_dir) / "profiles" / profile
+        base.mkdir(parents=True, exist_ok=True)
+        return str(base)
+
+    def list_profiles(self) -> list[str]:
+        """列出所有已有的 session profile。"""
+        profiles_dir = Path(self.user_data_dir) / "profiles"
+        if not profiles_dir.exists():
+            return []
+        return [d.name for d in profiles_dir.iterdir() if d.is_dir()]
+
     @classmethod
     def from_env(cls) -> "BrowserRuntime":
         """从环境变量构建实例。"""
@@ -207,8 +230,13 @@ class BrowserRuntime:
         log.warning("browser: Chrome/Chromium not found on this system")
         return None
 
-    def start(self) -> bool:
-        """启动 Chrome 进程，等待 CDP 就绪。返回是否成功。"""
+    def start(self, profile: str | None = None) -> bool:
+        """启动 Chrome 进程，等待 CDP 就绪。返回是否成功。
+
+        profile: 可选的 session profile 名称。指定后使用隔离的 user-data-dir，
+                 cookie/localStorage/IndexedDB 在该 profile 内持久化。
+                 None 时使用默认 user_data_dir（向后兼容）。
+        """
         if not self.enabled:
             log.info("browser: BrowserRuntime is disabled, skipping start")
             return False
@@ -218,13 +246,14 @@ class BrowserRuntime:
             log.error("browser: cannot start — Chrome not found")
             return False
 
-        # 确保 user_data_dir 存在
-        Path(self.user_data_dir).mkdir(parents=True, exist_ok=True)
+        # 决定 user-data-dir：有 profile 就隔离，没有就用默认
+        data_dir = self.profile_dir(profile) if profile else self.user_data_dir
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
 
         args = [
             chrome_exe,
             f"--remote-debugging-port={self.debug_port}",
-            f"--user-data-dir={self.user_data_dir}",
+            f"--user-data-dir={data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-background-networking",

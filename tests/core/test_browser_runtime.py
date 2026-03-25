@@ -221,3 +221,35 @@ def test_reap_zombie_tabs():
     assert reaped == 1
     assert t1.tab_id not in rt._tabs
     assert t2.tab_id in rt._tabs
+
+
+# ------------------------------------------------------------------
+# Session profile tests
+# ------------------------------------------------------------------
+
+def test_profile_dir_creates_directory(tmp_path):
+    rt = BrowserRuntime(enabled=True, user_data_dir=str(tmp_path / "chrome"))
+    path = rt.profile_dir("qq-music")
+    assert os.path.isdir(path)
+    assert path.endswith(os.path.join("profiles", "qq-music"))
+
+
+def test_profile_dir_default(tmp_path):
+    rt = BrowserRuntime(enabled=True, user_data_dir=str(tmp_path / "chrome"))
+    path = rt.profile_dir()  # default
+    assert path.endswith(os.path.join("profiles", "default"))
+
+
+def test_list_profiles_empty(tmp_path):
+    rt = BrowserRuntime(enabled=True, user_data_dir=str(tmp_path / "chrome"))
+    assert rt.list_profiles() == []
+
+
+def test_list_profiles_with_profiles(tmp_path):
+    rt = BrowserRuntime(enabled=True, user_data_dir=str(tmp_path / "chrome"))
+    rt.profile_dir("qq-music")
+    rt.profile_dir("xiaohongshu")
+    profiles = rt.list_profiles()
+    assert "qq-music" in profiles
+    assert "xiaohongshu" in profiles
+    assert len(profiles) == 2
