@@ -62,40 +62,13 @@ def render_skeleton(
 
 def detect_elements(
     png_bytes: bytes,
-    gamma: float = 0.6,
-    contrast: float = 1.3,
-    brightness: float = 10,
-    block_size: int = 51,
-    threshold_c: int = -10,
-    h_dilate: tuple[int, int] = (2, 15),
-    v_dilate: tuple[int, int] = (7, 2),
-    min_w: int = 15,
-    min_h: int = 10,
+    mode: str = "standard",
 ) -> list[tuple[int, int, int, int]]:
-    """Detect UI elements via grayscale adaptive threshold + morphology.
-
-    Pipeline:
-    1. Grayscale + gamma correction (lift dark icons)
-    2. Contrast/brightness adjustment
-    3. Adaptive threshold (content vs uniform background)
-    4. Morphological close (seal small gaps within components)
-    5. Horizontal dilation (connect icon + text on same row)
-    6. Vertical dilation (connect title + subtitle)
-    7. Connected component analysis → bounding boxes
-
-    ~40ms, pure CV, no OCR or ML models needed.
+    """Detect UI elements via pluggable pipeline.
 
     Args:
         png_bytes: screenshot as PNG bytes
-        gamma: gamma correction value (<1 lifts shadows)
-        contrast: contrast multiplier
-        brightness: brightness offset
-        block_size: adaptive threshold block size
-        threshold_c: adaptive threshold constant (more negative = more selective)
-        h_dilate: (height, width) of horizontal dilation kernel
-        v_dilate: (height, width) of vertical dilation kernel
-        min_w: minimum element width
-        min_h: minimum element height
+        mode: "fast", "standard", or "full"
 
     Returns:
         list of (x1, y1, x2, y2) bounding rectangles
@@ -112,49 +85,21 @@ def detect_elements(
     if img is None:
         return []
 
-    img_h, img_w = img.shape[:2]
-
-    # 1. Grayscale + gamma + contrast
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
-    gray_gamma = np.power(gray / 255.0, gamma) * 255.0
-    gray_adj = np.clip(contrast * gray_gamma + brightness, 0, 255).astype(np.uint8)
-
-    # 2. Adaptive threshold
-    binary = cv2.adaptiveThreshold(
-        gray_adj, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, blockSize=block_size, C=threshold_c,
-    )
-
-    # 3. Close small gaps within components
-    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, np.ones((4, 4), np.uint8))
-
-    # 4. Horizontal dilation — connect icon + text on same row
-    binary = cv2.dilate(binary, np.ones(h_dilate, np.uint8), iterations=1)
-
-    # 5. Vertical dilation — connect title + subtitle
-    binary = cv2.dilate(binary, np.ones(v_dilate, np.uint8), iterations=1)
-
-    # 6. Remove noise
-    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-
-    # 7. Connected components
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    rects = []
-    for cnt in contours:
-        x, y, rw, rh = cv2.boundingRect(cnt)
-        if rw < min_w or rh < min_h:
-            continue
-        if rw > img_w * 0.95 and rh > img_h * 0.95:
-            continue
-        rects.append((x, y, x + rw, y + rh))
-
-    return rects
+    from .detection import fast_pipeline, standard_pipeline, full_pipeline
+    pipelines = {
+        "fast": fast_pipeline,
+        "standard": standard_pipeline,
+        "full": full_pipeline,
+    }
+    factory = pipelines.get(mode, standard_pipeline)
+    ctx = factory().run(img)
+    return ctx.rects
 
 
 def render_annotated(
     screenshot: Image.Image | bytes,
     element_rects: list[tuple[int, int, int, int]] | None = None,
+    mode: str = "standard",
 ) -> Image.Image:
     """Render element annotation — green boxes around detected UI components.
 
@@ -163,6 +108,7 @@ def render_annotated(
     Args:
         screenshot: PIL Image or PNG bytes
         element_rects: pre-computed element bounding boxes (optional)
+        mode: detection pipeline mode ("fast", "standard", "full")
 
     Returns:
         PIL Image with green bounding boxes
@@ -179,7 +125,7 @@ def render_annotated(
     img = img.convert("RGB")
 
     if element_rects is None:
-        element_rects = detect_elements(png_bytes)
+        element_rects = detect_elements(png_bytes, mode=mode)
 
     draw = ImageDraw.Draw(img)
     for x1, y1, x2, y2 in element_rects:

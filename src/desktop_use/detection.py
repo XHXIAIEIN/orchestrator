@@ -374,3 +374,34 @@ class DiffStage(DetectionStage):
 
     def should_continue(self, ctx):
         return self._has_changes
+
+
+# ---------------------------------------------------------------------------
+# Preset pipelines
+# ---------------------------------------------------------------------------
+
+def fast_pipeline() -> DetectionPipeline:
+    """Grayscale → TopHat → Otsu → Dilate → ConnectedComponent. ~4ms."""
+    return DetectionPipeline([
+        GrayscaleStage(), TopHatStage(), OtsuStage(),
+        DilateStage(), ConnectedComponentStage(),
+    ])
+
+
+def standard_pipeline() -> DetectionPipeline:
+    """Fast + RectFilter + Merge. ~5ms."""
+    return DetectionPipeline([
+        GrayscaleStage(), TopHatStage(), OtsuStage(),
+        DilateStage(), ConnectedComponentStage(),
+        RectFilterStage(), MergeStage(),
+    ])
+
+
+def full_pipeline() -> DetectionPipeline:
+    """Standard + Nested + Classify + ChannelAnalysis. ~20ms."""
+    return DetectionPipeline([
+        GrayscaleStage(), TopHatStage(), OtsuStage(),
+        DilateStage(), ConnectedComponentStage(),
+        RectFilterStage(), MergeStage(),
+        NestedStage(), ClassifyStage(), ChannelAnalysisStage(),
+    ])

@@ -20,6 +20,13 @@ from .types import UIElement, UIZone, UIBlueprint
 from .perception import PerceptionLayer, Win32Layer, CVLayer, OCRLayer, PerceptionResult
 from .blueprint import BlueprintBuilder
 from .visualize import render_skeleton, render_annotated, render_grayscale, detect_elements
+from .detection import (
+    DetectionContext, DetectionStage, DetectionPipeline,
+    GrayscaleStage, TopHatStage, OtsuStage, DilateStage,
+    ConnectedComponentStage, RectFilterStage, MergeStage,
+    NestedStage, ClassifyStage, ChannelAnalysisStage, DiffStage,
+    fast_pipeline, standard_pipeline, full_pipeline,
+)
 
 __all__ = [
     # Types
@@ -47,4 +54,10 @@ __all__ = [
     "BlueprintBuilder",
     # Visualization
     "render_skeleton", "render_annotated", "render_grayscale", "detect_elements",
+    # Detection pipeline
+    "DetectionContext", "DetectionStage", "DetectionPipeline",
+    "GrayscaleStage", "TopHatStage", "OtsuStage", "DilateStage",
+    "ConnectedComponentStage", "RectFilterStage", "MergeStage",
+    "NestedStage", "ClassifyStage", "ChannelAnalysisStage", "DiffStage",
+    "fast_pipeline", "standard_pipeline", "full_pipeline",
 ]
