@@ -368,3 +368,67 @@ class TestDiffStage:
         stage = DiffStage(prev_img=prev)
         ctx = stage.process(DetectionContext(img=curr))
         assert stage.should_continue(ctx) is True
+
+
+from src.desktop_use.detection import (
+    OmniParserStage, GroundingDINOStage,
+    fast_pipeline, standard_pipeline, full_pipeline, grounding_pipeline,
+)
+
+
+class TestOmniParserStage:
+    def test_skips_when_not_available(self):
+        ctx = DetectionContext(img=np.zeros((100, 100, 3), dtype=np.uint8))
+        ctx.rects = [(10, 10, 50, 50)]
+        stage = OmniParserStage(model_path="/nonexistent", server_url="http://127.0.0.1:99999")
+        ctx = stage.process(ctx)
+        assert len(ctx.rects) >= 1  # original preserved
+
+    def test_is_detection_stage(self):
+        assert issubclass(OmniParserStage, DetectionStage)
+
+
+class TestGroundingDINOStage:
+    def test_skips_without_query(self):
+        ctx = DetectionContext(img=np.zeros((100, 100, 3), dtype=np.uint8))
+        ctx = GroundingDINOStage(query="").process(ctx)
+        assert ctx.rects == []
+
+    def test_skips_without_transformers(self):
+        """Should not crash even if transformers is not installed."""
+        ctx = DetectionContext(img=np.zeros((100, 100, 3), dtype=np.uint8))
+        ctx = GroundingDINOStage(query="test element").process(ctx)
+        # Either finds something or gracefully returns empty
+        assert isinstance(ctx.rects, list)
+
+    def test_is_detection_stage(self):
+        assert issubclass(GroundingDINOStage, DetectionStage)
+
+
+class TestPresetPipelines:
+    def test_fast_pipeline(self):
+        p = fast_pipeline()
+        assert len(p.stages) == 5
+
+    def test_standard_pipeline(self):
+        p = standard_pipeline()
+        assert len(p.stages) == 7
+
+    def test_full_pipeline_default(self):
+        p = full_pipeline()
+        assert len(p.stages) == 10
+
+    def test_full_pipeline_with_omniparser(self):
+        p = full_pipeline(omniparser_path="/some/path")
+        assert len(p.stages) == 11
+        assert any(isinstance(s, OmniParserStage) for s in p.stages)
+
+    def test_full_pipeline_with_grounding(self):
+        p = full_pipeline(grounding_query="search box")
+        assert len(p.stages) == 11
+        assert any(isinstance(s, GroundingDINOStage) for s in p.stages)
+
+    def test_grounding_pipeline(self):
+        p = grounding_pipeline("button")
+        assert len(p.stages) == 1
+        assert isinstance(p.stages[0], GroundingDINOStage)
