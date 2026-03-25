@@ -76,3 +76,72 @@ class TrajectoryStep:
     action: dict                 # the action that was taken
     result: str                  # "success" / error string
     timestamp: float
+
+
+@dataclass
+class UIElement:
+    """A UI element in a blueprint — button, input, label, icon, etc."""
+    name: str
+    rect: tuple[int, int, int, int]  # (left, top, right, bottom)
+    element_type: str                # "button" | "input" | "icon" | "label" | "text"
+    action: str                      # "click" | "click+type" | "display"
+    text: str                        # visible text (may be empty)
+    source: str                      # "win32" | "uia" | "cv" | "ocr" | "omniparser"
+    confidence: float                # 0.0 - 1.0
+
+    @property
+    def center(self) -> tuple[int, int]:
+        return (self.rect[0] + self.rect[2]) // 2, (self.rect[1] + self.rect[3]) // 2
+
+    @property
+    def width(self) -> int:
+        return self.rect[2] - self.rect[0]
+
+    @property
+    def height(self) -> int:
+        return self.rect[3] - self.rect[1]
+
+
+@dataclass
+class UIZone:
+    """A rectangular region in the UI — may be static (skeleton) or dynamic."""
+    name: str
+    rect: tuple[int, int, int, int]
+    zone_type: str                   # "list" | "messages" | "input" | "toolbar"
+    dynamic: bool
+
+    @property
+    def width(self) -> int:
+        return self.rect[2] - self.rect[0]
+
+    @property
+    def height(self) -> int:
+        return self.rect[3] - self.rect[1]
+
+
+@dataclass
+class UIBlueprint:
+    """Cached structural analysis of a window."""
+    window_class: str
+    window_size: tuple[int, int]
+    elements: list[UIElement] = field(default_factory=list)
+    zones: list[UIZone] = field(default_factory=list)
+    perception_layers: list[str] = field(default_factory=list)
+    created_at: float = 0.0
+
+    def find(self, text: str) -> UIElement | None:
+        """Find skeleton element by text (exact or substring)."""
+        for e in self.elements:
+            if e.text == text:
+                return e
+        for e in self.elements:
+            if text in e.text or e.text in text:
+                return e
+        return None
+
+    def zone(self, name: str) -> UIZone | None:
+        """Find zone by name."""
+        for z in self.zones:
+            if z.name == name:
+                return z
+        return None
