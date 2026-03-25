@@ -9,8 +9,8 @@ description: "Code engineering: writes code, fixes bugs, refactors, optimizes"
 authority: MUTATE  # can modify files, cannot commit/push (APPROVE = human only)
 
 policy:
-  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep, browser_navigate, browser_read_page, browser_summarize_page, browser_screenshot, browser_snapshot]
-  denied_tools: [WebFetch, WebSearch, browser_evaluate, browser_fill_form]
+  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep, browser_navigate, browser_read_page, browser_summarize_page, browser_screenshot, browser_snapshot, browser_scroll, browser_find_text, browser_search, browser_click_index, browser_send_keys]
+  denied_tools: [WebFetch, WebSearch, browser_evaluate, browser_fill_form, browser_click_at]
   writable_paths:
     - "src/**"
     - "departments/**"

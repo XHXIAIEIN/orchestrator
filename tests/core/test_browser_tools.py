@@ -5,7 +5,7 @@ from src.core.browser_tools import (
     browser_navigate, browser_screenshot, browser_snapshot,
     browser_read_page, browser_click, browser_fill, browser_evaluate,
     browser_scroll, browser_send_keys, browser_find_text,
-    browser_click_at, browser_search,
+    browser_click_at, browser_click_index, browser_search,
 )
 
 def _mock_runtime(page_id="PAGE1", ws_url="ws://fake/page"):
@@ -223,3 +223,65 @@ def test_browser_search_unknown_engine():
     rt, cdp = _mock_runtime()
     result = browser_search(rt, "test", engine="yahoo")
     assert "error" in result
+
+
+# ------------------------------------------------------------------
+# browser_snapshot (indexed) + browser_click_index
+# ------------------------------------------------------------------
+
+def test_browser_snapshot_indexed():
+    rt, cdp = _mock_runtime()
+    snapshot_data = json.dumps({
+        "lines": [
+            '[0] button: Submit',
+            '[1] a href="http://x.com": Link',
+            '    h1: Page Title',
+        ],
+        "map": {
+            "0": {"tag": "button", "selector": "#submit", "text": "Submit"},
+            "1": {"tag": "a", "selector": "a:nth-of-type(1)", "text": "Link"},
+        },
+        "total": 5,
+        "interactive": 2,
+    })
+    cdp.send.return_value = {"result": {"value": snapshot_data}}
+    result = browser_snapshot(rt, "PAGE1")
+    assert result["total_elements"] == 5
+    assert result["visible_interactive"] == 2
+    assert 0 in result["element_map"]
+    assert result["element_map"][0]["tag"] == "button"
+    assert "[0] button: Submit" in result["snapshot"]
+
+
+def test_browser_snapshot_page_not_found():
+    rt, cdp = _mock_runtime()
+    with pytest.raises(ValueError, match="not found"):
+        browser_snapshot(rt, "NONEXISTENT")
+
+
+def test_browser_click_index_js():
+    rt, cdp = _mock_runtime()
+    # First call: snapshot to get element_map
+    snapshot_data = json.dumps({
+        "lines": ["[0] button: Submit"],
+        "map": {"0": {"tag": "button", "selector": "#submit", "text": "Submit"}},
+        "total": 1, "interactive": 1,
+    })
+    # click_index calls snapshot (1 CDP call), then browser_click (1 CDP call)
+    cdp.send.side_effect = [
+        {"result": {"value": snapshot_data}},  # snapshot
+        {"result": {"value": None}},            # click
+    ]
+    result = browser_click_index(rt, "PAGE1", 0)
+    assert result["status"] == "ok"
+
+
+def test_browser_click_index_not_found():
+    rt, cdp = _mock_runtime()
+    snapshot_data = json.dumps({
+        "lines": [], "map": {}, "total": 0, "interactive": 0,
+    })
+    cdp.send.return_value = {"result": {"value": snapshot_data}}
+    result = browser_click_index(rt, "PAGE1", 99)
+    assert result["status"] == "error"
+    assert "99" in result["message"]

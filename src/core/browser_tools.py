@@ -68,40 +68,150 @@ def browser_screenshot(runtime, page_id: str) -> str:
         cdp.close()
 
 
-def browser_snapshot(runtime, page_id: str) -> str:
-    """获取页面 accessibility tree 的文本表示。"""
+def browser_snapshot(runtime, page_id: str) -> dict:
+    """获取页面结构的索引化表示。
+
+    从 browser-use 偷师的元素索引系统：
+    - 每个可交互元素分配数字索引 [0], [1], [2]...
+    - 只保留可见元素（可见性检测链：display/visibility/opacity + 视口相交）
+    - agent 可以直接用 browser_click_index(index) 操作元素
+
+    返回 {snapshot: str, element_map: dict[int, {tag, selector, text}]}
+    """
     pages = runtime.list_pages()
     target = next((p for p in pages if p["id"] == page_id), None)
     if not target:
         raise ValueError(f"Page {page_id} not found")
     cdp = runtime.new_cdp_client(target["webSocketDebuggerUrl"])
     try:
-        # 用 JS 提取页面结构（比 Accessibility.getFullAXTree 更兼容）
-        js = """
-        (() => {
-            const walk = (el, depth) => {
-                if (!el || depth > 5) return [];
-                let lines = [];
-                const tag = el.tagName?.toLowerCase() || '';
-                const role = el.getAttribute?.('role') || '';
-                const label = el.getAttribute?.('aria-label') || el.textContent?.trim().substring(0, 80) || '';
-                if (label && ['a','button','input','textarea','select','h1','h2','h3','h4','h5','h6','p','li','img'].includes(tag)) {
-                    const type = el.type ? ` type="${el.type}"` : '';
-                    const val = el.value ? ` value="${el.value.substring(0,50)}"` : '';
-                    lines.push('  '.repeat(depth) + `${tag}${role ? '['+role+']' : ''}${type}: ${label}${val}`);
-                }
-                for (const child of (el.children || [])) {
-                    lines.push(...walk(child, depth + 1));
-                }
-                return lines;
-            };
-            return walk(document.body, 0).join('\\n');
-        })()
-        """
-        result = cdp.send("Runtime.evaluate", {"expression": js})
-        return result.get("result", {}).get("value", "")
+        result = cdp.send("Runtime.evaluate", {"expression": _SNAPSHOT_JS})
+        raw = result.get("result", {}).get("value", '{"lines":[],"map":{}}')
+        data = json.loads(raw)
+        return {
+            "snapshot": "\n".join(data.get("lines", [])),
+            "element_map": {int(k): v for k, v in data.get("map", {}).items()},
+            "total_elements": data.get("total", 0),
+            "visible_interactive": data.get("interactive", 0),
+        }
     finally:
         cdp.close()
+
+
+# browser_snapshot 的 JS 实现：元素索引 + 可见性过滤
+_SNAPSHOT_JS = """
+(() => {
+    // 可见性检测链（从 browser-use 偷师）
+    const isVisible = (el) => {
+        if (!el || !el.getBoundingClientRect) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none') return false;
+        if (style.visibility === 'hidden') return false;
+        if (parseFloat(style.opacity) < 0.1) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return false;
+        // 视口相交测试：元素至少部分可见（含 2 屏缓冲区）
+        const buffer = window.innerHeight * 2;
+        if (rect.bottom < -buffer || rect.top > window.innerHeight + buffer) return false;
+        return true;
+    };
+
+    // 可交互元素选择器
+    const interactiveSelector = 'a[href], button, input, textarea, select, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [onclick], [tabindex]:not([tabindex="-1"])';
+
+    // 构建唯一 CSS selector（用于 click 回引）
+    const getSelector = (el) => {
+        if (el.id) return '#' + CSS.escape(el.id);
+        const tag = el.tagName.toLowerCase();
+        const parent = el.parentElement;
+        if (!parent) return tag;
+        const siblings = [...parent.children].filter(c => c.tagName === el.tagName);
+        if (siblings.length === 1) return getSelector(parent) + ' > ' + tag;
+        const idx = siblings.indexOf(el) + 1;
+        return getSelector(parent) + ' > ' + tag + ':nth-of-type(' + idx + ')';
+    };
+
+    const lines = [];
+    const map = {};
+    let idx = 0;
+    let total = 0;
+
+    // Pass 1: 可交互元素（带索引）
+    const interactives = document.querySelectorAll(interactiveSelector);
+    interactives.forEach(el => {
+        total++;
+        if (!isVisible(el)) return;
+        const tag = el.tagName.toLowerCase();
+        const role = el.getAttribute('role') || '';
+        const ariaLabel = el.getAttribute('aria-label') || '';
+        const text = ariaLabel || el.textContent?.trim().substring(0, 80) || '';
+        if (!text && tag !== 'input' && tag !== 'textarea') return;
+        const type = el.type ? ' type="' + el.type + '"' : '';
+        const val = el.value ? ' value="' + el.value.substring(0, 50) + '"' : '';
+        const href = el.href ? ' href="' + el.href.substring(0, 60) + '"' : '';
+        const roleStr = role ? '[' + role + ']' : '';
+
+        lines.push('[' + idx + '] ' + tag + roleStr + type + href + ': ' + text + val);
+        map[idx] = {tag, selector: getSelector(el), text: text.substring(0, 100)};
+        idx++;
+    });
+
+    // Pass 2: 内容元素（无索引，仅展示）
+    const contentTags = ['h1','h2','h3','h4','h5','h6','p','li','td','th','label','legend','figcaption'];
+    contentTags.forEach(tag => {
+        document.querySelectorAll(tag).forEach(el => {
+            if (!isVisible(el)) return;
+            const text = el.textContent?.trim().substring(0, 120);
+            if (!text || text.length < 2) return;
+            // 跳过已经被可交互元素覆盖的
+            if (el.querySelector(interactiveSelector)) return;
+            lines.push('    ' + tag + ': ' + text);
+        });
+    });
+
+    return JSON.stringify({lines, map, total, interactive: idx});
+})()
+"""
+
+
+def browser_click_index(runtime, page_id: str, index: int, method: str = "js") -> dict:
+    """通过 snapshot 的元素索引点击。先调用 browser_snapshot 获取 element_map。
+
+    method: 'js' (快，默认) | 'mouse' (真实鼠标事件，绕过反自动化检测)
+    """
+    # 先获取 snapshot 拿 element_map
+    snap = browser_snapshot(runtime, page_id)
+    element_map = snap.get("element_map", {})
+    if index not in element_map:
+        return {"status": "error", "message": f"Element index {index} not found. Valid: 0-{len(element_map)-1}"}
+
+    selector = element_map[index]["selector"]
+
+    if method == "mouse":
+        # 获取元素中心坐标，用真实鼠标事件
+        pages = runtime.list_pages()
+        target = next((p for p in pages if p["id"] == page_id), None)
+        if not target:
+            return {"error": f"Page {page_id} not found"}
+        cdp = runtime.new_cdp_client(target["webSocketDebuggerUrl"])
+        try:
+            js = f"""
+            (() => {{
+                const el = document.querySelector({json.dumps(selector)});
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return JSON.stringify({{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}});
+            }})()
+            """
+            result = cdp.send("Runtime.evaluate", {"expression": js})
+            raw = result.get("result", {}).get("value")
+            if not raw:
+                return {"status": "error", "message": f"Could not locate element {index} for mouse click"}
+            coords = json.loads(raw)
+            return browser_click_at(runtime, page_id, coords["x"], coords["y"])
+        finally:
+            cdp.close()
+    else:
+        return browser_click(runtime, page_id, selector)
 
 
 def browser_read_page(runtime, url: str) -> str:
