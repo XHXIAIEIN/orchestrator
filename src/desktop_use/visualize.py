@@ -66,12 +66,89 @@ def render_skeleton(
     return result.convert("RGB")
 
 
+def merge_words_to_elements(
+    words: list[OCRWord],
+    x_gap: int = 15,
+    y_overlap_ratio: float = 0.5,
+) -> list[tuple[int, int, int, int]]:
+    """Merge OCR words into element-level bounding boxes.
+
+    Words on the same line (vertically overlapping) and horizontally close
+    are merged into a single box. This turns per-character boxes into
+    "contact name", "timestamp", "message text" level boxes.
+
+    Args:
+        words: raw OCR words
+        x_gap: max horizontal gap (px) to merge two words
+        y_overlap_ratio: min vertical overlap ratio to consider "same line"
+
+    Returns:
+        list of (x1, y1, x2, y2) merged element boxes
+    """
+    if not words:
+        return []
+
+    # Sort by y then x
+    sorted_words = sorted(words, key=lambda w: (w.top, w.left))
+
+    # Build boxes from words
+    boxes = []
+    for w in sorted_words:
+        boxes.append([w.left, w.top, w.left + w.width, w.top + w.height])
+
+    # Greedy merge: iterate and merge overlapping/adjacent boxes
+    merged = True
+    while merged:
+        merged = False
+        new_boxes = []
+        used = set()
+        for i in range(len(boxes)):
+            if i in used:
+                continue
+            bx1, by1, bx2, by2 = boxes[i]
+            for j in range(i + 1, len(boxes)):
+                if j in used:
+                    continue
+                cx1, cy1, cx2, cy2 = boxes[j]
+
+                # Check vertical overlap
+                overlap_top = max(by1, cy1)
+                overlap_bot = min(by2, cy2)
+                overlap_h = max(0, overlap_bot - overlap_top)
+                min_h = min(by2 - by1, cy2 - cy1)
+                if min_h <= 0:
+                    continue
+                v_ratio = overlap_h / min_h
+
+                # Check horizontal proximity
+                h_gap = max(0, max(cx1 - bx2, bx1 - cx2))
+
+                if v_ratio >= y_overlap_ratio and h_gap <= x_gap:
+                    # Merge
+                    bx1 = min(bx1, cx1)
+                    by1 = min(by1, cy1)
+                    bx2 = max(bx2, cx2)
+                    by2 = max(by2, cy2)
+                    used.add(j)
+                    merged = True
+
+            new_boxes.append((bx1, by1, bx2, by2))
+            used.add(i)
+        boxes = [list(b) for b in new_boxes]
+
+    return [tuple(b) for b in boxes]
+
+
 def render_annotated(
     screenshot: Image.Image | bytes,
     ocr_words: list[OCRWord] | None = None,
     contour_rects: list[tuple[int, int, int, int]] | None = None,
 ) -> Image.Image:
-    """Render element annotation — green boxes around every detected element.
+    """Render element annotation — green boxes around UI elements.
+
+    OCR words are first merged into element-level boxes (a contact name
+    becomes one box, not per-character boxes). CV contour rects are drawn
+    for non-text elements (icons, avatars).
 
     Args:
         screenshot: PIL Image or PNG bytes
@@ -87,11 +164,10 @@ def render_annotated(
     img = screenshot.copy().convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    # Draw OCR word boxes
+    # Merge OCR words into element-level boxes, then draw
     if ocr_words:
-        for w in ocr_words:
-            x1, y1 = w.left, w.top
-            x2, y2 = x1 + w.width, y1 + w.height
+        element_boxes = merge_words_to_elements(ocr_words)
+        for x1, y1, x2, y2 in element_boxes:
             draw.rectangle([x1, y1, x2, y2], outline=ELEMENT_COLOR, width=ELEMENT_WIDTH)
 
     # Draw CV contour boxes (non-text elements: icons, avatars, images)
