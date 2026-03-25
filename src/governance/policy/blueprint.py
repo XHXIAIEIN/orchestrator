@@ -20,6 +20,8 @@ from typing import Any
 
 import yaml
 
+from src.core.llm_router import MODEL_SONNET
+
 log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent
@@ -170,7 +172,7 @@ def load_blueprint(department: str) -> Blueprint | None:
     return Blueprint(
         department=department,
         name_zh=raw.get("name_zh", ""),
-        model=raw.get("model", "claude-sonnet-4-6"),
+        model=raw.get("model", MODEL_SONNET),
         version=str(raw.get("version", "1")),
         description=raw.get("description", ""),
         authority=authority,

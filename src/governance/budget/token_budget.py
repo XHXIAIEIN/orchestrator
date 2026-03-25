@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from src.core.llm_router import MODEL_SONNET, MODEL_HAIKU
+
 log = logging.getLogger(__name__)
 
 
@@ -38,8 +40,8 @@ class BudgetConfig:
 
 # 降级链：从贵到便宜
 MODEL_DOWNGRADE_CHAIN = [
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001",
+    MODEL_SONNET,
+    MODEL_HAIKU,
 ]
 
 

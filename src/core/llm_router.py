@@ -15,7 +15,24 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+# ── 模型常量 — 全系统唯一的模型名定义点 ──
+# 其他模块应从此处导入，不要硬编码模型名。
+# 更换模型只改这里。
+MODEL_SONNET = "claude-sonnet-4-6"
+MODEL_HAIKU = "claude-haiku-4-5-20251001"
+# Ollama 本地模型
+MODEL_QWEN_CHAT = "qwen2.5:7b"         # 轻量闲聊
+MODEL_QWEN_THINK = "qwen3.5:9b"        # 带推理
+MODEL_DEEPSEEK = "deepseek-r1:14b"      # 深度推理
+MODEL_GEMMA_VISION = "gemma3:27b"       # 多模态（视觉）
+
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+# Ollama 路由用的 prefixed ID（"ollama/" + 模型名）
+_OL_QWEN_CHAT = f"ollama/{MODEL_QWEN_CHAT}"
+_OL_QWEN_THINK = f"ollama/{MODEL_QWEN_THINK}"
+_OL_DEEPSEEK = f"ollama/{MODEL_DEEPSEEK}"
+_OL_GEMMA = f"ollama/{MODEL_GEMMA_VISION}"
 
 MODEL_TIERS = {
     # Chrome AI — 端侧免费，仅桌面环境可用
@@ -23,33 +40,33 @@ MODEL_TIERS = {
     "chrome-ai/translator":        {"cost": 0, "capability": 0.5,  "multimodal": False, "env": "desktop"},
     "chrome-ai/language-detector": {"cost": 0, "capability": 0.8,  "multimodal": False, "env": "desktop"},
     "chrome-ai/prompt":            {"cost": 0, "capability": 0.35, "multimodal": False, "env": "desktop"},
-    "ollama/qwen2.5:7b":         {"cost": 0,    "capability": 0.5,  "multimodal": False},
-    "ollama/qwen3.5:9b":         {"cost": 0,    "capability": 0.55, "multimodal": False},
-    "ollama/deepseek-r1:14b":    {"cost": 0,    "capability": 0.6,  "multimodal": False},
-    "claude-haiku-4-5-20251001": {"cost": 0.25, "capability": 0.7,  "multimodal": False},
-    "ollama/gemma3:27b":         {"cost": 0,    "capability": 0.65, "multimodal": True},
-    "claude-sonnet-4-6":         {"cost": 3.0,  "capability": 0.9,  "multimodal": True},
+    _OL_QWEN_CHAT:               {"cost": 0,    "capability": 0.5,  "multimodal": False},
+    _OL_QWEN_THINK:              {"cost": 0,    "capability": 0.55, "multimodal": False},
+    _OL_DEEPSEEK:                {"cost": 0,    "capability": 0.6,  "multimodal": False},
+    MODEL_HAIKU:                 {"cost": 0.25, "capability": 0.7,  "multimodal": False},
+    _OL_GEMMA:                   {"cost": 0,    "capability": 0.65, "multimodal": True},
+    MODEL_SONNET:                {"cost": 3.0,  "capability": 0.9,  "multimodal": True},
 }
 
 ROUTES = {
-    "scrutiny":      {"cascade": ["ollama/deepseek-r1:14b", "claude-haiku-4-5-20251001"], "timeout": 45, "no_think": True},
-    "debt_scan":     {"cascade": ["ollama/deepseek-r1:14b", "claude-haiku-4-5-20251001"], "timeout": 90, "no_think": True},
-    "summary":       {"backend": "claude", "model": "claude-haiku-4-5-20251001",  "timeout": 120},
-    "deep_analysis": {"cascade": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"], "timeout": 120},
-    "profile":       {"backend": "claude", "model": "claude-sonnet-4-6",          "timeout": 120},
+    "scrutiny":      {"cascade": [_OL_DEEPSEEK, MODEL_HAIKU], "timeout": 45, "no_think": True},
+    "debt_scan":     {"cascade": [_OL_DEEPSEEK, MODEL_HAIKU], "timeout": 90, "no_think": True},
+    "summary":       {"backend": "claude", "model": MODEL_HAIKU,  "timeout": 120},
+    "deep_analysis": {"cascade": [MODEL_HAIKU, MODEL_SONNET], "timeout": 120},
+    "profile":       {"backend": "claude", "model": MODEL_SONNET, "timeout": 120},
     # 多模态路由 — 不适合 cascade
-    "vision":        {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},
-    "ocr":           {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 90},
+    "vision":        {"backend": "ollama", "model": MODEL_GEMMA_VISION, "timeout": 90},
+    "ocr":           {"backend": "ollama", "model": MODEL_GEMMA_VISION, "timeout": 90},
     # GUI 自动化推理 — 多模态，优先 Ollama，fallback 到 Claude
-    "gui_reason":    {"backend": "ollama", "model": "gemma3:27b",                 "timeout": 60,  "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
-    # Channel 闲聊 — 非推理模型更快更稳（qwen3.5 的 thinking 对闲聊是浪费）
-    "chat":          {"cascade": ["ollama/qwen2.5:7b", "claude-haiku-4-5-20251001"], "timeout": 15, "no_think": True},
-    # Channel 需要推理的对话 — deepseek-r1
-    "chat_reason":   {"cascade": ["ollama/deepseek-r1:14b", "ollama/qwen3.5:9b"], "timeout": 90},
+    "gui_reason":    {"backend": "ollama", "model": MODEL_GEMMA_VISION, "timeout": 60, "fallback": "claude", "fallback_model": MODEL_HAIKU},
+    # Channel 闲聊 — 非推理模型更快更稳
+    "chat":          {"cascade": [_OL_QWEN_CHAT, MODEL_HAIKU], "timeout": 15, "no_think": True},
+    # Channel 需要推理的对话
+    "chat_reason":   {"cascade": [_OL_DEEPSEEK, _OL_QWEN_THINK], "timeout": 90},
     # Chrome AI 路由 — 端侧免费，桌面环境优先
-    "translate":     {"cascade": ["chrome-ai/translator", "claude-haiku-4-5-20251001"], "timeout": 15},
+    "translate":     {"cascade": ["chrome-ai/translator", MODEL_HAIKU], "timeout": 15},
     "lang_detect":   {"backend": "chrome-ai", "model": "language-detector", "timeout": 5,
-                      "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
+                      "fallback": "claude", "fallback_model": MODEL_HAIKU},
 }
 
 MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
@@ -73,9 +90,9 @@ class LLMRouter:
         force_claude = os.environ.get("LLM_FORCE_CLAUDE", "")
         if force_claude and task_type in [t.strip() for t in force_claude.split(",")]:
             log.info(f"router: [force_claude] {task_type} overridden to claude")
-            model = route.get("model", route.get("cascade", ["claude-haiku-4-5-20251001"])[-1])
+            model = route.get("model", route.get("cascade", [MODEL_HAIKU])[-1])
             if model.startswith("ollama/"):
-                model = "claude-haiku-4-5-20251001"
+                model = MODEL_HAIKU
             return self._claude_generate(prompt, model, route["timeout"], max_tokens,
                                          self._encode_images(images) if images else None)
 
@@ -96,7 +113,7 @@ class LLMRouter:
                 return result
             # fallback 到 Claude
             if route.get("fallback") == "claude":
-                fallback_model = route.get("fallback_model", "claude-haiku-4-5-20251001")
+                fallback_model = route.get("fallback_model", MODEL_HAIKU)
                 log.info(f"router: chrome-ai {task_type} fallback -> {fallback_model}")
                 return self._claude_generate(prompt, fallback_model, route["timeout"], max_tokens)
             return result or ""
@@ -231,7 +248,7 @@ class LLMRouter:
                           max_tokens: int,
                           images: list[str] | None = None) -> str:
         """Fallback 到 Claude API（支持多模态）。"""
-        fallback_model = route.get("fallback_model", "claude-haiku-4-5-20251001")
+        fallback_model = route.get("fallback_model", MODEL_HAIKU)
         t0 = time.time()
         result = self._claude_generate(prompt, fallback_model, route["timeout"],
                                         max_tokens, images)

@@ -9,6 +9,8 @@ Ferment-inspired: intent → capability → policy profile
 from dataclasses import dataclass, field
 from enum import Enum
 
+from src.core.llm_router import MODEL_SONNET, MODEL_HAIKU
+
 
 class PolicyProfile(Enum):
     """执行策略档位。决定模型选择、超时和 token 预算。"""
@@ -32,19 +34,19 @@ class PolicyConfig:
 
 _PROFILE_CONFIGS: dict[PolicyProfile, "PolicyConfig"] = {
     PolicyProfile.LOW_LATENCY: PolicyConfig(
-        model="claude-haiku-4-5",
+        model=MODEL_HAIKU,
         max_turns=10,
         timeout_s=120,
         max_output_tokens=1024,
     ),
     PolicyProfile.BALANCED: PolicyConfig(
-        model="claude-sonnet-4-6",
+        model=MODEL_SONNET,
         max_turns=25,
         timeout_s=300,
         max_output_tokens=4096,
     ),
     PolicyProfile.HIGH_QUALITY: PolicyConfig(
-        model="claude-sonnet-4-6",
+        model=MODEL_SONNET,
         max_turns=40,
         timeout_s=600,
         max_output_tokens=8192,

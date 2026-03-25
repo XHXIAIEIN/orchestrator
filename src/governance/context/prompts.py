@@ -61,7 +61,8 @@ SCRUTINY_PROMPT = load_prompt("scrutiny")
 COGNITIVE_MODE_PROMPTS = load_cognitive_modes()
 
 # ── Second opinion model ──
-SECOND_OPINION_MODEL = "claude-haiku-4-5-20251001"
+from src.core.llm_router import MODEL_HAIKU
+SECOND_OPINION_MODEL = MODEL_HAIKU
 
 # ── 六部路由表 (manifest-driven auto-discovery) ──
 # Loaded from departments/*/manifest.yaml by registry.py.

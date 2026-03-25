@@ -12,10 +12,11 @@ from pathlib import Path
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
 from src.core.agent_client import agent_query_json
+from src.core.llm_router import MODEL_SONNET
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "claude-sonnet-4-6"
+MODEL_NAME = MODEL_SONNET
 
 SYSTEM_PROMPT = load_prompt("insights")
 

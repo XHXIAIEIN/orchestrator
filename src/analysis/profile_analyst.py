@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
 from src.core.agent_client import agent_query_json
+from src.core.llm_router import MODEL_SONNET
 
 PROFILE_TOOL = {
     "name": "save_profile_analysis",
@@ -123,7 +124,7 @@ JSON 结构如下：
   "daily_note": "仅限 daily 类型：对昨天这一天的专属点评（100字以内），periodic 类型留空字符串"
 }"""
 
-MODEL_NAME = "claude-sonnet-4-6"
+MODEL_NAME = MODEL_SONNET
 
 
 class ProfileAnalyst:

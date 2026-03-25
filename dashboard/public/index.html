@@ -1152,7 +1152,9 @@ async function loadAll(){
   // Hero: prefer LLM commentary, fallback to template
   const llmText=profile.commentary||profile.daily_note||'';
   $('roast').textContent=llmText||generateRoast(stats,events,tasks);
-  $('roast-date').textContent=`(${new Date().toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})})`;
+  const latestSummaryDate=summary.summaries?.[0]?.date;
+  const reportDate=latestSummaryDate?new Date(latestSummaryDate+'T00:00:00'):new Date();
+  $('roast-date').textContent=`(${reportDate.toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})})`;
   $('event-count').textContent=`${(stats.total||0).toLocaleString()} events`;
   renderGlance(stats,events,tasks,debts,summary,insights);
   renderPageStats(stats,tasks,debts);
