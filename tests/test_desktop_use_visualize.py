@@ -4,7 +4,9 @@ import pytest
 from PIL import Image
 
 from src.desktop_use.types import UIBlueprint, UIElement, UIZone, OCRWord
-from src.desktop_use.visualize import render_skeleton, render_annotated, detect_contour_rects
+from src.desktop_use.visualize import (
+    render_skeleton, render_annotated, render_grayscale, detect_elements,
+)
 
 
 def _make_image(w=800, h=600):
@@ -15,6 +17,22 @@ def _make_png(w=800, h=600):
     img = _make_image(w, h)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _make_ui_png(w=800, h=600):
+    """Create a synthetic UI image with visible elements."""
+    import numpy as np
+    img = np.zeros((h, w, 3), dtype=np.uint8)
+    img[:] = (40, 40, 40)
+    img[50:80, 20:50] = (180, 180, 180)
+    img[100:130, 20:50] = (180, 180, 180)
+    img[50:70, 100:250] = (200, 200, 200)
+    img[75:90, 100:200] = (120, 120, 120)
+    img[120:140, 100:250] = (200, 200, 200)
+    pil = Image.fromarray(img)
+    buf = io.BytesIO()
+    pil.save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -42,52 +60,51 @@ class TestRenderSkeleton:
         assert result.size == (800, 600)
 
 
-class TestRenderAnnotated:
-    def test_returns_image(self):
-        words = [OCRWord("hello", 10, 10, 50, 20, 95, 0, 0)]
-        result = render_annotated(_make_image(), ocr_words=words)
-        assert isinstance(result, Image.Image)
-
-    def test_accepts_bytes(self):
-        result = render_annotated(_make_png(), ocr_words=[])
-        assert isinstance(result, Image.Image)
-
-    def test_with_contour_rects(self):
-        rects = [(100, 100, 160, 160), (200, 200, 260, 260)]
-        result = render_annotated(_make_image(), contour_rects=rects)
-        assert result.size == (800, 600)
-
-    def test_both_words_and_contours(self):
-        words = [OCRWord("test", 10, 10, 40, 15, 90, 0, 0)]
-        rects = [(300, 300, 350, 350)]
-        result = render_annotated(_make_image(), ocr_words=words, contour_rects=rects)
-        assert result.size == (800, 600)
-
-
-class TestDetectContourRects:
+class TestDetectElements:
     def test_returns_list(self):
-        result = detect_contour_rects(_make_png())
+        result = detect_elements(_make_png())
         assert isinstance(result, list)
 
-    def test_excludes_ocr_overlaps(self):
-        # Create an image with a visible rectangle
-        import numpy as np
-        img = np.zeros((200, 200, 3), dtype=np.uint8)
-        img[50:100, 50:100] = 200  # bright square
-        pil = Image.fromarray(img)
-        buf = io.BytesIO()
-        pil.save(buf, format="PNG")
-        png = buf.getvalue()
+    def test_detects_visible_elements(self):
+        png = _make_ui_png()
+        rects = detect_elements(png)
+        assert len(rects) > 0
 
-        # Without OCR exclusion
-        rects_no_excl = detect_contour_rects(png, ocr_words=None, min_area=100, min_side=10)
+    def test_rects_are_tuples(self):
+        png = _make_ui_png()
+        rects = detect_elements(png)
+        for r in rects:
+            assert len(r) == 4
 
-        # With an OCR word covering the same area
-        words = [OCRWord("x", 50, 50, 50, 50, 95, 0, 0)]
-        rects_with_excl = detect_contour_rects(png, ocr_words=words, min_area=100, min_side=10)
 
-        # Exclusion should remove at least some rects
-        assert len(rects_with_excl) <= len(rects_no_excl)
+class TestRenderAnnotated:
+    def test_returns_image(self):
+        result = render_annotated(_make_png())
+        assert isinstance(result, Image.Image)
+
+    def test_accepts_pil_image(self):
+        result = render_annotated(_make_image())
+        assert isinstance(result, Image.Image)
+
+    def test_with_precomputed_rects(self):
+        rects = [(10, 10, 100, 50), (200, 200, 300, 250)]
+        result = render_annotated(_make_image(), element_rects=rects)
+        assert result.size == (800, 600)
+
+    def test_auto_detects_when_no_rects(self):
+        result = render_annotated(_make_ui_png())
+        assert isinstance(result, Image.Image)
+
+
+class TestRenderGrayscale:
+    def test_returns_grayscale_image(self):
+        result = render_grayscale(_make_png())
+        assert isinstance(result, Image.Image)
+        assert result.mode == "L"
+
+    def test_accepts_pil_image(self):
+        result = render_grayscale(_make_image())
+        assert isinstance(result, Image.Image)
 
 
 class TestBlueprintVisualize:
@@ -99,8 +116,12 @@ class TestBlueprintVisualize:
 
     def test_annotated_mode(self):
         bp = UIBlueprint("T", (800, 600))
-        words = [OCRWord("hi", 10, 10, 30, 15, 95, 0, 0)]
-        result = bp.visualize(_make_png(), mode="annotated", ocr_words=words)
+        result = bp.visualize(_make_png(), mode="annotated")
+        assert isinstance(result, Image.Image)
+
+    def test_grayscale_mode(self):
+        bp = UIBlueprint("T", (800, 600))
+        result = bp.visualize(_make_png(), mode="grayscale")
         assert isinstance(result, Image.Image)
 
     def test_save_path(self, tmp_path):
@@ -109,7 +130,6 @@ class TestBlueprintVisualize:
         out = str(tmp_path / "test.png")
         result = bp.visualize(_make_image(100, 100), mode="skeleton", save_path=out)
         assert result is not None
-        # File should exist
         loaded = Image.open(out)
         assert loaded.size == (100, 100)
 

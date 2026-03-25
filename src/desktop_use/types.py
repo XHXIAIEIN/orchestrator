@@ -150,38 +150,31 @@ class UIBlueprint:
         self,
         screenshot: object,
         mode: str = "skeleton",
-        ocr_words: list | None = None,
         save_path: str = "",
     ) -> object:
         """Generate visualization of this blueprint.
 
         Args:
             screenshot: PIL Image or PNG bytes
-            mode: "skeleton" (zone overlay) or "annotated" (element boxes)
-            ocr_words: OCR words for annotated mode (optional, re-runs OCR if None)
+            mode: "skeleton" (zone overlay), "annotated" (element boxes),
+                  or "grayscale" (adjusted grayscale for debugging)
             save_path: if set, save the result to this path
 
         Returns:
             PIL Image
         """
         from src.desktop_use.visualize import (
-            render_skeleton, render_annotated, detect_contour_rects,
+            render_skeleton, render_annotated, render_grayscale,
         )
 
         if mode == "skeleton":
             result = render_skeleton(screenshot, self)
         elif mode == "annotated":
-            # Get contour rects for non-text elements
-            png_bytes = screenshot if isinstance(screenshot, bytes) else None
-            if png_bytes is None:
-                import io as _io
-                buf = _io.BytesIO()
-                screenshot.save(buf, format="PNG")
-                png_bytes = buf.getvalue()
-            contours = detect_contour_rects(png_bytes, ocr_words)
-            result = render_annotated(screenshot, ocr_words, contours)
+            result = render_annotated(screenshot)
+        elif mode == "grayscale":
+            result = render_grayscale(screenshot)
         else:
-            raise ValueError(f"Unknown mode: {mode!r}. Use 'skeleton' or 'annotated'.")
+            raise ValueError(f"Unknown mode: {mode!r}. Use 'skeleton', 'annotated', or 'grayscale'.")
 
         if save_path:
             result.save(save_path)

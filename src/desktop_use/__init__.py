@@ -19,7 +19,7 @@ from .prompts import REASONER_SYSTEM, build_reasoner_prompt
 from .types import UIElement, UIZone, UIBlueprint
 from .perception import PerceptionLayer, Win32Layer, CVLayer, OCRLayer, PerceptionResult
 from .blueprint import BlueprintBuilder
-from .visualize import render_skeleton, render_annotated, detect_contour_rects
+from .visualize import render_skeleton, render_annotated, render_grayscale, detect_elements
 
 __all__ = [
     # Types
@@ -46,5 +46,5 @@ __all__ = [
     "PerceptionLayer", "Win32Layer", "CVLayer", "OCRLayer", "PerceptionResult",
     "BlueprintBuilder",
     # Visualization
-    "render_skeleton", "render_annotated", "detect_contour_rects",
+    "render_skeleton", "render_annotated", "render_grayscale", "detect_elements",
 ]
