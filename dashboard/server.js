@@ -4,7 +4,7 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const initSqlJs = require('sql.js');
+const Database = require('better-sqlite3');
 
 const PORT = process.env.PORT || 23714;
 const DB_PATH = path.join(__dirname, '..', 'data', 'events.db');
@@ -40,30 +40,48 @@ app.get('/api-reference', (req, res) => {
 </body></html>`);
 });
 
-let SQL = null;
-initSqlJs().then(s => { SQL = s; });
+// ── Persistent DB connection with WAL mode ──
+let _db = null;
 
 function getDb() {
-  if (!SQL || !fs.existsSync(DB_PATH)) return null;
+  if (_db) return _db;
+  if (!fs.existsSync(DB_PATH)) return null;
   try {
-    const buf = fs.readFileSync(DB_PATH);
-    return new SQL.Database(buf);
-  } catch { return null; }
+    _db = new Database(DB_PATH, { fileMustExist: true });
+    // Wait up to 5s if another process holds the lock (must come first)
+    _db.pragma('busy_timeout = 5000');
+    // WAL mode: concurrent reads while Python writes.
+    // May fail on Docker NTFS bind-mounts — match Python's fallback behavior.
+    try {
+      const mode = _db.pragma('journal_mode = WAL', { simple: true });
+      console.log(`DB connected (better-sqlite3, journal_mode=${mode})`);
+    } catch {
+      console.log('DB connected (better-sqlite3, WAL unavailable — using default journal mode)');
+    }
+    return _db;
+  } catch (e) {
+    console.error('DB open failed:', e.message);
+    return null;
+  }
 }
 
 function dbAll(db, sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
+  return db.prepare(sql).all(...params);
 }
 
 function dbRun(db, sql, params = []) {
-  db.run(sql, params);
-  const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+  return db.prepare(sql).run(...params);
+}
+
+// Reconnect on SIGPIPE / DB corruption
+function ensureDb() {
+  try {
+    if (_db) _db.pragma('journal_mode');
+    return _db;
+  } catch {
+    _db = null;
+    return getDb();
+  }
 }
 
 // ── 健康检查 & 跨项目摘要 ──
@@ -71,7 +89,7 @@ function dbRun(db, sql, params = []) {
 app.get('/api/health', (req, res) => {
   const db = getDb();
   if (!db) return res.json({ status: 'down', reason: 'db unavailable' });
-  db.close();
+
   res.json({ status: 'ok', uptime: process.uptime() | 0 });
 });
 
@@ -99,7 +117,6 @@ app.get('/api/brief', (req, res) => {
       last_analysis: lastAnalysis[0]?.generated_at || null,
     });
   } catch (e) { res.json({ status: 'error', error: e.message }); }
-  finally { db.close(); }
 });
 
 app.get('/api/summary', (req, res) => {
@@ -107,7 +124,7 @@ app.get('/api/summary', (req, res) => {
   if (!db) return res.json({ summaries: [], profile: {} });
   const summaries = dbAll(db, "SELECT * FROM daily_summaries ORDER BY date DESC LIMIT 7");
   const profileRow = dbAll(db, "SELECT profile_json FROM user_profile ORDER BY updated_at DESC LIMIT 1");
-  db.close();
+
   res.json({
     summaries,
     profile: profileRow[0] ? JSON.parse(profileRow[0].profile_json) : {}
@@ -123,7 +140,7 @@ app.get('/api/events', (req, res) => {
     "SELECT source, category, title, duration_minutes, score, tags, occurred_at FROM events WHERE occurred_at >= ? ORDER BY occurred_at DESC LIMIT 200",
     [since]
   );
-  db.close();
+
   res.json(events.map(e => ({ ...e, tags: JSON.parse(e.tags || '[]') })));
 });
 
@@ -131,7 +148,7 @@ app.get('/api/insights', (req, res) => {
   const db = getDb();
   if (!db) return res.json({});
   const row = dbAll(db, "SELECT data_json FROM insights ORDER BY generated_at DESC LIMIT 1");
-  db.close();
+
   res.json(row[0] ? JSON.parse(row[0].data_json) : {});
 });
 
@@ -150,8 +167,6 @@ app.get('/api/tasks', (req, res) => {
     res.json(rows);
   } catch {
     res.json([]);
-  } finally {
-    db.close();
   }
 });
 
@@ -165,8 +180,6 @@ app.get('/api/tasks/:id', (req, res) => {
     res.json({ ...r, spec: JSON.parse(r.spec || '{}') });
   } catch {
     res.status(404).json({ error: 'not found' });
-  } finally {
-    db.close();
   }
 });
 
@@ -353,7 +366,7 @@ app.get('/api/stats', (req, res) => {
     "SELECT source, COUNT(*) as count, SUM(duration_minutes) as total_min FROM events GROUP BY source"
   );
   const totalRow = dbAll(db, "SELECT COUNT(*) as count FROM events");
-  db.close();
+
   res.json({ bySource, total: totalRow[0]?.count || 0 });
 });
 
@@ -383,8 +396,6 @@ app.get('/api/schedule-status', (req, res) => {
     });
   } catch {
     res.json({ next_collectors: null, next_analysis: null, running_task: false });
-  } finally {
-    db.close();
   }
 });
 
@@ -395,7 +406,6 @@ app.get('/api/profile-analysis', (req, res) => {
     const row = dbAll(db, "SELECT data_json FROM profile_analysis ORDER BY id DESC LIMIT 1");
     res.json(row[0] ? JSON.parse(row[0].data_json) : {});
   } catch { res.json({}); }
-  finally { db.close(); }
 });
 
 app.get('/api/profile-analysis/history', (req, res) => {
@@ -413,7 +423,6 @@ app.get('/api/profile-analysis/history', (req, res) => {
     }).filter(r => r && (r.commentary || r.daily_note));
     res.json(items);
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 app.post('/api/profile-analysis/refresh', (req, res) => {
@@ -456,7 +465,6 @@ app.get('/api/events/heatmap', (req, res) => {
     );
     res.json(rows);
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 // ── Burst Sessions ──
@@ -477,7 +485,6 @@ app.get('/api/bursts', (req, res) => {
       return { ...r, metadata: meta };
     }));
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 app.get('/api/summaries', (req, res) => {
@@ -492,7 +499,6 @@ app.get('/api/summaries', (req, res) => {
       catch { return { date: r.date, summary: r.summary }; }
     }));
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 app.get('/api/debts', (req, res) => {
@@ -509,7 +515,6 @@ app.get('/api/debts', (req, res) => {
     const rows = dbAll(db, sql, params);
     res.json(rows);
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 // Batch route MUST come before :id routes (Express matches first)
@@ -522,7 +527,6 @@ app.post('/api/debts/batch/dismiss', (req, res) => {
     dbRun(db, "UPDATE attention_debts SET status = 'dismissed', resolved_at = datetime('now') WHERE project = ? AND status = 'open'", [project]);
     res.json({ ok: true, project, status: 'dismissed' });
   } catch (e) { res.status(500).json({ error: e.message }); }
-  finally { db.close(); }
 });
 
 app.post('/api/debts/:id/resolve', (req, res) => {
@@ -534,7 +538,6 @@ app.post('/api/debts/:id/resolve', (req, res) => {
     dbRun(db, "UPDATE attention_debts SET status = 'resolved', resolved_at = datetime('now') WHERE id = ?", [id]);
     res.json({ ok: true, id, status: 'resolved' });
   } catch (e) { res.status(500).json({ error: e.message }); }
-  finally { db.close(); }
 });
 
 app.post('/api/debts/:id/dismiss', (req, res) => {
@@ -546,7 +549,6 @@ app.post('/api/debts/:id/dismiss', (req, res) => {
     dbRun(db, "UPDATE attention_debts SET status = 'dismissed', resolved_at = datetime('now') WHERE id = ?", [id]);
     res.json({ ok: true, id, status: 'dismissed' });
   } catch (e) { res.status(500).json({ error: e.message }); }
-  finally { db.close(); }
 });
 
 app.post('/api/debts/:id/reopen', (req, res) => {
@@ -558,7 +560,6 @@ app.post('/api/debts/:id/reopen', (req, res) => {
     dbRun(db, "UPDATE attention_debts SET status = 'open', resolved_at = NULL WHERE id = ?", [id]);
     res.json({ ok: true, id, status: 'open' });
   } catch (e) { res.status(500).json({ error: e.message }); }
-  finally { db.close(); }
 });
 
 app.get('/api/experiences', (req, res) => {
@@ -575,7 +576,6 @@ app.get('/api/experiences', (req, res) => {
     const rows = dbAll(db, sql, params);
     res.json(rows);
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 // ── Agent Events: real-time observability ──
@@ -591,7 +591,6 @@ app.get('/api/agent-events/:taskId', (req, res) => {
     );
     res.json(rows.map(r => ({ ...r, data: JSON.parse(r.data || '{}') })));
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 // SSE stream: real-time agent events across all running tasks
@@ -614,8 +613,7 @@ app.get('/api/agent-events-stream', (req, res) => {
         res.write(`data: ${JSON.stringify({ type: 'backlog', events: parsed })}\n\n`);
       }
     } catch {}
-    finally { initDb.close(); }
-  }
+    }
 
   const interval = setInterval(() => {
     const db = getDb();
@@ -630,8 +628,7 @@ app.get('/api/agent-events-stream', (req, res) => {
         }
       }
     } catch {}
-    finally { db.close(); }
-  }, 1000);
+    }, 1000);
 
   req.on('close', () => clearInterval(interval));
 });
@@ -648,7 +645,6 @@ app.get('/api/stats/categories', (req, res) => {
     );
     res.json(rows);
   } catch { res.json([]); }
-  finally { db.close(); }
 });
 
 // SSE log stream: polls DB every 1s, pushes new log rows since last_id
@@ -670,8 +666,7 @@ app.get('/api/logs', (req, res) => {
         res.write(`data: ${JSON.stringify({ type: 'backlog', logs: rows })}\n\n`);
       }
     } catch { /* logs table may not exist yet */ }
-    finally { initDb.close(); }
-  }
+    }
 
   const interval = setInterval(() => {
     const db = getDb();
@@ -683,8 +678,7 @@ app.get('/api/logs', (req, res) => {
         res.write(`data: ${JSON.stringify({ type: 'append', logs: rows })}\n\n`);
       }
     } catch { /* ignore */ }
-    finally { db.close(); }
-  }, 1000);
+    }, 1000);
 
   req.on('close', () => clearInterval(interval));
 });
@@ -1013,8 +1007,6 @@ app.get('/api/pipeline/status', (req, res) => {
     res.json({ collectors, analysis, governance, departments, scheduler });
   } catch (e) {
     res.json({ collectors: {}, analysis: {}, governance: {}, departments: {}, scheduler: {}, error: e.message });
-  } finally {
-    db.close();
   }
 });
 
@@ -1027,8 +1019,6 @@ app.get('/api/pipeline/logs', (req, res) => {
     res.json(rows);
   } catch {
     res.json([]);
-  } finally {
-    db.close();
   }
 });
 
@@ -1057,8 +1047,6 @@ app.get('/api/pipeline/tasks', (req, res) => {
     }));
   } catch {
     res.json([]);
-  } finally {
-    db.close();
   }
 });
 
@@ -1118,7 +1106,6 @@ app.get('/api/pipeline/departments', (req, res) => {
     };
   }
 
-  if (db) db.close();
   res.json(result);
 });
 
@@ -1196,7 +1183,6 @@ app.get('/api/agents/live', (req, res) => {
       max_concurrent: 3,
     });
   } catch (e) { res.json({ agents: [], idle: true, error: e.message }); }
-  finally { db.close(); }
 });
 
 app.get('/api/agents/:taskId/trace', (req, res) => {
@@ -1266,7 +1252,6 @@ app.get('/api/agents/:taskId/trace', (req, res) => {
       events,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
-  finally { db.close(); }
 });
 
 // ── Department API: per-department detail endpoints ──
@@ -1338,7 +1323,6 @@ app.get('/api/departments/:name', (req, res) => {
         "SELECT created_at as ts, task_id, mode, summary, status, duration_s, notes, commit_hash as commit, hash, prev_hash FROM run_logs WHERE department = ? ORDER BY id DESC LIMIT 20",
         [dept]);
     } catch {}
-    rlDb.close();
   }
   if (!runs.length) {
     try {
@@ -1385,10 +1369,10 @@ app.get('/api/departments/:name/runs', (req, res) => {
       const runs = dbAll(db,
         "SELECT created_at as ts, task_id, mode, summary, status, duration_s, notes, commit_hash as commit, hash, prev_hash FROM run_logs WHERE department = ? ORDER BY id DESC LIMIT ?",
         [dept, limit]);
-      db.close();
+    
       return res.json(runs);
     } catch {}
-    db.close();
+  
   }
 
   // JSONL fallback
@@ -1466,7 +1450,7 @@ app.get('/api/collectors/reputation', (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
-  } finally { db.close(); }
+  }
 });
 
 app.post('/api/collectors/:name/trigger', (req, res) => {
@@ -1599,7 +1583,13 @@ function broadcast(data) {
   });
 }
 
+// Graceful shutdown: close DB connection on exit
+process.on('SIGTERM', () => { if (_db) _db.close(); process.exit(0); });
+process.on('SIGINT', () => { if (_db) _db.close(); process.exit(0); });
+
 server.listen(PORT, () => {
+  // Eagerly open DB connection at startup
+  getDb();
   console.log(`Dashboard running at http://localhost:${PORT}`);
 });
 
