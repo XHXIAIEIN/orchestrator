@@ -11,12 +11,18 @@ import time
 import urllib.request
 import urllib.error
 from pathlib import Path
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 MODEL_TIERS = {
+    # Chrome AI — 端侧免费，仅桌面环境可用
+    "chrome-ai/summarizer":        {"cost": 0, "capability": 0.4,  "multimodal": False, "env": "desktop"},
+    "chrome-ai/translator":        {"cost": 0, "capability": 0.5,  "multimodal": False, "env": "desktop"},
+    "chrome-ai/language-detector": {"cost": 0, "capability": 0.8,  "multimodal": False, "env": "desktop"},
+    "chrome-ai/prompt":            {"cost": 0, "capability": 0.35, "multimodal": False, "env": "desktop"},
     "ollama/qwen2.5:7b":         {"cost": 0,    "capability": 0.5,  "multimodal": False},
     "ollama/qwen3.5:9b":         {"cost": 0,    "capability": 0.55, "multimodal": False},
     "ollama/deepseek-r1:14b":    {"cost": 0,    "capability": 0.6,  "multimodal": False},
@@ -40,6 +46,10 @@ ROUTES = {
     "chat":          {"cascade": ["ollama/qwen2.5:7b", "claude-haiku-4-5-20251001"], "timeout": 15, "no_think": True},
     # Channel 需要推理的对话 — deepseek-r1
     "chat_reason":   {"cascade": ["ollama/deepseek-r1:14b", "ollama/qwen3.5:9b"], "timeout": 90},
+    # Chrome AI 路由 — 端侧免费，桌面环境优先
+    "translate":     {"cascade": ["chrome-ai/translator", "claude-haiku-4-5-20251001"], "timeout": 15},
+    "lang_detect":   {"backend": "chrome-ai", "model": "language-detector", "timeout": 5,
+                      "fallback": "claude", "fallback_model": "claude-haiku-4-5-20251001"},
 }
 
 MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
@@ -79,7 +89,18 @@ class LLMRouter:
         # 无 cascade → 走原有逻辑
         backend = route["backend"]
 
-        if backend == "ollama":
+        if backend == "chrome-ai":
+            model_id = f"chrome-ai/{route['model']}"
+            result = self._chrome_ai_generate(prompt, model_id, max_tokens)
+            if result and len(result) >= MIN_RESPONSE_LEN:
+                return result
+            # fallback 到 Claude
+            if route.get("fallback") == "claude":
+                fallback_model = route.get("fallback_model", "claude-haiku-4-5-20251001")
+                log.info(f"router: chrome-ai {task_type} fallback -> {fallback_model}")
+                return self._claude_generate(prompt, fallback_model, route["timeout"], max_tokens)
+            return result or ""
+        elif backend == "ollama":
             # Qwen3 系列默认开 thinking，对简单任务追加 /no_think 关闭
             if route.get("no_think") and not prompt.rstrip().endswith("/no_think"):
                 prompt = prompt.rstrip() + "\n\n/no_think"
@@ -113,6 +134,22 @@ class LLMRouter:
         attempts = []
 
         for model_id in cascade:
+            # Chrome AI 分支 — 端侧模型，headless 环境自动跳过
+            if model_id.startswith("chrome-ai/"):
+                tier = MODEL_TIERS.get(model_id, {})
+                if tier.get("env") == "desktop" and os.environ.get("BROWSER_HEADLESS", "false").lower() == "true":
+                    attempts.append({"model": model_id, "reason": "headless_environment"})
+                    continue
+                try:
+                    result = self._chrome_ai_generate(prompt, model_id, max_tokens)
+                    if result and len(result) >= MIN_RESPONSE_LEN:
+                        log.info(f"router: cascade success with {model_id}")
+                        return result
+                    attempts.append({"model": model_id, "reason": f"short_response ({len(result or '')} chars)"})
+                except Exception as e:
+                    attempts.append({"model": model_id, "reason": str(e)})
+                continue
+
             # 解析 model_id 格式: "ollama/xxx" 或 "claude-xxx"
             if model_id.startswith("ollama/"):
                 model_name = model_id.split("/", 1)[1]
@@ -264,6 +301,42 @@ class LLMRouter:
         except Exception as e:
             log.error(f"router: Claude API failed: {e}")
             return ""
+
+    def _chrome_ai_generate(self, prompt: str, model_id: str, max_tokens: int) -> Optional[str]:
+        """调用 Chrome AI API。需要 BrowserAI 实例可用。"""
+        try:
+            from src.core.browser_ai import BrowserAI
+            from src.core.browser_runtime import BrowserRuntime
+        except ImportError:
+            return None
+
+        # 懒初始化 BrowserAI
+        if not hasattr(self, '_browser_ai'):
+            rt = BrowserRuntime.from_env()
+            if not rt.available:
+                self._browser_ai = None
+                return None
+            self._browser_ai = BrowserAI(rt)
+
+        if self._browser_ai is None:
+            return None
+
+        ai_type = model_id.split("/", 1)[1]  # "summarizer", "translator", etc.
+
+        if ai_type == "summarizer":
+            return self._browser_ai.summarize_sync(prompt)
+        elif ai_type == "translator":
+            # 简单处理：prompt 包含翻译指令，直接当摘要用
+            return self._browser_ai.summarize_sync(prompt)
+        elif ai_type == "language-detector":
+            result = self._browser_ai.detect_language_sync(prompt)
+            if result:
+                return json.dumps(result)
+            return None
+        elif ai_type == "prompt":
+            return self._browser_ai.summarize_sync(prompt)
+        else:
+            return None
 
     def check_ollama(self) -> bool:
         """探测 Ollama 是否可达 + 检查所需模型。启动时调用一次。"""
