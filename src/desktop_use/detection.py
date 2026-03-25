@@ -37,6 +37,7 @@ class DetectionContext:
     ui_states: dict[str, list[tuple[int, int, int, int]]] = field(default_factory=dict)
     quality_score: float = 0.0
     stage_log: list[str] = field(default_factory=list)
+    scale: float = 1.0  # downscale factor, rects are in scaled coords until pipeline end
 
     @property
     def height(self) -> int:
@@ -82,12 +83,67 @@ class DetectionPipeline:
                 log.info("Pipeline: early exit after %s (quality=%.2f)",
                          type(stage).__name__, ctx.quality_score)
                 break
+
+        # Map rects back to original resolution if downscaled
+        if ctx.scale != 1.0 and ctx.rects:
+            s = 1.0 / ctx.scale
+            ctx.rects = [
+                (int(r[0] * s), int(r[1] * s), int(r[2] * s), int(r[3] * s))
+                for r in ctx.rects
+            ]
+            # Also map ui_states
+            for key in ctx.ui_states:
+                ctx.ui_states[key] = [
+                    (int(r[0] * s), int(r[1] * s), int(r[2] * s), int(r[3] * s))
+                    for r in ctx.ui_states[key]
+                ]
+            ctx.scale = 1.0
+
         return ctx
 
 
 # ---------------------------------------------------------------------------
 # Stage implementations
 # ---------------------------------------------------------------------------
+
+class DownscaleStage(DetectionStage):
+    """Downscale image for faster processing. Coords mapped back by Pipeline.
+
+    0.75x = 2x faster, loses ~2 elements on typical UI.
+    0.5x  = 5x faster, loses ~30 elements (too aggressive for standard use).
+    """
+
+    def __init__(self, scale: float = 0.75, interpolation: str = "auto"):
+        """
+        Args:
+            scale: target scale factor (0.75 = 2x faster, 0.5 = 5x faster)
+            interpolation: "auto" (picks based on scale), "area" (best for shrink),
+                          "linear" (fast), "nearest" (fastest, lossy)
+        """
+        self.target_scale = scale
+        self.interpolation = interpolation
+
+    def process(self, ctx):
+        import cv2
+        if self.target_scale >= 1.0:
+            return ctx
+        h, w = ctx.height, ctx.width
+        new_h, new_w = int(h * self.target_scale), int(w * self.target_scale)
+
+        interp_map = {
+            "area": cv2.INTER_AREA,
+            "linear": cv2.INTER_LINEAR,
+            "nearest": cv2.INTER_NEAREST,
+        }
+        if self.interpolation == "auto":
+            interp = cv2.INTER_AREA  # best for downscaling
+        else:
+            interp = interp_map.get(self.interpolation, cv2.INTER_AREA)
+
+        ctx.img = cv2.resize(ctx.img, (new_w, new_h), interpolation=interp)
+        ctx.scale = self.target_scale
+        return ctx
+
 
 class GrayscaleStage(DetectionStage):
     """Convert to grayscale with auto gamma from median brightness."""
@@ -587,21 +643,29 @@ class GroundingDINOStage(DetectionStage):
 # Preset pipelines
 # ---------------------------------------------------------------------------
 
-def fast_pipeline() -> DetectionPipeline:
-    """Grayscale → TopHat → Otsu → Dilate → ConnectedComponent. ~4ms."""
-    return DetectionPipeline([
+def fast_pipeline(scale: float = 0.75) -> DetectionPipeline:
+    """Downscale → Grayscale → TopHat → Otsu → Dilate → CC. ~17ms at 0.75x."""
+    stages = []
+    if scale < 1.0:
+        stages.append(DownscaleStage(scale=scale))
+    stages.extend([
         GrayscaleStage(), TopHatStage(), OtsuStage(),
         DilateStage(), ConnectedComponentStage(),
     ])
+    return DetectionPipeline(stages)
 
 
-def standard_pipeline() -> DetectionPipeline:
-    """Fast + RectFilter + Merge. ~5ms."""
-    return DetectionPipeline([
+def standard_pipeline(scale: float = 1.0) -> DetectionPipeline:
+    """Fast + RectFilter + Merge. Full resolution by default. ~33ms."""
+    stages = []
+    if scale < 1.0:
+        stages.append(DownscaleStage(scale=scale))
+    stages.extend([
         GrayscaleStage(), TopHatStage(), OtsuStage(),
         DilateStage(), ConnectedComponentStage(),
         RectFilterStage(), MergeStage(),
     ])
+    return DetectionPipeline(stages)
 
 
 def full_pipeline(omniparser_path: str = "", grounding_query: str = "") -> DetectionPipeline:

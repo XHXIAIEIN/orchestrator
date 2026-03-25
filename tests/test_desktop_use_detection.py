@@ -371,7 +371,7 @@ class TestDiffStage:
 
 
 from src.desktop_use.detection import (
-    OmniParserStage, GroundingDINOStage,
+    OmniParserStage, GroundingDINOStage, DownscaleStage,
     fast_pipeline, standard_pipeline, full_pipeline, grounding_pipeline,
 )
 
@@ -408,11 +408,21 @@ class TestGroundingDINOStage:
 class TestPresetPipelines:
     def test_fast_pipeline(self):
         p = fast_pipeline()
-        assert len(p.stages) == 5
+        assert len(p.stages) == 6  # DownscaleStage + 5 core stages
+        assert isinstance(p.stages[0], DownscaleStage)
+
+    def test_fast_pipeline_no_scale(self):
+        p = fast_pipeline(scale=1.0)
+        assert len(p.stages) == 5  # no DownscaleStage
 
     def test_standard_pipeline(self):
         p = standard_pipeline()
-        assert len(p.stages) == 7
+        assert len(p.stages) == 7  # no downscale by default
+
+    def test_standard_pipeline_with_scale(self):
+        p = standard_pipeline(scale=0.75)
+        assert len(p.stages) == 8
+        assert isinstance(p.stages[0], DownscaleStage)
 
     def test_full_pipeline_default(self):
         p = full_pipeline()
