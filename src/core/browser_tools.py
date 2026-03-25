@@ -1,12 +1,25 @@
 """
 Browser Tools — Agent 可调用的浏览器工具函数。
 所有函数同步。通过 BrowserRuntime 管理页面生命周期和 CDP 通信。
+
+Guard 集成：每次操作后自动采集页面指纹并经过 ActionLoopDetector 检查。
+警告信息附加在返回值的 "_guard_warnings" 字段中，调度层自行决定如何处理。
 """
 import json
 import logging
 import time
 
+from src.core.browser_guard import ActionLoopDetector, page_fingerprint
+
 log = logging.getLogger(__name__)
+
+# 模块级 guard 实例（跨调用追踪状态，随 scheduler 生命周期存在）
+_loop_detector = ActionLoopDetector()
+
+
+def get_loop_detector() -> ActionLoopDetector:
+    """获取当前 guard 实例（供外部查看 stats 或 reset）。"""
+    return _loop_detector
 
 
 def browser_navigate(runtime, url: str) -> dict:
@@ -30,7 +43,13 @@ def browser_navigate(runtime, url: str) -> dict:
         # 获取 title
         result = cdp.send("Runtime.evaluate", {"expression": "document.title"})
         title = result.get("result", {}).get("value", "")
-        return {"title": title, "url": url, "page_id": page_id}
+        ret = {"title": title, "url": url, "page_id": page_id}
+        # Guard: 采集指纹 + 循环检测
+        fp = page_fingerprint(runtime, page_id)
+        warnings = _loop_detector.record("navigate", fingerprint=fp, url=url)
+        if warnings:
+            ret["_guard_warnings"] = warnings
+        return ret
     finally:
         cdp.close()
 
@@ -127,7 +146,13 @@ def browser_click(runtime, page_id: str, selector: str) -> dict:
         val = result.get("result", {}).get("value")
         if val == "not_found":
             return {"status": "error", "message": f"Element not found: {selector}"}
-        return {"status": "ok"}
+        ret = {"status": "ok"}
+        # Guard: 采集指纹 + 循环检测
+        fp = page_fingerprint(runtime, page_id)
+        warnings = _loop_detector.record("click", fingerprint=fp, selector=selector)
+        if warnings:
+            ret["_guard_warnings"] = warnings
+        return ret
     finally:
         cdp.close()
 
@@ -161,7 +186,13 @@ def browser_fill(runtime, page_id: str, selector: str, text: str) -> dict:
         val = result.get("result", {}).get("value")
         if val == "not_found":
             return {"status": "error", "message": f"Element not found: {selector}"}
-        return {"status": "ok"}
+        ret = {"status": "ok"}
+        # Guard: 采集指纹 + 循环检测
+        fp = page_fingerprint(runtime, page_id)
+        warnings = _loop_detector.record("fill", fingerprint=fp, selector=selector)
+        if warnings:
+            ret["_guard_warnings"] = warnings
+        return ret
     finally:
         cdp.close()
 
