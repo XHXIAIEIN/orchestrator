@@ -131,9 +131,10 @@ class DownscaleStage(DetectionStage):
         new_h, new_w = int(h * self.target_scale), int(w * self.target_scale)
 
         interp_map = {
-            "area": cv2.INTER_AREA,
-            "linear": cv2.INTER_LINEAR,
-            "nearest": cv2.INTER_NEAREST,
+            "area": cv2.INTER_AREA,         # best for downscaling (area averaging)
+            "linear": cv2.INTER_LINEAR,      # fast, good for upscaling
+            "nearest": cv2.INTER_NEAREST,    # fastest, jaggy edges
+            "lanczos": cv2.INTER_LANCZOS4,   # sharpest detail, slowest
         }
         if self.interpolation == "auto":
             interp = cv2.INTER_AREA  # best for downscaling
