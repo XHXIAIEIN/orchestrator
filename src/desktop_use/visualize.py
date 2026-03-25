@@ -66,65 +66,124 @@ def render_skeleton(
     return result.convert("RGB")
 
 
-def merge_words_to_elements(
-    words: list[OCRWord],
-    x_gap: int = 15,
-    y_overlap_ratio: float = 0.5,
+def greedy_expand_boxes(
+    seed_boxes: list[tuple[int, int, int, int]],
+    img_array,  # numpy array (h, w, 3)
+    step: int = 0,
+    bg_threshold: float = 0,
 ) -> list[tuple[int, int, int, int]]:
-    """Merge OCR words into element-level bounding boxes.
+    """Greedy-expand each seed box outward until hitting empty background.
 
-    Words on the same line (vertically overlapping) and horizontally close
-    are merged into a single box. This turns per-character boxes into
-    "contact name", "timestamp", "message text" level boxes.
+    For each box, try expanding each edge by `step` pixels. If the
+    expanded strip has content (variance > bg_threshold), keep it.
+    If it's pure background, stop that edge. Then merge overlapping boxes.
 
     Args:
-        words: raw OCR words
-        x_gap: max horizontal gap (px) to merge two words
-        y_overlap_ratio: min vertical overlap ratio to consider "same line"
+        seed_boxes: initial bounding boxes (from OCR + contour detection)
+        img_array: screenshot as numpy array
+        step: expansion step size in pixels (0 = auto from avg char height)
+        bg_threshold: pixel variance below this = empty background
 
     Returns:
-        list of (x1, y1, x2, y2) merged element boxes
+        list of expanded and merged (x1, y1, x2, y2) boxes
     """
-    if not words:
+    import numpy as np
+
+    if not seed_boxes or img_array is None:
+        return list(seed_boxes) if seed_boxes else []
+
+    h, w = img_array.shape[:2]
+
+    # Auto-detect step from average box height (≈ 1 character)
+    if step <= 0:
+        heights = [b[3] - b[1] for b in seed_boxes if b[3] - b[1] > 5]
+        step = max(8, int(np.median(heights)) if heights else 20)
+
+    # Auto-detect background threshold from image corners
+    if bg_threshold <= 0:
+        corners = [
+            img_array[:30, :30],
+            img_array[:30, -30:],
+            img_array[-30:, :30],
+            img_array[-30:, -30:],
+        ]
+        bg_vars = [float(np.var(c)) for c in corners if c.size > 0]
+        bg_threshold = max(bg_vars) * 2 + 50 if bg_vars else 200
+
+    # Expand each box greedily
+    expanded = []
+    for bx1, by1, bx2, by2 in seed_boxes:
+        # Expand in 4 directions
+        for _ in range(15):  # max iterations
+            grew = False
+
+            # Try expand right
+            if bx2 + step <= w:
+                strip = img_array[max(0, by1):min(h, by2), bx2:min(w, bx2 + step)]
+                if strip.size > 0 and float(np.var(strip)) > bg_threshold:
+                    bx2 += step
+                    grew = True
+
+            # Try expand left
+            if bx1 - step >= 0:
+                strip = img_array[max(0, by1):min(h, by2), max(0, bx1 - step):bx1]
+                if strip.size > 0 and float(np.var(strip)) > bg_threshold:
+                    bx1 -= step
+                    grew = True
+
+            # Try expand down
+            if by2 + step <= h:
+                strip = img_array[by2:min(h, by2 + step), max(0, bx1):min(w, bx2)]
+                if strip.size > 0 and float(np.var(strip)) > bg_threshold:
+                    by2 += step
+                    grew = True
+
+            # Try expand up
+            if by1 - step >= 0:
+                strip = img_array[max(0, by1 - step):by1, max(0, bx1):min(w, bx2)]
+                if strip.size > 0 and float(np.var(strip)) > bg_threshold:
+                    by1 -= step
+                    grew = True
+
+            if not grew:
+                break
+
+        expanded.append((bx1, by1, bx2, by2))
+
+    # Merge overlapping boxes
+    return _merge_overlapping(expanded)
+
+
+def _merge_overlapping(
+    boxes: list[tuple[int, int, int, int]],
+) -> list[tuple[int, int, int, int]]:
+    """Merge boxes that overlap or are contained within each other."""
+    if not boxes:
         return []
 
-    # Sort by y then x
-    sorted_words = sorted(words, key=lambda w: (w.top, w.left))
-
-    # Build boxes from words
-    boxes = []
-    for w in sorted_words:
-        boxes.append([w.left, w.top, w.left + w.width, w.top + w.height])
-
-    # Greedy merge: iterate and merge overlapping/adjacent boxes
     merged = True
+    result = [list(b) for b in boxes]
     while merged:
         merged = False
-        new_boxes = []
+        new_result = []
         used = set()
-        for i in range(len(boxes)):
+        for i in range(len(result)):
             if i in used:
                 continue
-            bx1, by1, bx2, by2 = boxes[i]
-            for j in range(i + 1, len(boxes)):
+            bx1, by1, bx2, by2 = result[i]
+            for j in range(i + 1, len(result)):
                 if j in used:
                     continue
-                cx1, cy1, cx2, cy2 = boxes[j]
+                cx1, cy1, cx2, cy2 = result[j]
 
-                # Check vertical overlap
-                overlap_top = max(by1, cy1)
-                overlap_bot = min(by2, cy2)
-                overlap_h = max(0, overlap_bot - overlap_top)
-                min_h = min(by2 - by1, cy2 - cy1)
-                if min_h <= 0:
-                    continue
-                v_ratio = overlap_h / min_h
+                # Check overlap
+                ox1 = max(bx1, cx1)
+                oy1 = max(by1, cy1)
+                ox2 = min(bx2, cx2)
+                oy2 = min(by2, cy2)
 
-                # Check horizontal proximity
-                h_gap = max(0, max(cx1 - bx2, bx1 - cx2))
-
-                if v_ratio >= y_overlap_ratio and h_gap <= x_gap:
-                    # Merge
+                if ox1 < ox2 and oy1 < oy2:
+                    # Overlapping — merge
                     bx1 = min(bx1, cx1)
                     by1 = min(by1, cy1)
                     bx2 = max(bx2, cx2)
@@ -132,11 +191,11 @@ def merge_words_to_elements(
                     used.add(j)
                     merged = True
 
-            new_boxes.append((bx1, by1, bx2, by2))
+            new_result.append([bx1, by1, bx2, by2])
             used.add(i)
-        boxes = [list(b) for b in new_boxes]
+        result = new_result
 
-    return [tuple(b) for b in boxes]
+    return [tuple(b) for b in result]
 
 
 def render_annotated(
@@ -144,11 +203,12 @@ def render_annotated(
     ocr_words: list[OCRWord] | None = None,
     contour_rects: list[tuple[int, int, int, int]] | None = None,
 ) -> Image.Image:
-    """Render element annotation — green boxes around UI elements.
+    """Render element annotation — green boxes around UI components.
 
-    OCR words are first merged into element-level boxes (a contact name
-    becomes one box, not per-character boxes). CV contour rects are drawn
-    for non-text elements (icons, avatars).
+    All seed boxes (OCR words + CV contour rects) are fed into greedy
+    expansion: each box grows outward until hitting empty background,
+    then overlapping boxes are merged. This produces component-level
+    boxes (one box per contact item, per message bubble, per icon).
 
     Args:
         screenshot: PIL Image or PNG bytes
@@ -158,22 +218,31 @@ def render_annotated(
     Returns:
         PIL Image with green bounding boxes
     """
+    import numpy as np
+
     if isinstance(screenshot, bytes):
-        screenshot = Image.open(io.BytesIO(screenshot))
+        img = Image.open(io.BytesIO(screenshot))
+    else:
+        img = screenshot.copy()
 
-    img = screenshot.copy().convert("RGB")
-    draw = ImageDraw.Draw(img)
+    img = img.convert("RGB")
+    img_array = np.array(img)
 
-    # Merge OCR words into element-level boxes, then draw
+    # Collect all seed boxes
+    seeds: list[tuple[int, int, int, int]] = []
     if ocr_words:
-        element_boxes = merge_words_to_elements(ocr_words)
-        for x1, y1, x2, y2 in element_boxes:
-            draw.rectangle([x1, y1, x2, y2], outline=ELEMENT_COLOR, width=ELEMENT_WIDTH)
-
-    # Draw CV contour boxes (non-text elements: icons, avatars, images)
+        for w in ocr_words:
+            seeds.append((w.left, w.top, w.left + w.width, w.top + w.height))
     if contour_rects:
-        for r in contour_rects:
-            draw.rectangle([r[0], r[1], r[2], r[3]], outline=ELEMENT_COLOR, width=ELEMENT_WIDTH)
+        seeds.extend(contour_rects)
+
+    # Greedy expand + merge
+    element_boxes = greedy_expand_boxes(seeds, img_array)
+
+    # Draw
+    draw = ImageDraw.Draw(img)
+    for x1, y1, x2, y2 in element_boxes:
+        draw.rectangle([x1, y1, x2, y2], outline=ELEMENT_COLOR, width=ELEMENT_WIDTH)
 
     return img
 
