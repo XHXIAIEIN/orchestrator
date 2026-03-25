@@ -213,7 +213,12 @@ def detect_contour_rects(
         return []
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
+
+    # Two-pass edge detection: normal + low-threshold for dim icons
+    edges_normal = cv2.Canny(gray, 50, 150)
+    edges_low = cv2.Canny(gray, 15, 60)
+    edges = cv2.bitwise_or(edges_normal, edges_low)
+
     kernel = np.ones((2, 2), np.uint8)
     edges = cv2.dilate(edges, kernel, iterations=1)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -242,4 +247,104 @@ def detect_contour_rects(
         if not overlaps:
             rects.append((x, y, x + rw, y + rh))
 
+    # Infer missing icons from regular spacing patterns
+    rects = _infer_missing_from_pattern(rects, img)
+
     return rects
+
+
+def _infer_missing_from_pattern(
+    rects: list[tuple[int, int, int, int]],
+    img,  # numpy array (h, w, 3)
+    min_group: int = 3,
+    spacing_tolerance: float = 0.25,
+) -> list[tuple[int, int, int, int]]:
+    """Infer missing elements from regular spacing patterns.
+
+    If 3+ detected rects in a column have consistent vertical spacing,
+    fill in gaps where icons should be but weren't detected (e.g. low-
+    contrast icons on dark backgrounds).
+    """
+    import numpy as np
+
+    img_h, img_w = img.shape[:2]
+
+    if len(rects) < min_group:
+        return rects
+
+    # Compute background variance for comparison
+    # Sample corners to estimate background level
+    bg_samples = []
+    for patch in [(0, 0, 30, 30), (img_w-30, 0, img_w, 30)]:
+        bg_samples.append(float(np.var(img[patch[1]:patch[3], patch[0]:patch[2]])))
+    bg_variance = max(bg_samples) if bg_samples else 100
+
+    # Group rects by X center (same column within 20px)
+    by_col: dict[int, list[tuple[int, int, int, int]]] = {}
+    for r in rects:
+        cx = (r[0] + r[2]) // 2
+        col_key = cx // 20 * 20
+        by_col.setdefault(col_key, []).append(r)
+
+    new_rects = list(rects)
+
+    for col_key, col_rects in by_col.items():
+        if len(col_rects) < min_group:
+            continue
+
+        # Sort by Y
+        col_rects.sort(key=lambda r: r[1])
+
+        # Compute spacing between consecutive rects
+        spacings = []
+        for i in range(len(col_rects) - 1):
+            cy1 = (col_rects[i][1] + col_rects[i][3]) // 2
+            cy2 = (col_rects[i + 1][1] + col_rects[i + 1][3]) // 2
+            spacings.append(cy2 - cy1)
+
+        if not spacings:
+            continue
+
+        # Find the most common spacing (mode)
+        median_spacing = sorted(spacings)[len(spacings) // 2]
+        if median_spacing < 20:
+            continue
+
+        # Typical element size in this column
+        avg_w = sum(r[2] - r[0] for r in col_rects) // len(col_rects)
+        avg_h = sum(r[3] - r[1] for r in col_rects) // len(col_rects)
+
+        # Find gaps that are ~2x the median spacing (one missing element)
+        for i in range(len(col_rects) - 1):
+            cy1 = (col_rects[i][1] + col_rects[i][3]) // 2
+            cy2 = (col_rects[i + 1][1] + col_rects[i + 1][3]) // 2
+            gap = cy2 - cy1
+
+            # How many elements fit in this gap?
+            n_missing = round(gap / median_spacing) - 1
+            if n_missing < 1:
+                continue
+
+            cx = (col_rects[i][0] + col_rects[i][2]) // 2
+            for k in range(1, n_missing + 1):
+                inferred_cy = cy1 + k * median_spacing
+                ix1 = cx - avg_w // 2
+                iy1 = inferred_cy - avg_h // 2
+                ix2 = ix1 + avg_w
+                iy2 = iy1 + avg_h
+
+                # Bounds check
+                if iy1 < 0 or iy2 > img_h or ix1 < 0 or ix2 > img_w:
+                    continue
+
+                # Verify: inferred position must have content (not blank background)
+                patch = img[max(0, iy1):min(img_h, iy2), max(0, ix1):min(img_w, ix2)]
+                if patch.size == 0:
+                    continue
+                patch_var = float(np.var(patch))
+                if patch_var < bg_variance * 1.5:
+                    continue  # looks like empty background, skip
+
+                new_rects.append((ix1, iy1, ix2, iy2))
+
+    return new_rects
