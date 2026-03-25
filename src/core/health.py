@@ -31,6 +31,7 @@ class HealthCheck:
             "governor": self._check_governor(),
             "container": self._check_container(),
             "departments": self._check_departments(),
+            "browser": self._check_browser(),
             "issues": [],
         }
         report["issues"] = self.issues
@@ -170,3 +171,18 @@ class HealthCheck:
         except Exception as e:
             log.debug(f"Department check failed: {e}")
             return {}
+
+    def _check_browser(self) -> dict:
+        """检查浏览器运行时状态。"""
+        try:
+            from src.core.browser_runtime import BrowserRuntime
+            rt = BrowserRuntime.from_env()
+            info = rt.health()
+            if info["status"] not in ("healthy", "running", "disabled"):
+                self.issues.append({
+                    "level": "low", "component": "browser_runtime",
+                    "summary": f"Browser runtime: {info['status']}",
+                })
+            return info
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
