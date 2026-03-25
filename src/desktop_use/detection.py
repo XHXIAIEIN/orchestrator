@@ -131,10 +131,13 @@ class DownscaleStage(DetectionStage):
         new_h, new_w = int(h * self.target_scale), int(w * self.target_scale)
 
         interp_map = {
-            "area": cv2.INTER_AREA,         # best for downscaling (area averaging)
-            "linear": cv2.INTER_LINEAR,      # fast, good for upscaling
-            "nearest": cv2.INTER_NEAREST,    # fastest, jaggy edges
-            "lanczos": cv2.INTER_LANCZOS4,   # sharpest detail, slowest
+            "nearest": cv2.INTER_NEAREST,    # fastest, jaggy — avoid for UI text
+            "linear": cv2.INTER_LINEAR,      # bilinear, fast, slight blur
+            "cubic": cv2.INTER_CUBIC,        # bicubic (4x4 neighborhood), sharper than linear
+            "area": cv2.INTER_AREA,          # area averaging — best for downscaling
+            "lanczos": cv2.INTER_LANCZOS4,   # lanczos (8x8), sharpest, slowest
+            # Note: sinc is the theoretical ideal but not in OpenCV.
+            # Lanczos is a windowed sinc approximation.
         }
         if self.interpolation == "auto":
             interp = cv2.INTER_AREA  # best for downscaling
