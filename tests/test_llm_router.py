@@ -139,3 +139,28 @@ def test_vision_no_fallback_when_ollama_down():
 
     result = router.generate("describe", task_type="vision", images=["fake.png"])
     assert result == ""
+
+
+def test_chrome_ai_in_model_tiers():
+    """chrome-ai 模型应该存在于 MODEL_TIERS。"""
+    from src.core.llm_router import MODEL_TIERS
+    assert "chrome-ai/summarizer" in MODEL_TIERS
+    assert MODEL_TIERS["chrome-ai/summarizer"]["cost"] == 0
+    assert MODEL_TIERS["chrome-ai/summarizer"]["env"] == "desktop"
+
+
+def test_chrome_ai_skipped_in_headless():
+    """headless 环境下 chrome-ai 应被跳过。"""
+    router = LLMRouter()
+    with patch.dict(os.environ, {"BROWSER_HEADLESS": "true"}):
+        with patch.object(router, "_claude_generate", return_value="fallback result") as mock_claude:
+            # Use a route that has chrome-ai in cascade
+            result = router.generate("test prompt", task_type="translate")
+    # Should have fallen through to claude
+    assert result == "fallback result"
+
+
+def test_translate_route_exists():
+    """translate 路由应存在。"""
+    assert "translate" in ROUTES
+    assert "chrome-ai/translator" in ROUTES["translate"]["cascade"]

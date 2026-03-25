@@ -75,6 +75,22 @@ def start():
     except Exception as e:
         log.warning(f"Channel layer init failed (non-fatal): {e}")
 
+    # BrowserRuntime — 可选，浏览器感官层
+    browser_runtime = None
+    try:
+        from src.core.browser_runtime import BrowserRuntime
+        browser_runtime = BrowserRuntime.from_env()
+        if browser_runtime._enabled:
+            if browser_runtime.start():
+                db.write_log(f"BrowserRuntime started: {browser_runtime.health()}", "INFO", "browser")
+                log.info(f"BrowserRuntime started: port={browser_runtime._debug_port}")
+            else:
+                log.info("BrowserRuntime: Chrome not available, running without browser")
+        else:
+            log.info("BrowserRuntime: disabled by BROWSER_RUNTIME_ENABLED=false")
+    except Exception as e:
+        log.warning(f"BrowserRuntime init failed (non-fatal): {e}")
+
     db.write_log("调度器已启动，采集：每小时，日报：每日04:00，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00，策略建议：每日07:00，每周审计(兵部+吏部+礼部)：每周三10:00", "INFO", "scheduler")
     log.info("Scheduler started. Collectors: hourly. Analysis: daily 04:00 CST. Debt scan: every 12 hours.")
 
@@ -87,6 +103,18 @@ def start():
 
     log.info("Running initial debt resolve...")
     run_job("debt_resolve", debt_resolve, db)
+
+    # Add BrowserRuntime tab reaper job if available
+    if browser_runtime and browser_runtime.available:
+        s.add_job(
+            lambda: browser_runtime._reap_zombie_tabs_internal(),
+            "interval", seconds=60, id="browser_tab_reaper"
+        )
+
+    # Register BrowserRuntime cleanup on exit
+    import atexit
+    if browser_runtime:
+        atexit.register(browser_runtime.stop)
 
     try:
         s.start()

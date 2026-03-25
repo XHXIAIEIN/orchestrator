@@ -4,12 +4,12 @@ periodic: 分析最近 30 天数据，每 6 小时运行一次。
 daily:    分析昨天数据，每日 06:00 CST 运行。
 """
 import json
-import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
+from src.core.agent_client import agent_query_json
 
 PROFILE_TOOL = {
     "name": "save_profile_analysis",
@@ -134,33 +134,7 @@ class ProfileAnalyst:
         context = _build_context(self.db, analysis_type)
         prompt = SYSTEM_PROMPT + JSON_INSTRUCTION + "\n\n" + context
 
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "--print",
-             "--model", MODEL_NAME, "-"],
-            capture_output=True, text=True, timeout=120,
-            input=prompt,
-        )
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"ProfileAnalyst: claude CLI failed (rc={result.returncode}): "
-                f"{result.stderr.strip()[:500]}"
-            )
-
-        text = result.stdout.strip()
-        # Strip markdown code fences if present
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3].rstrip()
-
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"ProfileAnalyst: failed to parse JSON from CLI output: {exc}\n"
-                f"Raw output (first 500 chars): {text[:500]}"
-            ) from exc
+        parsed = agent_query_json(prompt, model=MODEL_NAME)
 
         self.db.save_profile_analysis(parsed, analysis_type)
         return parsed

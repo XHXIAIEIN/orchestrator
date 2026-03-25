@@ -1580,6 +1580,223 @@ function broadcast(data) {
   });
 }
 
+// ── MCP Server (JSON-RPC 2.0) — experimental ──
+// Allows external AI agents to interact with Orchestrator via structured tool calls.
+// Protocol: POST /mcp with JSON-RPC body
+// Security: Localhost only (no auth needed for local access)
+
+const MCP_TOOLS = [
+  {
+    name: 'get_system_status',
+    description: '查看系统状态（健康检查、调度器、通道、浏览器运行时）',
+    inputSchema: { type: 'object', properties: {}, required: [] }
+  },
+  {
+    name: 'list_tasks',
+    description: '查看任务列表',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['open', 'completed', 'failed', 'all'], description: '筛选状态', default: 'all' },
+        limit: { type: 'number', description: '最大返回数', default: 20 }
+      }
+    }
+  },
+  {
+    name: 'get_task',
+    description: '获取单个任务详情',
+    inputSchema: {
+      type: 'object',
+      properties: { task_id: { type: 'number', description: '任务ID' } },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'create_task',
+    description: '创建新任务（走完整派单流程：分类→审查→审批→执行）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', description: '任务描述' },
+        department: { type: 'string', description: '目标部门', enum: ['engineering', 'operations', 'quality', 'security', 'protocol', 'personnel'] }
+      },
+      required: ['description']
+    }
+  },
+  {
+    name: 'approve_task',
+    description: '审批任务',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'number', description: '任务ID' },
+        decision: { type: 'string', enum: ['approve', 'deny'], description: '审批决定' }
+      },
+      required: ['task_id', 'decision']
+    }
+  },
+  {
+    name: 'get_department_stats',
+    description: '获取各部门统计数据',
+    inputSchema: { type: 'object', properties: {}, required: [] }
+  },
+  {
+    name: 'query_events',
+    description: '查询采集事件',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: '数据源（browser/git/claude/vscode/network）' },
+        hours: { type: 'number', description: '最近N小时', default: 24 },
+        limit: { type: 'number', description: '最大返回数', default: 50 }
+      }
+    }
+  },
+  {
+    name: 'get_daily_summary',
+    description: '获取每日总结',
+    inputSchema: {
+      type: 'object',
+      properties: { date: { type: 'string', description: '日期 YYYY-MM-DD（默认今天）' } }
+    }
+  },
+  {
+    name: 'list_debts',
+    description: '查看技术债务列表',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['open', 'resolved', 'dismissed', 'all'], default: 'open' }
+      }
+    }
+  }
+];
+
+const MCP_HANDLERS = {
+  get_system_status: (args, db) => {
+    const health = { db_size_mb: 0, total_events: 0, scheduler: 'unknown' };
+    try {
+      const dbFile = path.join(__dirname, '..', 'data', 'events.db');
+      const stats = fs.statSync(dbFile);
+      health.db_size_mb = (stats.size / 1024 / 1024).toFixed(1);
+      health.total_events = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
+      const sched = db.prepare("SELECT value FROM scheduler_status WHERE key='last_heartbeat'").get();
+      health.scheduler = sched ? sched.value : 'no heartbeat';
+    } catch (e) { health.error = e.message; }
+    return health;
+  },
+
+  list_tasks: (args, db) => {
+    const limit = args.limit || 20;
+    const status = args.status || 'all';
+    let sql = 'SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?';
+    let params = [limit];
+    if (status !== 'all') {
+      sql = 'SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?';
+      params = [status, limit];
+    }
+    return dbAll(db, sql, params);
+  },
+
+  get_task: (args, db) => {
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(args.task_id);
+    return row || { error: 'Task not found' };
+  },
+
+  create_task: (args, db) => {
+    const now = new Date().toISOString();
+    const dept = args.department || 'engineering';
+    const result = dbRun(db,
+      `INSERT INTO tasks (action, department, spec, status, created_at)
+       VALUES (?, ?, ?, 'pending', ?)`,
+      [args.description, dept, JSON.stringify({ source: 'mcp', description: args.description }), now]
+    );
+    return { task_id: result.lastInsertRowid, status: 'pending', department: dept };
+  },
+
+  approve_task: (args, db) => {
+    const now = new Date().toISOString();
+    const newStatus = args.decision === 'approve' ? 'approved' : 'denied';
+    dbRun(db, 'UPDATE tasks SET status = ?, approved_at = ? WHERE id = ?',
+      [newStatus, now, args.task_id]);
+    return { task_id: args.task_id, status: newStatus };
+  },
+
+  get_department_stats: (args, db) => {
+    return dbAll(db,
+      `SELECT department,
+              COUNT(*) as total,
+              SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+              SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed
+       FROM tasks GROUP BY department`);
+  },
+
+  query_events: (args, db) => {
+    const hours = args.hours || 24;
+    const limit = args.limit || 50;
+    const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
+    let sql = 'SELECT * FROM events WHERE occurred_at > ? ORDER BY occurred_at DESC LIMIT ?';
+    let params = [cutoff, limit];
+    if (args.source) {
+      sql = 'SELECT * FROM events WHERE source = ? AND occurred_at > ? ORDER BY occurred_at DESC LIMIT ?';
+      params = [args.source, cutoff, limit];
+    }
+    return dbAll(db, sql, params);
+  },
+
+  get_daily_summary: (args, db) => {
+    const date = args.date || new Date().toISOString().split('T')[0];
+    const row = db.prepare('SELECT * FROM daily_summaries WHERE date = ?').get(date);
+    return row || { date, summary: 'No summary available' };
+  },
+
+  list_debts: (args, db) => {
+    const status = args.status || 'open';
+    if (status === 'all') {
+      return dbAll(db, 'SELECT * FROM attention_debts ORDER BY created_at DESC LIMIT 50');
+    }
+    return dbAll(db, 'SELECT * FROM attention_debts WHERE status = ? ORDER BY created_at DESC LIMIT 50', [status]);
+  }
+};
+
+app.post('/mcp', (req, res) => {
+  const { jsonrpc, id, method, params } = req.body;
+
+  if (jsonrpc !== '2.0') {
+    return res.json({ jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request: must be JSON-RPC 2.0' } });
+  }
+
+  // tools/list — return available tools
+  if (method === 'tools/list') {
+    return res.json({ jsonrpc: '2.0', id, result: { tools: MCP_TOOLS } });
+  }
+
+  // tools/call — execute a tool
+  if (method === 'tools/call') {
+    const toolName = params?.name;
+    const toolArgs = params?.arguments || {};
+    const handler = MCP_HANDLERS[toolName];
+
+    if (!handler) {
+      return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown tool: ${toolName}` } });
+    }
+
+    const db = ensureDb();
+    if (!db) {
+      return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Database unavailable' } });
+    }
+
+    try {
+      const result = handler(toolArgs, db);
+      return res.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } });
+    } catch (e) {
+      return res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: e.message } });
+    }
+  }
+
+  return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } });
+});
+
 // Graceful shutdown: close DB connection on exit
 process.on('SIGTERM', () => { if (_db) _db.close(); process.exit(0); });
 process.on('SIGINT', () => { if (_db) _db.close(); process.exit(0); });

@@ -5,18 +5,17 @@ Analyses 7 days of cross-source data and generates comprehensive recommendations
 import json
 import logging
 import os
-import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
+from src.core.agent_client import agent_query_json
 
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "claude-sonnet-4-6"
-CLAUDE_TIMEOUT = 300
 
 SYSTEM_PROMPT = load_prompt("insights")
 
@@ -219,39 +218,7 @@ class InsightEngine:
         context = _build_context(self.db)
         prompt = SYSTEM_PROMPT + "\n\n" + context + JSON_SCHEMA_PROMPT
 
-        try:
-            proc = subprocess.run(
-                ["claude", "--dangerously-skip-permissions", "--print",
-                 "--model", MODEL_NAME, "-"],
-                capture_output=True,
-                text=True,
-                timeout=CLAUDE_TIMEOUT,
-                input=prompt,
-            )
-        except subprocess.TimeoutExpired:
-            logger.error("InsightEngine: Claude CLI timed out after %ds", CLAUDE_TIMEOUT)
-            raise
-        except FileNotFoundError:
-            logger.error("InsightEngine: 'claude' CLI not found in PATH")
-            raise
-
-        raw = proc.stdout.strip()
-        if proc.returncode != 0:
-            logger.error("InsightEngine: Claude CLI exited %d: %s", proc.returncode, proc.stderr[:500])
-            raise RuntimeError(f"Claude CLI failed (exit {proc.returncode}): {proc.stderr[:500]}")
-
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            first_nl = raw.index("\n")
-            raw = raw[first_nl + 1:]
-        if raw.endswith("```"):
-            raw = raw[:-3].rstrip()
-
-        try:
-            result = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            logger.error("InsightEngine: Failed to parse JSON: %s\nRaw output:\n%s", exc, raw[:1000])
-            raise RuntimeError(f"Failed to parse insight JSON: {exc}") from exc
+        result = agent_query_json(prompt, model=MODEL_NAME)
 
         result["generated_at"] = datetime.now(timezone.utc).isoformat()
         self.db.save_insights(result)

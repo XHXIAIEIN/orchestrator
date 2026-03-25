@@ -7,8 +7,9 @@ description: "System operations: collector repairs, DB management, performance o
 authority: MUTATE  # can modify files, cannot commit/push (APPROVE = human only)
 
 policy:
-  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]
-  denied_tools: [WebFetch, WebSearch]
+  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep, browser_navigate, browser_read_page, browser_screenshot, browser_click, browser_fill]
+  denied_tools: [WebFetch, WebSearch, browser_evaluate]
+  approve_required: [browser_fill_form]
   writable_paths:
     - "src/collectors/**"
     - "src/scheduler.py"
