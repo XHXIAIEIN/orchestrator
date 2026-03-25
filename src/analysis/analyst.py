@@ -71,8 +71,8 @@ class DailyAnalyst:
             log.error(f"DailyAnalyst: unexpected error: {e}")
             return {}
 
-        today = datetime.now(_LOCAL_TZ).date().isoformat()
-        self.db.save_daily_summary(today, json.dumps(result, ensure_ascii=False))
+        report_date = yesterday_start.date().isoformat()
+        self.db.save_daily_summary(report_date, json.dumps(result, ensure_ascii=False))
         if result.get("profile_update"):
             updated = {**(profile or {}), **result["profile_update"]}
             self.db.save_user_profile(updated)

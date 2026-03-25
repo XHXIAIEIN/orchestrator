@@ -40,7 +40,11 @@ app.get('/api-reference', (req, res) => {
 </body></html>`);
 });
 
-// ── Persistent DB connection with WAL mode ──
+// ── Persistent DB connection ──
+// NOTE: Do NOT set WAL mode here. On Docker NTFS bind-mounts, WAL requires
+// -shm files that Python subprocesses (spawned by dashboard) cannot create.
+// busy_timeout alone is sufficient — better-sqlite3's persistent connection
+// already eliminates the old sql.js "read entire file" problem.
 let _db = null;
 
 function getDb() {
@@ -48,16 +52,9 @@ function getDb() {
   if (!fs.existsSync(DB_PATH)) return null;
   try {
     _db = new Database(DB_PATH, { fileMustExist: true });
-    // Wait up to 5s if another process holds the lock (must come first)
     _db.pragma('busy_timeout = 5000');
-    // WAL mode: concurrent reads while Python writes.
-    // May fail on Docker NTFS bind-mounts — match Python's fallback behavior.
-    try {
-      const mode = _db.pragma('journal_mode = WAL', { simple: true });
-      console.log(`DB connected (better-sqlite3, journal_mode=${mode})`);
-    } catch {
-      console.log('DB connected (better-sqlite3, WAL unavailable — using default journal mode)');
-    }
+    const mode = _db.pragma('journal_mode', { simple: true });
+    console.log(`DB connected (better-sqlite3, journal_mode=${mode})`);
     return _db;
   } catch (e) {
     console.error('DB open failed:', e.message);

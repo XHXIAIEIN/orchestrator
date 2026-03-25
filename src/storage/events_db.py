@@ -22,19 +22,13 @@ class EventsDB:
     def _connect(self):
         conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        # Do NOT set WAL mode — on Docker NTFS bind-mounts, WAL's -shm file
+        # breaks other processes (dashboard Python subprocesses can't connect).
+        # DELETE journal mode + busy_timeout is sufficient for our concurrency needs.
         try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            # Test that WAL actually works (fails on Docker NTFS bind-mounts)
-            conn.execute("SELECT 1")
+            conn.execute("PRAGMA journal_mode=DELETE")
         except sqlite3.OperationalError:
-            # WAL fails on Docker bind-mounts (WSL2 + NTFS), fall back to DELETE
-            conn.close()
-            conn = sqlite3.connect(self.db_path, timeout=30)
-            conn.row_factory = sqlite3.Row
-            try:
-                conn.execute("PRAGMA journal_mode=DELETE")
-            except sqlite3.OperationalError:
-                pass
+            pass
         try:
             conn.execute("PRAGMA busy_timeout=30000")
         except sqlite3.OperationalError:
