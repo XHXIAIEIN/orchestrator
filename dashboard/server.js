@@ -1706,10 +1706,11 @@ const MCP_HANDLERS = {
   create_task: (args, db) => {
     const now = new Date().toISOString();
     const dept = args.department || 'engineering';
+    const spec = JSON.stringify({ department: dept, source: 'mcp', description: args.description });
     const result = dbRun(db,
-      `INSERT INTO tasks (action, department, spec, status, created_at)
-       VALUES (?, ?, ?, 'pending', ?)`,
-      [args.description, dept, JSON.stringify({ source: 'mcp', description: args.description }), now]
+      `INSERT INTO tasks (action, spec, status, source, priority, created_at)
+       VALUES (?, ?, 'pending', 'mcp', 'medium', ?)`,
+      [args.description, spec, now]
     );
     return { task_id: result.lastInsertRowid, status: 'pending', department: dept };
   },
