@@ -195,16 +195,36 @@ class ConnectedComponentStage(DetectionStage):
 
 
 class RectFilterStage(DetectionStage):
-    """Filter out rects that are too small."""
+    """Filter out rects that are too small, too thin, or window edge artifacts."""
 
-    def __init__(self, min_area: int = 200):
+    def __init__(self, min_area: int = 200, min_aspect: float = 0.1,
+                 max_aspect: float = 15.0, edge_margin: int = 5):
         self.min_area = min_area
+        self.min_aspect = min_aspect  # filter very tall/narrow strips
+        self.max_aspect = max_aspect  # filter very wide/short strips
+        self.edge_margin = edge_margin  # ignore rects touching window edge
 
     def process(self, ctx):
-        ctx.rects = [
-            r for r in ctx.rects
-            if (r[2] - r[0]) * (r[3] - r[1]) >= self.min_area
-        ]
+        filtered = []
+        img_h, img_w = ctx.height, ctx.width
+        for r in ctx.rects:
+            w, h = r[2] - r[0], r[3] - r[1]
+            if w * h < self.min_area:
+                continue
+            aspect = w / max(h, 1)
+            if aspect < self.min_aspect or aspect > self.max_aspect:
+                continue  # strip-shaped artifact (window border, divider line)
+            # Skip rects that are just window edge artifacts (1-5px from edge)
+            if r[0] <= self.edge_margin and w < 20:
+                continue  # left edge strip
+            if r[2] >= img_w - self.edge_margin and w < 20:
+                continue  # right edge strip
+            if r[1] <= self.edge_margin and h < 20:
+                continue  # top edge strip
+            if r[3] >= img_h - self.edge_margin and h < 20:
+                continue  # bottom edge strip
+            filtered.append(r)
+        ctx.rects = filtered
         return ctx
 
 
@@ -257,29 +277,45 @@ class NestedStage(DetectionStage):
         min_area = total_area * self.min_block_area_ratio
         new_rects = list(ctx.rects)
 
+        # Detect inside large containers
         for r in ctx.rects:
             rw, rh = r[2] - r[0], r[3] - r[1]
             if rw * rh < min_area:
                 continue
-            sub_img = ctx.img[r[1]:r[3], r[0]:r[2]]
-            if sub_img.size == 0:
-                continue
-            sub_pipeline = DetectionPipeline([
-                GrayscaleStage(), TopHatStage(kernel_size=40), OtsuStage(),
-                DilateStage(h_kernel=(2, 8), v_kernel=(4, 2)),
-                ConnectedComponentStage(min_w=10, min_h=8),
-            ])
-            sub_ctx = sub_pipeline.run(sub_img)
-            for sr in sub_ctx.rects:
-                gx1, gy1 = sr[0] + r[0], sr[1] + r[1]
-                gx2, gy2 = sr[2] + r[0], sr[3] + r[1]
-                # Skip if child is basically the parent
-                if (gx2 - gx1) > rw * 0.9 and (gy2 - gy1) > rh * 0.9:
-                    continue
-                new_rects.append((gx1, gy1, gx2, gy2))
+            children = self._detect_sub(ctx.img, r)
+            new_rects.extend(children)
+
+        # Also scan title bar region (top ~50px) with small kernel
+        # to catch minimize/maximize/close buttons
+        title_h = min(60, ctx.height // 10)
+        title_region = (0, 0, ctx.width, title_h)
+        title_children = self._detect_sub(ctx.img, title_region, kernel_size=25)
+        new_rects.extend(title_children)
 
         ctx.rects = new_rects
         return ctx
+
+    def _detect_sub(self, img, region, kernel_size=40):
+        """Run sub-pipeline on a region, return global-coord rects."""
+        x1, y1, x2, y2 = region
+        rw, rh = x2 - x1, y2 - y1
+        sub_img = img[y1:y2, x1:x2]
+        if sub_img.size == 0:
+            return []
+        sub_pipeline = DetectionPipeline([
+            GrayscaleStage(), TopHatStage(kernel_size=kernel_size), OtsuStage(),
+            DilateStage(h_kernel=(2, 8), v_kernel=(4, 2)),
+            ConnectedComponentStage(min_w=10, min_h=8),
+        ])
+        sub_ctx = sub_pipeline.run(sub_img)
+        results = []
+        for sr in sub_ctx.rects:
+            gx1, gy1 = sr[0] + x1, sr[1] + y1
+            gx2, gy2 = sr[2] + x1, sr[3] + y1
+            if (gx2 - gx1) > rw * 0.9 and (gy2 - gy1) > rh * 0.9:
+                continue
+            results.append((gx1, gy1, gx2, gy2))
+        return results
 
 
 class ClassifyStage(DetectionStage):
