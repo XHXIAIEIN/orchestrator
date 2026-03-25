@@ -108,11 +108,14 @@ class GrayscaleStage(DetectionStage):
 
 
 class TopHatStage(DetectionStage):
-    """Adaptive Top-Hat / Black-Hat based on background brightness.
+    """Adaptive Top-Hat / Black-Hat with highlight-aware local inversion.
 
     Dark background (median < 128) → TopHat (extract bright elements).
     Light background (median >= 128) → BlackHat (extract dark elements).
-    Auto-selects based on grayscale median — works on any theme.
+
+    Additionally detects high-saturation colored regions (green highlights,
+    colored badges) via HSV and applies the *opposite* transform there,
+    so bright text on colored backgrounds is also captured.
     """
 
     def __init__(self, kernel_size: int = 80):
@@ -125,12 +128,31 @@ class TopHatStage(DetectionStage):
         kernel = cv2.getStructuringElement(
             cv2.MORPH_RECT, (self.kernel_size, self.kernel_size))
         median = float(np.median(ctx.gray))
-        if median < 128:
-            # Dark background → TopHat extracts bright foreground
-            ctx.gray = cv2.morphologyEx(ctx.gray, cv2.MORPH_TOPHAT, kernel)
+        is_dark = median < 128
+
+        # Primary transform based on overall brightness
+        if is_dark:
+            primary = cv2.morphologyEx(ctx.gray, cv2.MORPH_TOPHAT, kernel)
         else:
-            # Light background → BlackHat extracts dark foreground
-            ctx.gray = cv2.morphologyEx(ctx.gray, cv2.MORPH_BLACKHAT, kernel)
+            primary = cv2.morphologyEx(ctx.gray, cv2.MORPH_BLACKHAT, kernel)
+
+        # Detect colored highlight regions via HSV saturation
+        hsv = cv2.cvtColor(ctx.img, cv2.COLOR_BGR2HSV)
+        # High saturation = colored region (highlights, badges, colored buttons)
+        color_mask = cv2.inRange(hsv, (0, 60, 50), (180, 255, 255))
+        color_ratio = np.count_nonzero(color_mask) / max(color_mask.size, 1)
+
+        if color_ratio > 0.01:  # at least 1% colored pixels
+            # Apply opposite transform on colored regions
+            if is_dark:
+                opposite = cv2.morphologyEx(ctx.gray, cv2.MORPH_BLACKHAT, kernel)
+            else:
+                opposite = cv2.morphologyEx(ctx.gray, cv2.MORPH_TOPHAT, kernel)
+            # Blend: use opposite result only in colored regions
+            color_mask_3 = color_mask > 0
+            primary[color_mask_3] = cv2.max(primary, opposite)[color_mask_3]
+
+        ctx.gray = primary
         return ctx
 
 
