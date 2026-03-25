@@ -181,9 +181,9 @@ def render_annotated(
 def detect_contour_rects(
     png_bytes: bytes,
     ocr_words: list[OCRWord] | None = None,
-    min_area: int = 800,
+    min_area: int = 400,
     max_area: int = 80000,
-    min_side: int = 25,
+    min_side: int = 15,
 ) -> list[tuple[int, int, int, int]]:
     """Detect rectangular UI elements via CV contour detection.
 
