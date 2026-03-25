@@ -131,14 +131,16 @@ class Win32Layer(PerceptionLayer):
 class CVLayer(PerceptionLayer):
     """Layer 0.5: CV edge detection for self-drawing apps.
 
-    Uses Canny + HoughLinesP to find structural dividers (long horizontal/
-    vertical lines), then builds zones from the resulting grid.
+    Finds only the *major* structural dividers — lines that span a large
+    portion of the window — then merges adjacent same-type cells into
+    a small number of semantic zones (icon bar, contact list, chat area, etc.).
 
-    ~12ms, no GPU, no model weights.
+    ~15ms, no GPU, no model weights.
     """
 
-    def __init__(self, min_line_ratio: float = 0.15):
+    def __init__(self, min_line_ratio: float = 0.4, variance_threshold: float = 2000):
         self.min_line_ratio = min_line_ratio
+        self.variance_threshold = variance_threshold
 
     def analyze(self, hwnd: int, rect: tuple[int, int, int, int]) -> PerceptionResult:
         """Not directly usable — use analyze_image() with screenshot bytes."""
@@ -165,7 +167,7 @@ class CVLayer(PerceptionLayer):
 
         raw_lines = cv2.HoughLinesP(
             edges, 1, np.pi / 180,
-            threshold=60, minLineLength=80, maxLineGap=10,
+            threshold=80, minLineLength=100, maxLineGap=10,
         )
 
         h_lines, v_lines = [], []
@@ -179,30 +181,33 @@ class CVLayer(PerceptionLayer):
                 elif dx < 5 and length > h * self.min_line_ratio:
                     v_lines.append(x1)
 
-        x_cuts = self._merge_positions(v_lines, threshold=10)
-        y_cuts = self._merge_positions(h_lines, threshold=10)
+        x_cuts = self._merge_positions(v_lines, threshold=15)
+        y_cuts = self._merge_positions(h_lines, threshold=15)
 
+        # Build raw grid cells
         x_edges = sorted(set([0] + x_cuts + [w]))
         y_edges = sorted(set([0] + y_cuts + [h]))
 
-        zones = []
+        raw_cells = []
         for yi in range(len(y_edges) - 1):
             for xi in range(len(x_edges) - 1):
-                zx1, zy1 = x_edges[xi], y_edges[yi]
-                zx2, zy2 = x_edges[xi + 1], y_edges[yi + 1]
+                zx1, zy1 = int(x_edges[xi]), int(y_edges[yi])
+                zx2, zy2 = int(x_edges[xi + 1]), int(y_edges[yi + 1])
                 if zx2 - zx1 < 30 or zy2 - zy1 < 30:
                     continue
 
                 cell = img[zy1:zy2, zx1:zx2]
                 variance = float(np.var(cell))
-                is_dynamic = variance > 2000
+                is_dynamic = variance > self.variance_threshold
 
-                zones.append(UIZone(
-                    name=f"zone_{xi}_{yi}",
-                    rect=(zx1, zy1, zx2, zy2),
-                    zone_type="content" if is_dynamic else "panel",
-                    dynamic=is_dynamic,
-                ))
+                raw_cells.append({
+                    "col": xi, "row": yi,
+                    "rect": (zx1, zy1, zx2, zy2),
+                    "dynamic": is_dynamic,
+                })
+
+        # Merge vertically: adjacent cells in same column with same type
+        zones = self._merge_cells_vertically(raw_cells)
 
         return PerceptionResult(
             zones=zones,
@@ -211,7 +216,58 @@ class CVLayer(PerceptionLayer):
         )
 
     @staticmethod
-    def _merge_positions(positions: list[int], threshold: int = 10) -> list[int]:
+    def _merge_cells_vertically(cells: list[dict]) -> list[UIZone]:
+        """Merge adjacent cells in the same column if they share dynamic type."""
+        # Group by column
+        by_col: dict[int, list[dict]] = {}
+        for c in cells:
+            by_col.setdefault(c["col"], []).append(c)
+
+        zones: list[UIZone] = []
+        zone_id = 0
+
+        for col in sorted(by_col.keys()):
+            col_cells = sorted(by_col[col], key=lambda c: c["rect"][1])
+            if not col_cells:
+                continue
+
+            # Walk and merge
+            current = col_cells[0].copy()
+            for next_cell in col_cells[1:]:
+                # Merge if same dynamic type and adjacent (y-gap < 5px)
+                gap = next_cell["rect"][1] - current["rect"][3]
+                if next_cell["dynamic"] == current["dynamic"] and gap < 5:
+                    # Extend current rect downward
+                    current["rect"] = (
+                        current["rect"][0],
+                        current["rect"][1],
+                        max(current["rect"][2], next_cell["rect"][2]),
+                        next_cell["rect"][3],
+                    )
+                else:
+                    # Emit current, start new
+                    zones.append(UIZone(
+                        name=f"zone_{zone_id}",
+                        rect=current["rect"],
+                        zone_type="content" if current["dynamic"] else "panel",
+                        dynamic=current["dynamic"],
+                    ))
+                    zone_id += 1
+                    current = next_cell.copy()
+
+            # Emit last
+            zones.append(UIZone(
+                name=f"zone_{zone_id}",
+                rect=current["rect"],
+                zone_type="content" if current["dynamic"] else "panel",
+                dynamic=current["dynamic"],
+            ))
+            zone_id += 1
+
+        return zones
+
+    @staticmethod
+    def _merge_positions(positions: list[int], threshold: int = 15) -> list[int]:
         if not positions:
             return []
         positions = sorted(positions)
