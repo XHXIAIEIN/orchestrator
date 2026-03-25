@@ -1,0 +1,9 @@
+name: claude_memory
+display_name: Claude Code Memory
+category: optional
+description: "Reads Claude Code memory files (.claude/projects/*/memory/*.md) to bridge AI session context into Orchestrator events"
+default_enabled: true
+env_vars: []
+requires: []
+event_sources:
+  - claude_memory
