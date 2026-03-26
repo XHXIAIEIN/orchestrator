@@ -147,6 +147,16 @@ class ApprovalGateway:
         # Notify all channels of the outcome
         self._notify_outcome(req)
 
+        # Wake session callback — update session status on approve/deny
+        try:
+            from src.channels.wake import on_task_approved, on_task_denied
+            if decision == "approve":
+                on_task_approved(task_id)
+            elif decision == "deny":
+                on_task_denied(task_id)
+        except Exception:
+            pass
+
     def get_pending(self) -> list[ApprovalRequest]:
         """Return all pending approval requests."""
         with self._lock:
@@ -179,10 +189,10 @@ class ApprovalGateway:
                 risk_label = {"LOW": "低风险", "MEDIUM": "中风险", "HIGH": "高风险"}.get(risk, risk)
                 msg = ChannelMessage(
                     text=(
-                        f"*需要审批* ({risk_label})\n\n"
+                        f"<b>需要审批</b> ({risk_label})\n\n"
                         f"{req.description}\n\n"
                         f"权限等级: {req.authority_level}/4\n"
-                        f"Task: `{req.task_id}`"
+                        f"Task: <code>{req.task_id}</code>"
                     ),
                     event_type="approval.request",
                     priority="CRITICAL",
