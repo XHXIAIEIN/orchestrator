@@ -32,6 +32,7 @@ class HealthCheck:
             "container": self._check_container(),
             "departments": self._check_departments(),
             "browser": self._check_browser(),
+            "channels": self._check_channels(),
             "issues": [],
         }
         report["issues"] = self.issues
@@ -48,7 +49,7 @@ class HealthCheck:
         return report
 
     def _check_db(self) -> dict:
-        """检查 DB 大小和增长趋势。"""
+        """检查 DB 大小、增长趋势、journal mode 一致性、残留锁文件。"""
         db_file = Path(self.db_path)
         size_mb = db_file.stat().st_size / (1024 * 1024) if db_file.exists() else 0
 
@@ -60,6 +61,8 @@ class HealthCheck:
             recent_events = conn.execute(
                 "SELECT COUNT(*) FROM events WHERE occurred_at > ?", (yesterday,)
             ).fetchone()[0]
+            # Journal mode 一致性检查
+            jmode = conn.execute("PRAGMA journal_mode").fetchone()[0]
 
         if size_mb > 100:
             self.issues.append({"level": "high", "component": "db",
@@ -68,8 +71,36 @@ class HealthCheck:
             self.issues.append({"level": "medium", "component": "db",
                                 "summary": f"DB 偏大：{size_mb:.0f}MB，关注增长"})
 
+        # Journal mode 不应该是 WAL（Docker NTFS 不兼容）
+        if jmode and jmode.lower() == "wal":
+            self.issues.append({"level": "high", "component": "db",
+                                "summary": "DB journal_mode=WAL，Docker NTFS 下会导致 database is locked"})
+
+        # 检查残留的 WAL/SHM 文件（上次异常退出可能留下）
+        stale_files = []
+        for suffix in ("-wal", "-shm", "-journal"):
+            stale = Path(self.db_path + suffix)
+            if stale.exists():
+                stale_size = stale.stat().st_size
+                stale_files.append(f"{stale.name}({stale_size}B)")
+        if stale_files:
+            self.issues.append({"level": "medium", "component": "db",
+                                "summary": f"DB 残留锁文件：{', '.join(stale_files)}"})
+
+        # 锁测试：快速尝试写入并立即回滚
+        lock_ok = True
+        try:
+            with self.db._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("ROLLBACK")
+        except Exception as e:
+            lock_ok = False
+            self.issues.append({"level": "high", "component": "db",
+                                "summary": f"DB 写锁测试失败：{e}"})
+
         return {"size_mb": round(size_mb, 1), "total_events": total_events,
-                "events_24h": recent_events}
+                "events_24h": recent_events, "journal_mode": jmode,
+                "stale_files": stale_files, "lock_ok": lock_ok}
 
     def _check_collectors(self) -> dict:
         """检查每个采集器最近是否在工作。"""
@@ -186,3 +217,40 @@ class HealthCheck:
             return info
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+    def _check_channels(self) -> dict:
+        """检查 Telegram / WeChat bot 是否在线、最近是否有消息活动。"""
+        result = {}
+        try:
+            from src.channels.registry import get_channel_registry
+            reg = get_channel_registry()
+            for name, ch in reg._channels.items():
+                ch_info = {"registered": True}
+                # 检查是否有 _stop_event（说明有轮询线程）
+                stop_ev = getattr(ch, "_stop_event", None)
+                if stop_ev is not None:
+                    ch_info["running"] = not stop_ev.is_set()
+                    if stop_ev.is_set():
+                        self.issues.append({
+                            "level": "high", "component": f"channel:{name}",
+                            "summary": f"{name} channel 已停止（stop_event set）",
+                        })
+                result[name] = ch_info
+        except Exception as e:
+            log.debug(f"Channel check failed: {e}")
+
+        # 检查最近聊天消息活跃度
+        try:
+            with self.db._connect() as conn:
+                row = conn.execute(
+                    "SELECT created_at FROM chat_messages ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                if row:
+                    last_msg = row[0]
+                    hours_ago = (datetime.now(timezone.utc) -
+                                 datetime.fromisoformat(last_msg.replace('Z', '+00:00'))).total_seconds() / 3600
+                    result["last_chat_message"] = {"time": last_msg, "hours_ago": round(hours_ago, 1)}
+        except Exception:
+            pass
+
+        return result
