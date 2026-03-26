@@ -253,4 +253,25 @@ class HealthCheck:
         except Exception:
             pass
 
+        # Check for stuck wake sessions (running > 30 min)
+        try:
+            with self.db._connect() as conn:
+                stuck = conn.execute(
+                    "SELECT COUNT(*) FROM wake_sessions "
+                    "WHERE status = 'running' AND started_at < ?",
+                    ((datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),)
+                ).fetchone()[0]
+                active_count = conn.execute(
+                    "SELECT COUNT(*) FROM wake_sessions "
+                    "WHERE status IN ('pending', 'approved', 'running')"
+                ).fetchone()[0]
+            if stuck > 0:
+                self.issues.append({
+                    "level": "high", "component": "wake",
+                    "summary": f"{stuck} 个 wake session 运行超过 30 分钟",
+                })
+            result["wake"] = {"active": active_count, "stuck": stuck}
+        except Exception:
+            pass
+
         return result
