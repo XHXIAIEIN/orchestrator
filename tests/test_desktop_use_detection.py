@@ -208,12 +208,19 @@ class TestRectFilterStage:
 
 
 class TestMergeStage:
-    def test_merges_overlapping(self):
+    def test_merges_significantly_overlapping(self):
+        """Two rects with >30% overlap → merge."""
+        ctx = DetectionContext(img=np.zeros((200, 300, 3), dtype=np.uint8))
+        ctx.rects = [(10, 10, 50, 50), (20, 20, 60, 60)]
+        ctx = MergeStage().process(ctx)
+        assert len(ctx.rects) == 1
+
+    def test_keeps_slightly_overlapping(self):
+        """Two rects with <30% overlap → keep separate."""
         ctx = DetectionContext(img=np.zeros((200, 300, 3), dtype=np.uint8))
         ctx.rects = [(10, 10, 50, 50), (30, 30, 70, 70)]
         ctx = MergeStage().process(ctx)
-        assert len(ctx.rects) == 1
-        assert ctx.rects[0] == (10, 10, 70, 70)
+        assert len(ctx.rects) == 2
 
     def test_keeps_separate(self):
         ctx = DetectionContext(img=np.zeros((200, 300, 3), dtype=np.uint8))
@@ -222,9 +229,9 @@ class TestMergeStage:
         assert len(ctx.rects) == 2
 
     def test_chain_merge(self):
-        """A overlaps B, B overlaps C → all merge into one."""
+        """Significantly overlapping chain merges."""
         ctx = DetectionContext(img=np.zeros((200, 300, 3), dtype=np.uint8))
-        ctx.rects = [(0, 0, 30, 30), (20, 20, 50, 50), (40, 40, 70, 70)]
+        ctx.rects = [(0, 0, 30, 30), (10, 10, 40, 40), (20, 20, 50, 50)]
         ctx = MergeStage().process(ctx)
         assert len(ctx.rects) == 1
 

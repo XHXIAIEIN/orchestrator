@@ -1,5 +1,6 @@
 # Desktop Use Engine (src/desktop_use/) — Windows only
 # These packages require native dependencies that don't build in Docker Linux containers
+cvui @ git+https://github.com/XHXIAIEIN/cvui.git  # UI element detection pipeline
 mss>=9.0.0
 pyautogui>=0.9.54
 winocr>=0.2.0               # system-native OCR (WinRT)
