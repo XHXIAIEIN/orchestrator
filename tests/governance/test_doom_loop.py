@@ -46,3 +46,37 @@ def test_mixed_events_no_trigger():
     ]
     result = check_doom_loop(events)
     assert not result.triggered
+
+
+from src.governance.stuck_detector import StuckDetector
+
+
+class TestStuckDetectorSignatureRepeat:
+    """StuckDetector Pattern 6: 完全相同参数的工具调用重复。"""
+
+    def test_signature_repeat_detected(self):
+        d = StuckDetector()
+        for i in range(6):
+            # text varies each turn so Pattern 1 (REPEATED_ACTION_OBSERVATION) doesn't fire first
+            d.record({"data": {
+                "tools": ["Read"],
+                "tools_detail": [{"tool": "Read", "input_preview": "file_path: /same.py"}],
+                "text": [f"attempt {i}"],
+                "error": "",
+            }})
+        stuck, pattern = d.is_stuck()
+        assert stuck
+        assert pattern == "SIGNATURE_REPEAT"
+
+    def test_different_inputs_not_signature_repeat(self):
+        d = StuckDetector()
+        for i in range(6):
+            # both text and input_preview vary — no pattern should fire
+            d.record({"data": {
+                "tools": ["Read"],
+                "tools_detail": [{"tool": "Read", "input_preview": f"file_path: /file_{i}.py"}],
+                "text": [f"result {i}"],
+                "error": "",
+            }})
+        stuck, pattern = d.is_stuck()
+        assert not stuck

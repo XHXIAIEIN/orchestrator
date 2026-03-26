@@ -17,12 +17,13 @@ WINDOW = 4
 class StuckDetector:
     """Detect when an agent is stuck in a loop.
 
-    Five patterns:
+    Six patterns:
     1. REPEATED_ACTION_OBSERVATION — same action+observation pair repeats
     2. REPEATED_ACTION_ERROR — same action keeps producing same error
     3. MONOLOGUE — agent talks to itself without tool use
     4. ACTION_OBSERVATION_CYCLE — alternating pattern repeats
     5. CONTEXT_WINDOW_LOOP — keeps hitting context limit errors
+    6. SIGNATURE_REPEAT — same tool with identical input parameters 3+ times
     """
 
     def __init__(self, window: int = WINDOW):
@@ -59,6 +60,10 @@ class StuckDetector:
         # Pattern 5: Context window errors
         if self._check_context_window_loop(recent):
             return True, "CONTEXT_WINDOW_LOOP"
+
+        # Pattern 6: Signature repeat (same tool + same input)
+        if self._check_signature_repeat(recent):
+            return True, "SIGNATURE_REPEAT"
 
         return False, ""
 
@@ -118,6 +123,21 @@ class StuckDetector:
             if any(kw in err for kw in ("context", "token", "too long", "maximum")):
                 ctx_errors += 1
         return ctx_errors >= 2
+
+    def _check_signature_repeat(self, events: list[dict]) -> bool:
+        """Same tool with same input parameters repeating 3+ times."""
+        signatures = []
+        for e in events:
+            data = e.get("data", {})
+            for tool_detail in (data.get("tools_detail") or []):
+                sig = f"{tool_detail.get('tool', '')}:{tool_detail.get('input_preview', '')[:100]}"
+                signatures.append(sig)
+        if len(signatures) < 3:
+            return False
+        from collections import Counter
+        counts = Counter(signatures)
+        _, top_count = counts.most_common(1)[0]
+        return top_count >= 3
 
     def reset(self) -> None:
         """Clear recorded events."""
