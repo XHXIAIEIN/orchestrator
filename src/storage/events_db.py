@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -23,6 +24,9 @@ _pools: dict[str, "_ConnPool"] = {}
 
 class _ConnPool:
     """Single-connection pool with a threading lock — serialises all DB access to one file."""
+
+    _MAX_RETRIES = 3
+    _RETRY_BASE_DELAY = 0.5
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -50,22 +54,37 @@ class _ConnPool:
         Uses the connection as a context manager so that SQLite auto-commits on
         success and auto-rolls-back on exception — same semantics as the old
         ``with self._connect() as conn`` pattern used by all mixins.
+
+        Retries up to _MAX_RETRIES times with exponential backoff on
+        ``database is locked`` / ``disk I/O error``. The lock is released
+        during sleep so other threads can make progress.
         """
-        with self.lock:
-            if self._conn is None:
-                self._conn = self._raw_connect()
-            try:
-                with self._conn:  # sqlite3 auto-commit / rollback
-                    yield self._conn
-            except sqlite3.OperationalError as exc:
-                if "database is locked" in str(exc) or "disk I/O error" in str(exc):
-                    log.warning(f"events_db: connection error, recycling: {exc}")
-                    try:
-                        self._conn.close()
-                    except Exception:
-                        pass
+        last_exc: sqlite3.OperationalError | None = None
+        for attempt in range(self._MAX_RETRIES + 1):
+            with self.lock:
+                if self._conn is None:
                     self._conn = self._raw_connect()
-                raise
+                try:
+                    with self._conn:  # sqlite3 auto-commit / rollback
+                        yield self._conn
+                    return  # success — exit the retry loop
+                except sqlite3.OperationalError as exc:
+                    if "database is locked" in str(exc) or "disk I/O error" in str(exc):
+                        log.warning(f"events_db: connection error, recycling: {exc}")
+                        try:
+                            self._conn.close()
+                        except Exception:
+                            pass
+                        self._conn = self._raw_connect()
+                        last_exc = exc
+                    else:
+                        raise
+            # lock released — sleep before next attempt
+            if attempt < self._MAX_RETRIES:
+                delay = self._RETRY_BASE_DELAY * (2 ** attempt)
+                log.info(f"events_db: retrying in {delay}s (attempt {attempt + 1}/{self._MAX_RETRIES})")
+                time.sleep(delay)
+        raise last_exc
 
 
 def _get_pool(db_path: str) -> _ConnPool:

@@ -52,7 +52,7 @@ function getDb() {
   if (!fs.existsSync(DB_PATH)) return null;
   try {
     _db = new Database(DB_PATH, { fileMustExist: true });
-    _db.pragma('busy_timeout = 5000');
+    _db.pragma('busy_timeout = 30000');
     const mode = _db.pragma('journal_mode', { simple: true });
     console.log(`DB connected (better-sqlite3, journal_mode=${mode})`);
     return _db;
@@ -184,37 +184,18 @@ app.post('/api/tasks', (req, res) => {
   const { action, reason, priority, spec } = req.body || {};
   if (!action) return res.status(400).json({ error: 'action is required' });
 
-  const payload = JSON.stringify({ action, reason: reason || '', priority: priority || 'medium', spec: spec || {} });
-  const proc = spawn('python3', ['-c', `
-import sys, json
-sys.path.insert(0, '/orchestrator')
-from src.storage.events_db import EventsDB
-db = EventsDB('/orchestrator/data/events.db')
-data = json.loads(sys.stdin.read())
-tid = db.create_task(
-    action=data['action'],
-    reason=data.get('reason', ''),
-    priority=data.get('priority', 'medium'),
-    spec=data.get('spec', {}),
-    source='manual'
-)
-print(json.dumps({'id': tid}))
-  `]);
+  const db = ensureDb();
+  if (!db) return res.status(500).json({ error: 'database not available' });
 
-  proc.stdin.write(payload);
-  proc.stdin.end();
-
-  let out = '';
-  let err = '';
-  proc.stdout.on('data', d => { out += d; });
-  proc.stderr.on('data', d => { err += d; });
-  proc.on('close', code => {
-    try {
-      res.json(JSON.parse(out));
-    } catch {
-      res.status(500).json({ error: err || out || 'unknown error' });
-    }
-  });
+  try {
+    const now = new Date().toISOString();
+    const result = db.prepare(
+      'INSERT INTO tasks (action, reason, priority, spec, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(action, reason || '', priority || 'medium', JSON.stringify(spec || {}), 'pending', 'manual', now);
+    res.json({ id: Number(result.lastInsertRowid) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/tasks/:id/approve', (req, res) => {
