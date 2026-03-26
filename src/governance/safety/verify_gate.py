@@ -164,17 +164,62 @@ def gate_test_pass(task_cwd: str, test_cmd: str = "pytest tests/ -x -q", **kwarg
                          message=f"检查跳过: {e}")
 
 
+def gate_commit_granularity(task_cwd: str, max_lines_per_commit: int = 300,
+                           **kwargs) -> GateResult:
+    """检查 commit 粒度：单次 commit 改动超过阈值 → 疑似攒批提交。
+
+    只检查最近 10 个 commit（覆盖一次 task 的范围）。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "--oneline", "--shortstat", "-10"],
+            cwd=task_cwd, capture_output=True, text=True, timeout=10,
+        )
+        lines = result.stdout.strip().splitlines()
+
+        fat_commits = []
+        current_hash = ""
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # shortstat 行格式: " 5 files changed, 200 insertions(+), 30 deletions(-)"
+            if "file" in line and ("insertion" in line or "deletion" in line):
+                import re
+                ins = re.search(r'(\d+) insertion', line)
+                dels = re.search(r'(\d+) deletion', line)
+                total = (int(ins.group(1)) if ins else 0) + (int(dels.group(1)) if dels else 0)
+                if total > max_lines_per_commit:
+                    fat_commits.append(f"{current_hash} ({total} lines)")
+            else:
+                current_hash = line[:12]
+
+        if fat_commits:
+            return GateResult(
+                gate_id="commit_granularity",
+                passed=False,
+                message=f"{len(fat_commits)} 个 commit 超过 {max_lines_per_commit} 行，疑似攒批提交",
+                evidence="\n".join(fat_commits[:5]),
+            )
+        return GateResult(gate_id="commit_granularity", passed=True,
+                         message="commit 粒度正常")
+    except Exception as e:
+        return GateResult(gate_id="commit_granularity", passed=True,
+                         message=f"检查跳过: {e}")
+
+
 # ── Gate Registry ──
 
 GATE_REGISTRY = {
     "no_secrets": gate_no_secrets,
     "diff_size": gate_diff_size,
     "test_pass": gate_test_pass,
+    "commit_granularity": gate_commit_granularity,
 }
 
 # 部门默认 gate 配置
 DEPARTMENT_GATES: dict[str, list[str]] = {
-    "engineering": ["no_secrets", "diff_size", "test_pass"],
+    "engineering": ["no_secrets", "diff_size", "test_pass", "commit_granularity"],
     "operations": ["no_secrets", "diff_size"],
     # 只读部门不需要 gate
     "protocol": [],
