@@ -1,4 +1,10 @@
-"""Executor Session — Agent SDK session runner with stuck/doom loop detection."""
+"""Executor Session — Agent SDK session runner with stuck/doom loop detection.
+
+Components are wired via ComponentSpec (stolen from agent-lightning Round 8):
+instead of hardcoded try/except ImportError blocks, components are resolved
+through a registry. Pass overrides via `components={}` dict to swap any
+component without changing code.
+"""
 import logging
 import os
 
@@ -8,8 +14,9 @@ from claude_agent_sdk import (
 )
 
 from src.governance.context.prompts import find_git_bash
+from src.core.component_spec import build_component
 
-# Optional imports
+# Event types — still needed for structured logging
 try:
     from src.governance.events.types import (
         AgentTurn as AgentTurnEvent, AgentResult as AgentResultEvent,
@@ -19,42 +26,54 @@ try:
 except ImportError:
     AgentTurnEvent = None
 
+# InterventionLevel enum needed for comparison
 try:
-    from src.governance.stuck_detector import StuckDetector
+    from src.governance.supervisor import InterventionLevel
 except ImportError:
-    StuckDetector = None
+    InterventionLevel = None
 
-try:
-    from src.governance.safety.doom_loop import check_doom_loop
-except ImportError:
-    check_doom_loop = None
-
+# parse_progress is a function, not a class — keep direct import
 try:
     from src.governance.audit.heartbeat import parse_progress
 except ImportError:
     parse_progress = None
 
-try:
-    from src.governance.supervisor import RuntimeSupervisor, InterventionLevel
-except ImportError:
-    RuntimeSupervisor = None
-
 log = logging.getLogger(__name__)
 
 MAX_AGENT_TURNS = 25
 
+# Default component specs — can be overridden via constructor
+_DEFAULT_COMPONENTS = {
+    "stuck_detector":     "stuck_detector",       # registry key
+    "runtime_supervisor": "runtime_supervisor",
+    "taint_tracker":      "taint_tracker",
+    "context_budget":     "context_budget",
+    "doom_loop_checker":  "doom_loop_checker",
+}
+
 
 class AgentSessionRunner:
-    """Runs an Agent SDK session with event logging, stuck detection, and doom loop handling."""
+    """Runs an Agent SDK session with event logging, stuck detection, and doom loop handling.
 
-    def __init__(self, db, log_event_fn=None):
+    Components are resolved via ComponentSpec:
+        runner = AgentSessionRunner(db, components={"stuck_detector": None})  # disable stuck detection
+        runner = AgentSessionRunner(db, components={"stuck_detector": MyCustomDetector()})  # custom impl
+    """
+
+    def __init__(self, db, log_event_fn=None, components: dict = None):
         """
         Args:
-            db: EventsDB instance (used for doom loop event retrieval and heartbeat recording).
+            db: EventsDB instance.
             log_event_fn: Callable(task_id, event_type, data) for logging agent events.
+            components: Optional overrides for default component specs. Keys:
+                stuck_detector, runtime_supervisor, taint_tracker, context_budget, doom_loop_checker
         """
         self.db = db
         self._log_event = log_event_fn or self._default_log_event
+
+        # ── ComponentSpec: merge defaults with overrides ──
+        specs = {**_DEFAULT_COMPONENTS, **(components or {})}
+        self._component_specs = specs
 
     def _default_log_event(self, task_id: int, event_type: str, data: dict):
         """Safe wrapper: log agent event without breaking execution on failure."""
@@ -78,8 +97,13 @@ class AgentSessionRunner:
 
         result_text = ""
         turn = 0
-        detector = StuckDetector() if StuckDetector else None
-        supervisor = RuntimeSupervisor() if RuntimeSupervisor else None
+
+        # ── Resolve components via ComponentSpec ──
+        detector = build_component(self._component_specs.get("stuck_detector"))
+        supervisor = build_component(self._component_specs.get("runtime_supervisor"))
+        taint = build_component(self._component_specs.get("taint_tracker"))
+        budget = build_component(self._component_specs.get("context_budget"))
+        check_doom_loop = build_component(self._component_specs.get("doom_loop_checker"))
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
@@ -151,11 +175,37 @@ class AgentSessionRunner:
                         except Exception:
                             pass
 
+                # ── Taint Tracking: 标记工具输出 ──
+                if taint and tool_calls:
+                    for tc in tool_calls:
+                        tool_name = tc.get("tool", "")
+                        output_preview = tc.get("input_preview", "")
+                        try:
+                            taint.tag_from_tool(tool_name, output_preview)
+                        except Exception:
+                            pass
+
+                # ── Context Budget: 记录工具输出 ──
+                if budget:
+                    budget.advance_turn()
+                    for tp in text_parts:
+                        budget.record_output("assistant", tp)
+                    compressed = budget.compress_if_needed()
+                    if compressed:
+                        self._log_event(task_id, "context_budget_compress", {
+                            "turn": turn, "compressed": compressed,
+                        })
+
                 # ── Stuck Detection: 每 3 轮检查一次 ──
                 if detector:
                     tool_names = [tc.get("tool", "") for tc in tool_calls] if tool_calls else []
                     error_text = message.error or ""
-                    detector.record({"data": {"tools": tool_names, "text": text_parts, "error": error_text}})
+                    tool_result_text = " ".join(text_parts) if text_parts else ""
+                    detector.record(
+                        {"data": {"tools": tool_names, "text": text_parts,
+                                  "error": error_text, "tools_detail": tool_calls}},
+                        tool_result=tool_result_text,
+                    )
 
                     if turn > 0 and turn % 3 == 0:
                         stuck, pattern = detector.is_stuck()
