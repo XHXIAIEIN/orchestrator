@@ -13,6 +13,10 @@ Expected result: {expected}
 Action: {action}
 Reason: {reason}
 
+Git discipline:
+- Commit per feature point. Every time a meaningful unit works (a function, a fix, a test passes), commit immediately and keep going. Do NOT accumulate changes and commit everything at the end.
+- A 500-line "feat: everything" commit is a code review nightmare and makes bisecting impossible. Small steps, frequent commits.
+- Commit messages in English, concise description of what changed.
+
 When done:
-1. If you modified code files, stage and commit with git (commit message in English, concise description of what changed)
-2. End with DONE: <one sentence describing what you did>. Not an essay. One sentence.
+- End with DONE: <one sentence describing what you did>. Not an essay. One sentence.
