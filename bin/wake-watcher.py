@@ -1,68 +1,103 @@
-"""Wake Watcher — monitor tmp/wake/ for task files, dispatch via Agent SDK."""
+#!/usr/bin/env python3
+"""
+Wake Watcher — DB 轮询执行器。
 
-import json
+在宿主机运行（不在 Docker 内）。
+轮询 wake_sessions 表中 status='approved' 的记录，拉起 Claude Code 执行。
+每 turn 检查取消信号和交互注入。
+"""
 import logging
+import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-# Ensure project root is on sys.path
+# Add project root to path
 _root = Path(__file__).resolve().parent.parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
+sys.path.insert(0, str(_root))
 
-from src.core.agent_client import agent_query  # noqa: E402
+from src.core.agent_client import agent_query
+from src.storage.events_db import EventsDB
 
 logging.basicConfig(
     level=logging.INFO,
-    format="[wake-watcher] %(asctime)s %(message)s",
-    datefmt="%H:%M:%S",
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-log = logging.getLogger(__name__)
+log = logging.getLogger("wake-watcher")
 
-WAKE_DIR = _root / "tmp" / "wake"
-POLL_INTERVAL = 5  # seconds
+POLL_INTERVAL = 5   # seconds
 MAX_WORKERS = 2
+WORK_DIR = _root / "tmp" / "wake"
+
+# Track which sessions are currently being executed
+_active: set[int] = set()
 
 
-def _build_prompt(task: str, context: str, chat_id: str) -> str:
-    return f"""[Wake from Telegram] chat_id={chat_id}
+def _load_env():
+    """Load .env file, strip ANTHROPIC_API_KEY so Claude CLI uses OAuth."""
+    env_file = _root / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key, val = key.strip(), val.strip().strip('"').strip("'")
+        if key == "ANTHROPIC_API_KEY":
+            os.environ.pop(key, None)
+            continue
+        os.environ.setdefault(key, val)
 
-Task: {task}
 
-Context: {context}
+def _build_prompt(session: dict) -> str:
+    """Build the prompt for Claude Code from a wake session."""
+    return f"""[Wake Session #{session['id']}] chat_id={session['chat_id']}
+
+Task: {session['spotlight']}
 
 Instructions:
-- You were woken up by the Telegram bot because it needs help with something it can't do alone.
-- Complete the task, commit if needed, then write a brief summary.
-- The summary will be sent back to the user on Telegram.
-- Work in the orchestrator repo: {_root}"""
+- You were woken up by the orchestrator because it needs Claude Code to do real work.
+- Use the /bot-tg or /bot-wx skill to check recent chat messages for full context (chat_id={session['chat_id']}).
+- Complete the task, commit if needed, then write a brief result summary.
+- Work in the orchestrator repo: {_root}
+"""
 
 
-def _dispatch(file_path: Path):
-    """Process a single wake request file."""
+def _write_milestone(db: EventsDB, task_id: int, step: str, message: str):
+    """Write a milestone event."""
+    db.add_agent_event(
+        task_id=task_id,
+        event_type="wake.milestone",
+        data={"step": step, "msg": message, "ts": datetime.now(timezone.utc).isoformat()},
+    )
+
+
+def _dispatch(session: dict):
+    """Execute a single wake session."""
+    db = EventsDB()
+    sid = session["id"]
+    task_id = session["task_id"]
+
+    log.info("Starting wake session #%d: %s", sid, session["spotlight"])
+
+    # Mark running
+    db.update_wake_session(sid, status="running")
+    db.update_task(task_id, status="running",
+                   started_at=datetime.now(timezone.utc).isoformat())
+
+    _write_milestone(db, task_id, "start", f"开始执行: {session['spotlight']}")
+
+    # Notify channels
     try:
-        content = json.loads(file_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        log.error("Failed to read %s: %s", file_path.name, e)
-        return
+        from src.channels.wake import _notify
+        _notify(session, "started")
+    except Exception:
+        pass
 
-    if content.get("status") != "pending":
-        return
-
-    task = content.get("task", "")
-    context = content.get("context", "")
-    chat_id = content.get("chat_id", "")
-    log.info("Wake request: %s", task[:80])
-
-    # Mark as processing
-    content["status"] = "processing"
-    file_path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    prompt = _build_prompt(task, context, chat_id)
-    output_file = file_path.with_suffix(".output.txt")
+    prompt = _build_prompt(session)
 
     try:
         result = agent_query(
@@ -70,37 +105,66 @@ def _dispatch(file_path: Path):
             max_turns=25,
             cwd=str(_root),
         )
-        output_file.write_text(result, encoding="utf-8")
-        content["status"] = "done"
-        log.info("Wake task completed: %s", task[:60])
-    except Exception as e:
-        error_msg = f"Agent SDK error: {e}"
-        output_file.write_text(error_msg, encoding="utf-8")
-        content["status"] = "failed"
-        content["error"] = str(e)[:500]
-        log.error("Wake task failed: %s — %s", task[:60], e)
 
-    content["completed_at"] = datetime.now().isoformat()
-    file_path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Check cancel
+        s = db.get_wake_session(sid)
+        if s and s["status"] == "cancelled":
+            log.info("Wake #%d cancelled during execution", sid)
+            db.finish_wake_session(sid, status="cancelled", result="执行中被取消")
+            _write_milestone(db, task_id, "cancelled", "任务被用户取消")
+            return
+
+        # Store result
+        result_text = result.strip()[-2000:] if len(result) > 2000 else result.strip()
+        db.finish_wake_session(sid, status="done", result=result_text)
+        db.update_task(task_id, status="done", output=result_text[:500],
+                       finished_at=datetime.now(timezone.utc).isoformat())
+
+        _write_milestone(db, task_id, "done", "任务完成")
+        log.info("Wake #%d completed", sid)
+
+        # Notify
+        try:
+            updated = db.get_wake_session(sid)
+            from src.channels.wake import _notify
+            _notify(updated, "done")
+        except Exception:
+            pass
+
+    except Exception as e:
+        error_msg = f"Agent SDK error: {str(e)[:500]}"
+        log.error("Wake #%d failed: %s", sid, e)
+        db.finish_wake_session(sid, status="failed", result=error_msg)
+        db.update_task(task_id, status="failed", output=error_msg,
+                       finished_at=datetime.now(timezone.utc).isoformat())
+        _write_milestone(db, task_id, "failed", error_msg)
+
+        try:
+            updated = db.get_wake_session(sid)
+            from src.channels.wake import _notify
+            _notify(updated, "failed")
+        except Exception:
+            pass
+
+    finally:
+        _active.discard(sid)
 
 
 def main():
-    WAKE_DIR.mkdir(parents=True, exist_ok=True)
-    log.info("Monitoring %s (every %ds)", WAKE_DIR, POLL_INTERVAL)
+    _load_env()
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    db = EventsDB()
+    log.info("Wake watcher started (polling every %ds, max %d workers)", POLL_INTERVAL, MAX_WORKERS)
 
     pool = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="wake")
 
     try:
         while True:
-            for f in WAKE_DIR.glob("*.json"):
-                if f.name.endswith(".response.json"):
-                    continue
-                try:
-                    content = json.loads(f.read_text(encoding="utf-8"))
-                    if content.get("status") == "pending":
-                        pool.submit(_dispatch, f)
-                except Exception:
-                    continue
+            sessions = db.get_wake_sessions(status="approved")
+            for s in sessions:
+                if s["id"] not in _active:
+                    _active.add(s["id"])
+                    pool.submit(_dispatch, s)
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt:
         log.info("Shutting down")
