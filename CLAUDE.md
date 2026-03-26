@@ -37,10 +37,44 @@ Then get to work.
 - Never put sensitive/private content in git-tracked directories
 - SOUL/private/ is gitignored; SOUL/public/ is tracked
 
-### cvui / desktop_use
+### desktop_use — GUI Automation Module Context
+
+**What it is**: `src/desktop_use/` is a pluggable desktop GUI automation module. It captures screenshots, runs LLM reasoning to decide actions, grounds elements via OCR, and executes mouse/keyboard actions in a kill-switch-protected loop.
+
+**Directory layout** (14 files):
+```
+src/desktop_use/
+├── types.py        # Data models: OCRWord, LocateResult, MonitorInfo, WindowInfo, GUIResult, TrajectoryStep, UIElement, UIZone, UIBlueprint
+├── engine.py       # DesktopEngine — main perception-action loop (max_steps, trajectory, pluggable backends)
+├── ocr.py          # OCREngine (ABC) + WinOCREngine (WinRT/winocr default)
+├── match.py        # MatchStrategy (ABC) + FuzzyMatchStrategy (3-pass: exact → merged → fuzzy)
+├── screen.py       # ScreenCapture (ABC) + MSSScreenCapture (physical→logical pixel conversion)
+├── window.py       # WindowManager (ABC) + Win32WindowManager (foreground + background modes, WGC + PrintWindow)
+├── actions.py      # ActionExecutor (ABC) + PyAutoGUIExecutor. ALLOWED_ACTIONS: click, double_click, right_click, type_text, hotkey, scroll, drag, wait, screenshot, done, fail
+├── trajectory.py   # Trajectory — sliding window of (screenshot, action, result) steps for LLM context
+├── prompts.py      # REASONER_SYSTEM prompt + build_reasoner_prompt() template
+├── perception.py   # PerceptionLayer (ABC) + Win32Layer, CVLayer, OCRLayer → PerceptionResult
+├── blueprint.py    # BlueprintBuilder — runs perception layers in fallback order → UIBlueprint (cached by window_class+size)
+├── detection.py    # Re-exports from cvui: DetectionPipeline, all Stages, presets (fast/standard/full/grounding)
+├── visualize.py    # Re-exports from cvui: render_skeleton, render_annotated, render_grayscale, detect_elements
+└── __init__.py     # Public API re-exports
+```
+
+**Detection stages** (from cvui, re-exported): DownscaleStage, GrayscaleStage, TopHatStage, OtsuStage, DilateStage, ConnectedComponentStage, RectFilterStage, MergeStage, NestedStage, ClassifyStage, ChannelAnalysisStage, DiffStage, ListQuantizeStage, OmniParserStage, GroundingDINOStage
+
+**Pipelines**: `fast_pipeline`, `standard_pipeline`, `full_pipeline`, `grounding_pipeline`
+
+**Perception layers** (run in order, fast→slow): Win32Layer (free, EnumChildWindows) → CVLayer (detection pipeline) → OCRLayer (winocr)
+
+**Key patterns**:
+- All components are ABC-based + injectable via DesktopEngine constructor
+- detection.py and visualize.py are thin re-export wrappers over the `cvui` package
+- Coords are normalized to logical pixels at the ScreenCapture boundary
+- BlueprintBuilder caches by (window_class, width, height)
+
+**Working rules**:
 - 测试 UI 检测效果用 `/analyze-ui` skill，不要手写 mss/ctypes 截图代码
-- cvui 的 `Win32WindowManager` 已有窗口截图能力（WGC + PrintWindow fallback）
-- cvui 现有 Stage 能组合就组合，不要重写已有逻辑（ColorQuantizeStage, SaturationFilterStage 等）
+- cvui 现有 Stage 能组合就组合，不要重写已有逻辑
 - `render_annotated(screenshot, rects=rects)` 或 `render_annotated(screenshot, ctx=ctx)`
 
 ### Docker & Environment
