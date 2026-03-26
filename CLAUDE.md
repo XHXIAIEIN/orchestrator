@@ -37,6 +37,12 @@ Then get to work.
 - Never put sensitive/private content in git-tracked directories
 - SOUL/private/ is gitignored; SOUL/public/ is tracked
 
+### cvui / desktop_use
+- 测试 UI 检测效果用 `/analyze-ui` skill，不要手写 mss/ctypes 截图代码
+- cvui 的 `Win32WindowManager` 已有窗口截图能力（WGC + PrintWindow fallback）
+- cvui 现有 Stage 能组合就组合，不要重写已有逻辑（ColorQuantizeStage, SaturationFilterStage 等）
+- `render_annotated(screenshot, rects=rects)` 或 `render_annotated(screenshot, ctx=ctx)`
+
 ### Docker & Environment
 - Before Docker rebuilds, check if one is truly needed
 - Before GPU-heavy tasks, run `nvidia-smi` to check VRAM availability
