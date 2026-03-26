@@ -1,0 +1,123 @@
+"""
+Wake — 从 Telegram 唤醒宿主机的 Claude Code 会话。
+
+流程：
+1. Bot 写 JSON 到 tmp/wake/{timestamp}.json
+2. 宿主机 watcher 脚本检测到新文件
+3. Watcher 打开终端启动 claude code，传入任务上下文
+4. Claude Code 完成后写 response 文件
+5. Bot 读 response 推回 Telegram
+
+共享目录：tmp/wake/（Docker volume mount，容器和宿主机都能访问）
+"""
+import json
+import logging
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+_REPO_ROOT = Path(__file__).resolve().parent
+while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_dir() and (_REPO_ROOT / "src").is_dir()):
+    _REPO_ROOT = _REPO_ROOT.parent
+WAKE_DIR = _REPO_ROOT / "tmp" / "wake"
+
+# ── Dedup cache: prevents same message_id from triggering multiple wake sessions ──
+_DEDUP_TTL = 60  # seconds
+_dedup_cache: dict[str, float] = {}  # key → expiry timestamp
+_dedup_lock = threading.Lock()
+_dedup_count = 0  # total deduplicated requests
+
+
+def _dedup_key(task: str, chat_id: str, message_id: str = "") -> str:
+    """Build a dedup key from message_id (preferred) or task+chat_id hash."""
+    if message_id:
+        return f"msg:{chat_id}:{message_id}"
+    return f"task:{chat_id}:{hash(task)}"
+
+
+def _dedup_check_and_set(key: str) -> bool:
+    """Return True if this key is a duplicate (already seen within TTL). Otherwise mark it."""
+    global _dedup_count
+    now = time.monotonic()
+    with _dedup_lock:
+        # Lazy cleanup expired entries
+        expired = [k for k, exp in _dedup_cache.items() if exp <= now]
+        for k in expired:
+            del _dedup_cache[k]
+
+        if key in _dedup_cache:
+            _dedup_count += 1
+            return True
+        _dedup_cache[key] = now + _DEDUP_TTL
+        return False
+
+
+def get_dedup_stats() -> dict:
+    """Return dedup statistics for logging/monitoring."""
+    with _dedup_lock:
+        return {"deduplicated_count": _dedup_count, "cache_size": len(_dedup_cache)}
+
+
+def write_wake_request(task: str, context: str = "", priority: str = "normal",
+                        chat_id: str = "", message_id: str = "") -> str:
+    """写一个唤醒请求文件，返回文件名。
+
+    Idempotent: same message_id within 60s returns cached filename instead of creating a new request.
+    """
+    WAKE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Dedup check
+    key = _dedup_key(task, chat_id, message_id)
+    if _dedup_check_and_set(key):
+        stats = get_dedup_stats()
+        log.info(f"wake: deduplicated request (key={key}, total_deduped={stats['deduplicated_count']})")
+        return f"DEDUP:{key}"
+
+    ts = datetime.now(timezone.utc)
+    filename = f"{ts.strftime('%Y%m%d-%H%M%S')}.json"
+    filepath = WAKE_DIR / filename
+
+    request = {
+        "task": task,
+        "context": context,
+        "priority": priority,
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "status": "pending",
+        "created_at": ts.isoformat(),
+    }
+
+    filepath.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+    log.info(f"wake: request written to {filepath}")
+    return filename
+
+
+def read_response(filename: str) -> dict | None:
+    """读取响应文件（watcher 写的）。"""
+    resp_path = WAKE_DIR / filename.replace(".json", ".response.json")
+    if not resp_path.exists():
+        return None
+    try:
+        return json.loads(resp_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def list_pending() -> list[dict]:
+    """列出所有 pending 的唤醒请求。"""
+    WAKE_DIR.mkdir(parents=True, exist_ok=True)
+    results = []
+    for f in sorted(WAKE_DIR.glob("*.json")):
+        if f.name.endswith(".response.json"):
+            continue
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if data.get("status") == "pending":
+                data["filename"] = f.name
+                results.append(data)
+        except Exception:
+            pass
+    return results
