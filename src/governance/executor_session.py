@@ -7,6 +7,7 @@ component without changing code.
 """
 import logging
 import os
+import re
 
 from claude_agent_sdk import (
     query, ClaudeAgentOptions, ResultMessage,
@@ -41,6 +42,34 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 MAX_AGENT_TURNS = 25
+
+# ── Hallucinated Action Detection (stolen from OpenFang Round 6) ──
+# Patterns that suggest the model claims it performed an action
+_ACTION_CLAIM_PATTERNS = [
+    r"(?:I'?ve|I have|I just|Already|Done|Completed|Finished|已经|已完成|已保存|已修改|已删除|已创建)\s+(?:saved|written|created|modified|deleted|updated|fixed|installed|ran|executed|committed|pushed|moved|renamed|copied)",
+    r"(?:文件已|代码已|修改已|删除已|提交已|推送已)",
+    r"(?:successfully|成功)\s+(?:saved|created|updated|deleted|写入|创建|更新|删除)",
+]
+
+
+def detect_hallucinated_actions(text: str, tool_calls: list) -> list:
+    """Detect claims of actions not backed by actual tool calls.
+
+    Returns list of suspicious claims found in text.
+    Only flags when there are ZERO tool calls in the turn —
+    if the model made any tool calls, give benefit of the doubt.
+    """
+    if tool_calls:  # Model did make tool calls, don't second-guess
+        return []
+
+    warnings = []
+    for pattern in _ACTION_CLAIM_PATTERNS:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            warnings.append(f"Claimed action '{match}' but no tool calls in this turn")
+
+    return warnings
+
 
 # Default component specs — can be overridden via constructor
 _DEFAULT_COMPONENTS = {
@@ -131,6 +160,15 @@ class AgentSessionRunner:
                         })
                     elif block_type == 'text':
                         text_parts.append(getattr(block, 'text', '')[:300])
+
+                # ── Hallucinated Action Detection ──
+                text_content = " ".join(text_parts)
+                hallucination_warnings = detect_hallucinated_actions(text_content, tool_calls)
+                if hallucination_warnings:
+                    for w in hallucination_warnings:
+                        self._log_event(task_id, "hallucination_warning", {
+                            "warning": w, "turn": turn,
+                        })
 
                 # ── Supervisor: 记录工具调用 ──
                 if supervisor and tool_calls:

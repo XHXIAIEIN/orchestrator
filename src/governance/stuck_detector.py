@@ -57,6 +57,9 @@ class StuckDetector:
         self._call_result_pairs: list[tuple[str, str]] = []
         # Total tool call count for circuit breaker
         self._total_tool_calls: int = 0
+        # Persistent counters — survive reset()
+        self._persistent_failures: dict[str, int] = {}  # pattern_name → cumulative count
+        self._persistent_signatures: set[str] = set()   # tool signatures that have failed before
 
     def record(self, event: dict, tool_result: str = "") -> None:
         """Record an agent event.
@@ -85,44 +88,57 @@ class StuckDetector:
 
         # ── Pattern 9: Circuit breaker (check first — cheapest) ──
         if self._check_circuit_breaker():
+            self._record_persistent("CIRCUIT_BREAKER")
             return True, "CIRCUIT_BREAKER"
 
         # ── Pattern 7: Result-aware repeat [OpenFang] ──
         stuck, is_poll = self._check_result_aware_repeat()
         if stuck:
+            self._record_persistent("RESULT_AWARE_REPEAT")
             return True, "RESULT_AWARE_REPEAT"
 
         # ── Pattern 8: Ping-pong cycle [OpenFang] ──
         if self._check_pingpong_cycle():
+            self._record_persistent("PINGPONG_CYCLE")
             return True, "PINGPONG_CYCLE"
 
         # ── Original patterns ──
 
         # Pattern 1: Repeated action+observation
         if self._check_repeated_action_observation(recent):
+            self._record_persistent("REPEATED_ACTION_OBSERVATION")
             return True, "REPEATED_ACTION_OBSERVATION"
 
         # Pattern 2: Repeated action+error
         if self._check_repeated_action_error(recent):
+            self._record_persistent("REPEATED_ACTION_ERROR")
             return True, "REPEATED_ACTION_ERROR"
 
         # Pattern 3: Monologue (no tool use for N turns)
         if self._check_monologue(recent):
+            self._record_persistent("MONOLOGUE")
             return True, "MONOLOGUE"
 
         # Pattern 4: Action-observation cycle (basic)
         if self._check_cycle(recent):
+            self._record_persistent("ACTION_OBSERVATION_CYCLE")
             return True, "ACTION_OBSERVATION_CYCLE"
 
         # Pattern 5: Context window errors
         if self._check_context_window_loop(recent):
+            self._record_persistent("CONTEXT_WINDOW_LOOP")
             return True, "CONTEXT_WINDOW_LOOP"
 
         # Pattern 6: Signature repeat (same tool + same input)
         if self._check_signature_repeat(recent):
+            self._record_persistent("SIGNATURE_REPEAT")
             return True, "SIGNATURE_REPEAT"
 
         return False, ""
+
+    def _record_persistent(self, pattern_name: str) -> None:
+        """Increment persistent failure counter for a pattern."""
+        self._persistent_failures[pattern_name] = self._persistent_failures.get(pattern_name, 0) + 1
 
     # ── New patterns from OpenFang ──
 
@@ -307,10 +323,39 @@ class StuckDetector:
         return top_count >= threshold
 
     def reset(self) -> None:
-        """Clear recorded events."""
+        """Reset transient state for new attempt. Persistent counters survive."""
         self._events.clear()
         self._call_result_pairs.clear()
         self._total_tool_calls = 0
+        # NOTE: _persistent_failures and _persistent_signatures are NOT cleared
+
+    def should_escalate(self) -> tuple[bool, str]:
+        """Check if persistent failures warrant strategy escalation.
+
+        Returns (should_escalate, reason).
+        Thresholds: 3× same pattern → NUDGE, 5× → STRATEGY_SWITCH.
+        """
+        for pattern, count in self._persistent_failures.items():
+            if count >= 5:
+                return True, f"{pattern} failed {count}× — force strategy switch"
+            if count >= 3:
+                return True, f"{pattern} failed {count}× — nudge"
+        return False, ""
+
+    def record_failed_signature(self, signature: str) -> None:
+        """Record a tool call signature that led to failure."""
+        self._persistent_signatures.add(signature)
+
+    def has_failed_before(self, signature: str) -> bool:
+        """Check if this exact tool call has failed in a previous attempt."""
+        return signature in self._persistent_signatures
+
+    def get_failure_summary(self) -> dict:
+        """Return persistent failure stats for logging/debugging."""
+        return {
+            "pattern_counts": dict(self._persistent_failures),
+            "known_bad_signatures": len(self._persistent_signatures),
+        }
 
 
 def _hash_sig(text: str) -> str:
