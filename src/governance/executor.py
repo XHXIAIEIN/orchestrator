@@ -4,13 +4,20 @@ Rollout-Attempt lifecycle (stolen from agent-lightning Round 8):
 Each task execution is a Rollout. If it fails with a retryable condition,
 a new Attempt (sub_run) is created automatically. This replaces the flat
 "run once, fail once" model with structured retry + per-attempt tracking.
+
+ExecutionStrategy (stolen from agent-lightning Round 8):
+Same execution logic runs in two modes:
+- Debug/SharedMemory: synchronous, in-process, state visible for inspection
+- Production/ClientServer: async, isolated, crash-safe with timeout
 """
+import asyncio
 import json
 import logging
 import os
 import re
 import threading
 import time
+from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -80,6 +87,98 @@ def _classify_failure(output: str) -> str:
     if "unresponsive" in lower:
         return "unresponsive"
     return "unknown"
+
+# ── Execution Strategy (stolen from agent-lightning Round 8) ──
+# Debug = in-process, state inspectable; Production = isolated, crash-safe.
+
+
+class ExecutionStrategy(ABC):
+    """Strategy for how agent execution is dispatched.
+
+    Stolen from Agent Lightning (Round 8): same execution logic needs to run
+    in debug (in-process, inspectable) and production (isolated, crash-safe).
+    """
+
+    @abstractmethod
+    async def execute(self, runner: "AgentSessionRunner", task_id: int,
+                      prompt: str, dept_prompt: str, allowed_tools: list,
+                      task_cwd: str, max_turns: int,
+                      timeout: float | None = None) -> str:
+        """Execute a task and return the result text.
+
+        Args:
+            timeout: Per-task timeout override. Strategies may ignore or enforce it.
+        """
+        ...
+
+    @abstractmethod
+    def get_mode(self) -> str:
+        """Return 'debug' or 'production'."""
+        ...
+
+
+class DebugStrategy(ExecutionStrategy):
+    """In-process synchronous execution. State visible for debugging.
+
+    No timeout enforcement — hangs are the developer's problem to Ctrl-C.
+    Stores intermediate state so callers can call inspect() after execution.
+    """
+
+    def __init__(self):
+        self._last_state: dict = {}
+
+    async def execute(self, runner: "AgentSessionRunner", task_id: int,
+                      prompt: str, dept_prompt: str, allowed_tools: list,
+                      task_cwd: str, max_turns: int,
+                      timeout: float | None = None) -> str:
+        result = await runner.run(task_id, prompt, dept_prompt, allowed_tools,
+                                  task_cwd, max_turns=max_turns)
+        self._last_state = {
+            "task_id": task_id,
+            "result": result,
+            "events": getattr(runner, "_events", []),
+        }
+        return result
+
+    def get_mode(self) -> str:
+        return "debug"
+
+    def inspect(self) -> dict:
+        """Return the last execution's full state (debug only)."""
+        return self._last_state
+
+
+class ProductionStrategy(ExecutionStrategy):
+    """Isolated execution with timeout and crash protection.
+
+    Per-task timeout (from blueprint/policy) takes precedence over the
+    default. Exceptions are caught and returned as tagged strings so the
+    Rollout-Attempt loop can classify and retry.
+    """
+
+    def __init__(self, default_timeout: float = 300.0):
+        self._default_timeout = default_timeout
+
+    async def execute(self, runner: "AgentSessionRunner", task_id: int,
+                      prompt: str, dept_prompt: str, allowed_tools: list,
+                      task_cwd: str, max_turns: int,
+                      timeout: float | None = None) -> str:
+        effective_timeout = timeout or self._default_timeout
+        try:
+            result = await asyncio.wait_for(
+                runner.run(task_id, prompt, dept_prompt, allowed_tools,
+                           task_cwd, max_turns=max_turns),
+                timeout=effective_timeout,
+            )
+            return result
+        except asyncio.TimeoutError:
+            return f"[WATCHDOG: execution timed out after {effective_timeout}s]"
+        except Exception as e:
+            return f"[ERROR: {e}]"
+
+    def get_mode(self) -> str:
+        return "production"
+
 
 # Optional imports
 try:
@@ -167,13 +266,15 @@ def _extract_target_files(spec: dict) -> list[str]:
 class TaskExecutor:
     """Execute tasks via Agent SDK with Blueprint-aware policy resolution."""
 
-    def __init__(self, db: EventsDB, on_finalize: Callable | None = None):
+    def __init__(self, db: EventsDB, on_finalize: Callable | None = None,
+                 strategy: ExecutionStrategy | None = None):
         self.db = db
         self.on_finalize = on_finalize
         self.accountant = TokenAccountant(db=self.db) if TokenAccountant else None
         self.semaphore = AgentSemaphore() if AgentSemaphore else None
         self.punch_clock = get_punch_clock() if get_punch_clock else None
         self._session_runner = AgentSessionRunner(db=self.db, log_event_fn=self._log_agent_event)
+        self._strategy = strategy or ProductionStrategy()
 
     def execute_task_async(self, task_id: int):
         """在线程池中执行任务，不阻塞调用方。"""
@@ -196,10 +297,12 @@ class TaskExecutor:
 
     async def _run_agent_session(self, task_id: int, prompt: str, dept_prompt: str,
                                   allowed_tools: list, task_cwd: str,
-                                  max_turns: int = MAX_AGENT_TURNS) -> str:
-        """Run the Agent SDK session and stream events. Returns result text."""
-        return await self._session_runner.run(
-            task_id, prompt, dept_prompt, allowed_tools, task_cwd, max_turns=max_turns
+                                  max_turns: int = MAX_AGENT_TURNS,
+                                  timeout: float | None = None) -> str:
+        """Run the Agent SDK session via the active ExecutionStrategy. Returns result text."""
+        return await self._strategy.execute(
+            self._session_runner, task_id, prompt, dept_prompt,
+            allowed_tools, task_cwd, max_turns, timeout=timeout,
         )
 
     def execute_task(self, task_id: int) -> dict:
@@ -228,7 +331,7 @@ class TaskExecutor:
 
         cognitive_mode = classify_cognitive_mode(task)
         bp_tag = f"bp=v{blueprint.version}" if blueprint else "bp=none"
-        log.info(f"TaskExecutor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, {bp_tag}, project={project_name}, cwd={task_cwd}")
+        log.info(f"TaskExecutor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, {bp_tag}, strategy={self._strategy.get_mode()}, project={project_name}, cwd={task_cwd}")
 
         now = datetime.now(timezone.utc).isoformat()
         self.db.update_task(task_id, status="running", started_at=now)
@@ -376,7 +479,7 @@ class TaskExecutor:
                 async def _agent_coro():
                     return await self._run_agent_session(
                         task_id, prompt, dept_prompt, allowed_tools, task_cwd,
-                        max_turns=task_max_turns,
+                        max_turns=task_max_turns, timeout=task_timeout,
                     )
                 output = anyio.run(_agent_coro)
                 output = output[:2000] if output else "(no output)"

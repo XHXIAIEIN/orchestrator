@@ -317,7 +317,7 @@ class AgentSessionRunner:
                 if supervisor:
                     supervisor.end_turn()
                     if turn > 0 and turn % 3 == 0:
-                        intervention = supervisor.evaluate(iteration=turn)
+                        intervention = supervisor.evaluate_worst(iteration=turn)
                         if intervention:
                             self._log_event(task_id, "supervisor_intervention", {
                                 "level": intervention.level.name,

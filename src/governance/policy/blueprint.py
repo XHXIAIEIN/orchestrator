@@ -299,23 +299,27 @@ def _run_single_check(check: PreflightCheck, task: dict, task_cwd: str,
 
 # ── Policy enforcement helpers ────────────────────────────────────
 
-def enforce_policy(blueprint: Blueprint, tool_name: str, file_path: str = "") -> tuple[bool, str]:
+def enforce_policy(blueprint: Blueprint, tool_name: str, file_path: str = "",
+                   depth: int = 0) -> tuple[bool, str]:
     """Check if a tool/file access is allowed by the department's policy.
 
     Returns (allowed, reason).
     This is advisory — the actual enforcement happens at Agent SDK level via allowed_tools.
     Blueprint policy adds a second layer of intent documentation.
+
+    Uses ToolPolicy engine: deny-wins semantics, glob matching, depth limits.
     """
+    from .tool_policy import ToolPolicy
+
     policy = blueprint.policy
+    tp = ToolPolicy.from_policy(policy, max_depth=blueprint.extra.get("max_agent_depth", 3))
 
-    # Tool check
-    if policy.denied_tools and tool_name in policy.denied_tools:
-        return False, f"Tool '{tool_name}' denied by {blueprint.department} policy"
+    # Tool check via deny-wins engine
+    allowed, reason = tp.is_allowed(tool_name, depth=depth)
+    if not allowed:
+        return False, f"{blueprint.department}: {reason}"
 
-    if policy.allowed_tools and tool_name not in policy.allowed_tools:
-        return False, f"Tool '{tool_name}' not in {blueprint.department} allowed list"
-
-    # Read-only enforcement
+    # Read-only enforcement (separate from tool policy — semantic layer)
     if policy.read_only and tool_name in ("Edit", "Write", "Bash"):
         return False, f"{blueprint.department} is read-only, '{tool_name}' denied"
 

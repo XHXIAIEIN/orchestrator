@@ -44,11 +44,17 @@ class CostCall:
 class CostTracker:
     """线程安全的全链路成本追踪器。"""
 
-    def __init__(self, limit: float | None = None, source: str = ""):
+    def __init__(self, limit: float | None = None, source: str = "",
+                 token_limit: int | None = None):
         self.limit = limit
+        self.token_limit = token_limit
         self.source = source
         self._calls: list[CostCall] = []
         self._lock = threading.Lock()
+        # Sub-budget tree (parent ↔ children)
+        self._parent: CostTracker | None = None
+        self._label: str = ""
+        self._children: list[CostTracker] = []
 
     def add_call(self, call_type: str, model: str = "", cost: float = 0.0,
                  tokens: dict | None = None) -> None:
@@ -63,10 +69,18 @@ class CostTracker:
         with self._lock:
             self._calls.append(call)
             total = sum(c.cost for c in self._calls)
+            total_tokens = sum(
+                c.tokens.get("in", 0) + c.tokens.get("out", 0)
+                for c in self._calls
+            )
 
         if self.limit is not None and total > self.limit:
-            log.warning(f"CostTracker[{self.source}]: limit exceeded ${total:.4f} > ${self.limit:.4f}")
+            log.warning(f"CostTracker[{self.source}]: cost limit exceeded ${total:.4f} > ${self.limit:.4f}")
             raise CostLimitExceededError(self.limit, total)
+
+        if self.token_limit is not None and total_tokens > self.token_limit:
+            log.warning(f"CostTracker[{self.source}]: token limit exceeded {total_tokens} > {self.token_limit}")
+            raise CostLimitExceededError(self.token_limit, total_tokens)
 
     @property
     def total_cost(self) -> float:
@@ -99,6 +113,15 @@ class CostTracker:
             parts = [f"{m}: {d['count']}x ${d['cost']:.4f}" for m, d in models.items()]
             return f"${total:.4f} ({len(self._calls)} calls: {', '.join(parts)})"
 
+    @property
+    def total_tokens(self) -> int:
+        """所有调用的 token 总数（in + out）。"""
+        with self._lock:
+            return sum(
+                c.tokens.get("in", 0) + c.tokens.get("out", 0)
+                for c in self._calls
+            )
+
     def to_dict(self) -> dict:
         """序列化为 dict，方便存 DB 或日志。"""
         with self._lock:
@@ -106,12 +129,64 @@ class CostTracker:
                 "total_cost": round(sum(c.cost for c in self._calls), 6),
                 "call_count": len(self._calls),
                 "limit": self.limit,
+                "token_limit": self.token_limit,
                 "calls": [
                     {"type": c.call_type, "model": c.model, "cost": c.cost,
                      "tokens": c.tokens, "stack": c.stack}
                     for c in self._calls
                 ],
             }
+
+    # ── Sub-budget proportional allocation ──────────────────────────
+
+    def create_child_budget(self, fraction: float, label: str = "") -> "CostTracker":
+        """按比例从剩余预算中分配子预算。
+
+        Args:
+            fraction: (0, 1]，分配剩余预算的比例
+            label: 可选标签，方便追踪（如 "subtask-research"）
+
+        Returns:
+            新的 CostTracker，limit 按比例缩减。
+        """
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError(f"fraction must be (0, 1], got {fraction}")
+
+        remaining_cost = (self.limit - self.total_cost) if self.limit is not None else None
+        remaining_tokens = (self.token_limit - self.total_tokens) if self.token_limit is not None else None
+
+        child = CostTracker(
+            limit=remaining_cost * fraction if remaining_cost is not None else None,
+            token_limit=int(remaining_tokens * fraction) if remaining_tokens is not None else None,
+            source=f"{self.source}>{label}" if self.source else label,
+        )
+        child._parent = self
+        child._label = label
+        self._children.append(child)
+        return child
+
+    def report_to_parent(self) -> None:
+        """子任务完成后，把用量上报给父 tracker。"""
+        if not self._parent:
+            return
+        # 把子调用记录直接灌入父级（保留完整 stack trace）
+        with self._parent._lock:
+            self._parent._calls.extend(self.calls)
+        log.debug(
+            "CostTracker[%s] reported to parent: $%.4f, %d tokens",
+            self._label, self.total_cost, self.total_tokens,
+        )
+
+    def get_budget_summary(self) -> dict:
+        """返回预算状态，含子预算树。"""
+        summary = {
+            "label": self._label,
+            "cost": {"used": self.total_cost, "limit": self.limit},
+            "tokens": {"used": self.total_tokens, "limit": self.token_limit},
+        }
+        if self._children:
+            summary["children"] = [c.get_budget_summary() for c in self._children]
+        return summary
 
 
 def _short_stack(depth: int = 3) -> str:
