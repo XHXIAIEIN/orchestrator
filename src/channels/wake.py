@@ -22,23 +22,29 @@ _SUBCOMMANDS = {"cancel", "verbose", "quiet"}
 
 
 def create_session(chat_id: str, spotlight: str, channel: str = "telegram",
-                   mode: str = "silent", db: EventsDB = None) -> dict:
+                   mode: str = "silent", db: EventsDB = None,
+                   auto_approve: bool = False) -> dict:
     """Create a wake session + Governor task. Returns {"session_id", "task_id"}."""
     db = db or EventsDB()
+
+    # admin auto-approve: source='auto' → status='pending' (executor picks it up)
+    source = "auto" if auto_approve else "wake"
 
     task_id = db.create_task(
         action=spotlight,
         reason=f"Wake request from {channel}:{chat_id}",
         priority="high",
         spec={"summary": spotlight, "source": "wake", "chat_id": chat_id},
-        source="wake",
+        source=source,
     )
 
+    session_status = "approved" if auto_approve else "pending"
     session_id = db.create_wake_session(
         task_id=task_id,
         chat_id=chat_id,
         spotlight=spotlight,
         mode=mode,
+        status=session_status,
     )
 
     work_dir = WAKE_WORK_DIR / channel / str(session_id)

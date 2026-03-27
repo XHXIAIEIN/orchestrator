@@ -5,14 +5,15 @@ from datetime import datetime, timezone
 class WakeMixin:
 
     def create_wake_session(self, task_id: int, chat_id: str,
-                            spotlight: str, mode: str = "silent") -> int:
+                            spotlight: str, mode: str = "silent",
+                            status: str = "pending") -> int:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO wake_sessions "
                 "(task_id, chat_id, spotlight, mode, status, created_at) "
-                "VALUES (?, ?, ?, ?, 'pending', ?)",
-                (task_id, chat_id, spotlight, mode, now),
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (task_id, chat_id, spotlight, mode, status, now),
             )
             return cursor.lastrowid
 

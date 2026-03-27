@@ -3,10 +3,18 @@ Channel 层配置 — 所有可调参数集中管理。
 
 优先级：环境变量 > 此处默认值。
 平台常量（如 Telegram 4096 字符限制）不在此处，留在各适配器中。
+
+设计模式（偷自 Tavily 两阶段参数绑定）：
+  阶段 1 — 启动时：环境变量 / 默认值绑定为模块级常量（当前行为不变）。
+  阶段 2 — 运行时：通过 runtime_override() 动态调参。
+  安全敏感参数标记为 LOCKED，runtime_override() 会拒绝修改。
 """
+import logging
 import os
 
 from src.core.llm_router import MODEL_HAIKU, MODEL_DEEPSEEK
+
+_log = logging.getLogger(__name__)
 
 
 def _int(key: str, default: int) -> int:
@@ -56,25 +64,27 @@ RATE_LIMIT_WINDOW = 2  # 秒，防刷，不可配置
 # 格式: "chat_id:role,chat_id:role" — role: admin (full) / viewer (query+chat only)
 # 向后兼容: 如果只设了 TELEGRAM_CHAT_ID 没设 ALLOWED_USERS，自动当 admin
 ALLOWED_USERS: dict[str, str] = {}
-_raw_users = _str("TELEGRAM_ALLOWED_USERS", "")
-if _raw_users:
-    for pair in _raw_users.split(","):
-        pair = pair.strip()
-        if ":" in pair:
-            uid, role = pair.split(":", 1)
-            ALLOWED_USERS[uid.strip()] = role.strip()
-        elif pair:
-            ALLOWED_USERS[pair] = "admin"  # no role = admin
-else:
-    # Fallback: legacy single TELEGRAM_CHAT_ID
+for _env_key in ("TELEGRAM_ALLOWED_USERS", "WECHAT_ALLOWED_USERS"):
+    _raw_users = _str(_env_key, "")
+    if _raw_users:
+        for pair in _raw_users.split(","):
+            pair = pair.strip()
+            if ":" in pair:
+                uid, role = pair.split(":", 1)
+                ALLOWED_USERS[uid.strip()] = role.strip()
+            elif pair:
+                ALLOWED_USERS[pair] = "admin"  # no role = admin
+
+# Fallback: legacy single TELEGRAM_CHAT_ID (if no TELEGRAM_ALLOWED_USERS set)
+if not any(uid for uid in ALLOWED_USERS if not uid.endswith("@im.wechat")):
     _legacy_id = _str("TELEGRAM_CHAT_ID", "")
     if _legacy_id:
         ALLOWED_USERS[_legacy_id] = "admin"
 
 # Role permissions
 ROLE_PERMISSIONS: dict[str, set[str]] = {
-    "admin": {"chat", "query_status", "dispatch_task", "read_file", "wake_claude"},
-    "viewer": {"chat", "query_status"},
+    "admin": {"chat", "query_status", "dispatch_task", "read_file", "wake_claude", "react"},
+    "viewer": {"chat", "query_status", "react"},
 }
 
 
@@ -118,3 +128,50 @@ for pair in _raw_mappings.split(","):
 MEDIA_DIR = _str("CHANNEL_MEDIA_DIR", "tmp/media")
 MEDIA_MAX_BYTES = _int("CHANNEL_MEDIA_MAX_BYTES", 50 * 1024 * 1024)
 WECHAT_CDN_BASE_URL = _str("WECHAT_CDN_BASE_URL", "https://novac2c.cdn.weixin.qq.com/c2c")
+
+
+# ── 两阶段参数绑定 — 运行时覆盖 + 锁死机制 ──
+# 偷自 Tavily LangChain 集成：agent 可动态调 max_tokens / timeout，
+# 但安全参数（路径白名单、速率限制）锁死不让碰。
+
+LOCKED_PARAMS: frozenset[str] = frozenset({
+    "RATE_LIMIT_WINDOW",       # 防刷窗口 — 改了就是开后门
+    "READ_ALLOW_PATHS",        # 文件读取白名单 — 安全边界
+    "ALLOWED_USERS",           # 用户权限表 — 身份边界
+    "ROLE_PERMISSIONS",        # 角色权限定义 — 权限边界
+})
+
+# 可被运行时覆盖的参数及其当前运行时值
+_runtime_overrides: dict[str, object] = {}
+
+
+def runtime_override(key: str, value: object) -> bool:
+    """运行时覆盖参数。locked 参数返回 False 并拒绝。
+
+    用法: runtime_override("CHAT_MAX_TOKENS", 2048)
+    读取: runtime_get("CHAT_MAX_TOKENS", CHAT_MAX_TOKENS)
+    """
+    if key in LOCKED_PARAMS:
+        _log.warning(f"config: blocked runtime override of LOCKED param '{key}'")
+        return False
+    _runtime_overrides[key] = value
+    _log.info(f"config: runtime override {key}={value!r}")
+    return True
+
+
+def runtime_get(key: str, default: object = None) -> object:
+    """读取参数值：运行时覆盖 > 模块常量 > default。"""
+    if key in _runtime_overrides:
+        return _runtime_overrides[key]
+    # 尝试从模块级常量读取
+    import sys
+    mod = sys.modules[__name__]
+    if hasattr(mod, key):
+        return getattr(mod, key)
+    return default
+
+
+def runtime_reset():
+    """清除所有运行时覆盖，恢复启动时配置。"""
+    _runtime_overrides.clear()
+    _log.info("config: all runtime overrides cleared")
