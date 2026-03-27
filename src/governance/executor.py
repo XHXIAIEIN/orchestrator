@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import anyio
 from claude_agent_sdk import (
@@ -71,6 +71,37 @@ class RolloutConfig:
             retry_conditions=set(rc.get("retry_conditions", ["timeout", "stuck"])),
             backoff_seconds=rc.get("backoff_seconds", 5.0),
         )
+
+
+# ── Lifecycle Hooks (stolen from agent-lightning R12) ──
+# Four hooks fire at key boundaries of the Rollout-Attempt lifecycle.
+# Fire-and-forget: exceptions are logged but never block execution.
+
+HookFn = Callable[[dict], None]
+
+
+@dataclass
+class LifecycleHooks:
+    """Lifecycle hooks for execution rollouts.
+
+    Each hook receives a context dict with relevant state.
+    Hooks are fire-and-forget — exceptions are logged but don't block execution.
+    """
+    on_rollout_start: list[HookFn] = field(default_factory=list)
+    on_attempt_start: list[HookFn] = field(default_factory=list)
+    on_attempt_end: list[HookFn] = field(default_factory=list)
+    on_rollout_end: list[HookFn] = field(default_factory=list)
+
+    def fire(self, hook_name: str, context: dict):
+        """Fire all registered hooks for the given lifecycle event."""
+        hooks = getattr(self, hook_name, [])
+        for hook in hooks:
+            try:
+                hook(context)
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    f"Hook {hook_name}/{getattr(hook, '__name__', repr(hook))} failed: {e}"
+                )
 
 
 def _classify_failure(output: str) -> str:
@@ -267,7 +298,8 @@ class TaskExecutor:
     """Execute tasks via Agent SDK with Blueprint-aware policy resolution."""
 
     def __init__(self, db: EventsDB, on_finalize: Callable | None = None,
-                 strategy: ExecutionStrategy | None = None):
+                 strategy: ExecutionStrategy | None = None,
+                 hooks: LifecycleHooks | None = None):
         self.db = db
         self.on_finalize = on_finalize
         self.accountant = TokenAccountant(db=self.db) if TokenAccountant else None
@@ -275,6 +307,7 @@ class TaskExecutor:
         self.punch_clock = get_punch_clock() if get_punch_clock else None
         self._session_runner = AgentSessionRunner(db=self.db, log_event_fn=self._log_agent_event)
         self._strategy = strategy or ProductionStrategy()
+        self._hooks = hooks or LifecycleHooks()
 
     def execute_task_async(self, task_id: int):
         """在线程池中执行任务，不阻塞调用方。"""
@@ -455,9 +488,27 @@ class TaskExecutor:
         status = "failed"
         attempt = 0
 
+        # ── Lifecycle: rollout_start ──
+        self._hooks.fire("on_rollout_start", {
+            "task_id": task_id,
+            "task": task,
+            "spec": spec,
+            "dept_key": dept_key,
+            "max_attempts": rollout_cfg.max_attempts,
+            "strategy": self._strategy.get_mode(),
+        })
+
         while attempt < rollout_cfg.max_attempts:
             attempt += 1
             attempt_label = f"attempt_{attempt}" if rollout_cfg.max_attempts > 1 else "execute"
+
+            # ── Lifecycle: attempt_start ──
+            self._hooks.fire("on_attempt_start", {
+                "task_id": task_id,
+                "task": task,
+                "attempt": attempt,
+                "max_attempts": rollout_cfg.max_attempts,
+            })
 
             # ── Sub-run: 每个 Attempt 独立记录 ──
             sub_run_id = None
@@ -513,6 +564,16 @@ class TaskExecutor:
                     except Exception:
                         pass
 
+            # ── Lifecycle: attempt_end ──
+            self._hooks.fire("on_attempt_end", {
+                "task_id": task_id,
+                "task": task,
+                "attempt": attempt,
+                "success": status == "done",
+                "status": status,
+                "result": output[:500],
+            })
+
             # ── Retry Decision ──
             if status == "done":
                 break  # Success, no retry needed
@@ -536,6 +597,17 @@ class TaskExecutor:
                 "next_attempt": attempt + 1,
             })
             time.sleep(rollout_cfg.backoff_seconds)
+
+        # ── Lifecycle: rollout_end ──
+        self._hooks.fire("on_rollout_end", {
+            "task_id": task_id,
+            "task": task,
+            "total_attempts": attempt,
+            "max_attempts": rollout_cfg.max_attempts,
+            "final_success": status == "done",
+            "final_status": status,
+            "final_result": output[:500],
+        })
 
         # ── Cleanup (once, after all attempts) ──
         # Punch out

@@ -95,10 +95,98 @@ def select_model_for_schema(schema: dict | None) -> str:
         return "strong"
 
 
+class ModelDegrader:
+    """Track model success/failure and auto-degrade on consecutive failures.
+
+    Pattern I12（偷自 OpenAkita）：滑动窗口追踪成功/失败比。
+    3 consecutive failures → downgrade to cheaper model
+    1 success after downgrade → restore original model
+    """
+
+    def __init__(self, window_size: int = 5, failure_threshold: int = 3):
+        self._window: list[bool] = []  # True=success, False=failure
+        self._window_size = window_size
+        self._failure_threshold = failure_threshold
+        self._degraded = False
+        self._original_model: str | None = None
+
+    def record(self, success: bool):
+        """Record a generation result."""
+        self._window.append(success)
+        if len(self._window) > self._window_size:
+            self._window.pop(0)
+
+    def should_degrade(self) -> bool:
+        """Check if we should switch to a cheaper model."""
+        if self._degraded:
+            return False
+        if len(self._window) >= self._failure_threshold:
+            tail = self._window[-self._failure_threshold:]
+            if all(not s for s in tail):
+                return True
+        return False
+
+    def should_restore(self) -> bool:
+        """Check if we should restore the original model after degradation."""
+        if not self._degraded:
+            return False
+        # 1 success after degradation → restore
+        return len(self._window) > 0 and self._window[-1] is True
+
+    @staticmethod
+    def demote_model(model_name: str) -> str:
+        """Pure function: return the next cheaper model name."""
+        demotions = {
+            "opus": "sonnet",
+            "sonnet": "haiku",
+            "haiku": "haiku",  # can't go lower
+        }
+        for key, val in demotions.items():
+            if key in model_name.lower():
+                return model_name.lower().replace(key, val)
+        return model_name  # Unknown model, don't change
+
+    def degrade(self, current_model: str) -> str:
+        """Mark as degraded, return the fallback model name."""
+        self._original_model = current_model
+        self._degraded = True
+        return self.demote_model(current_model)
+
+    def restore(self) -> str | None:
+        """Restore original model. Returns original model name or None."""
+        if self._original_model:
+            model = self._original_model
+            self._degraded = False
+            self._original_model = None
+            self._window.clear()
+            return model
+        return None
+
+    @property
+    def is_degraded(self) -> bool:
+        return self._degraded
+
+    def get_status(self) -> dict:
+        # Count consecutive failures from the tail
+        consecutive = 0
+        for s in reversed(self._window):
+            if not s:
+                consecutive += 1
+            else:
+                break
+        return {
+            "degraded": self._degraded,
+            "original_model": self._original_model,
+            "recent_window": self._window[-5:],
+            "consecutive_failures": consecutive,
+        }
+
+
 class LLMRouter:
     def __init__(self):
         self._ollama_available = None  # lazy probe
         self._tracker: CostTracker | None = None  # 可选：全链路成本追踪
+        self._degrader = ModelDegrader()  # I12: 滑动窗口自动降级
 
     def set_tracker(self, tracker: CostTracker) -> None:
         """绑定一个 CostTracker，后续所有 generate 调用自动累计成本。"""
@@ -158,6 +246,15 @@ class LLMRouter:
         warnings: list[str] = []
         model_used = ""
         attempts: list[dict] = []
+
+        # ── I12: ModelDegrader — 降级时用 fallback 模型覆盖 cascade ──
+        if self._degrader.is_degraded and self._degrader._original_model:
+            warnings.append(f"model_degraded: original={self._degrader._original_model}")
+            if "cascade" in route:
+                degraded_cascade = [ModelDegrader.demote_model(m) for m in route["cascade"]]
+                route = {**route, "cascade": degraded_cascade}
+            elif "model" in route:
+                route = {**route, "model": ModelDegrader.demote_model(route["model"])}
 
         # ── Feature Flag Engine Selection（偷自 Firecrawl feature-flag 矩阵）──
         # features 参数优先：按需求特征筛选引擎构建 cascade，而非走固定路由
@@ -237,6 +334,20 @@ class LLMRouter:
 
         elapsed_ms = int((time.time() - t0) * 1000)
         cost = self._estimate_cost(model_used, text)
+
+        # ── I12: ModelDegrader — 记录结果并检查降级/恢复 ──
+        if text and len(text.strip()) >= MIN_RESPONSE_LEN:
+            self._degrader.record(True)
+            if self._degrader.should_restore():
+                restored = self._degrader.restore()
+                log.info(f"router: [degrader] model restored to {restored}")
+                warnings.append(f"model_restored: {restored}")
+        else:
+            self._degrader.record(False)
+            if self._degrader.should_degrade() and model_used:
+                degraded_model = self._degrader.degrade(model_used)
+                log.warning(f"router: [degrader] auto-degrading: {model_used} → {degraded_model}")
+                warnings.append(f"model_auto_degraded: {model_used} → {degraded_model}")
 
         # ── CostTracker: 全链路成本累计（偷自 Firecrawl cost-tracking.ts）──
         if self._tracker and cost > 0:
