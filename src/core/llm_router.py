@@ -2,89 +2,94 @@
 LLM Router — 统一路由层。
 按 task_type 决定走 Ollama（本地）还是 Claude API SDK（云端）。
 Ollama 失败自动 fallback 到 Claude。
+
+Engine Waterfall 模式（偷自 Firecrawl）：
+cascade 内的引擎并发竞速，第一个返回合格结果的赢。
+超时后自动 waterfall 到下一个引擎，而不是等前一个跑完。
 """
-import base64
 import json
 import logging
 import os
 import time
 import urllib.request
 import urllib.error
-from pathlib import Path
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+
+from src.core.llm_models import *  # noqa: F401,F403 — re-export all constants
+from src.core.llm_models import (
+    MODEL_SONNET, MODEL_HAIKU, MODEL_GEMMA_VISION,
+    OLLAMA_HOST, MODEL_TIERS, ROUTES, MIN_RESPONSE_LEN,
+    DEPTH_TIERS, DEFAULT_DEPTH, THRESHOLD_MODES, DEFAULT_THRESHOLD,
+    GenerateResult, get_min_response_len,
+)
+from src.core.llm_backends import (
+    encode_images, ollama_generate, claude_generate, chrome_ai_generate,
+)
+from src.core.cost_tracking import CostTracker, CostLimitExceededError
 
 log = logging.getLogger(__name__)
-
-# ── 模型常量 — 全系统唯一的模型名定义点 ──
-# 其他模块应从此处导入，不要硬编码模型名。
-# 更换模型只改这里。
-MODEL_SONNET = "claude-sonnet-4-6"
-MODEL_HAIKU = "claude-haiku-4-5-20251001"
-# Ollama 本地模型
-MODEL_QWEN_CHAT = "qwen2.5:7b"         # 轻量闲聊
-MODEL_QWEN_THINK = "qwen3.5:9b"        # 带推理
-MODEL_DEEPSEEK = "deepseek-r1:14b"      # 深度推理
-MODEL_GEMMA_VISION = "gemma3:27b"       # 多模态（视觉）
-
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-
-# Ollama 路由用的 prefixed ID（"ollama/" + 模型名）
-_OL_QWEN_CHAT = f"ollama/{MODEL_QWEN_CHAT}"
-_OL_QWEN_THINK = f"ollama/{MODEL_QWEN_THINK}"
-_OL_DEEPSEEK = f"ollama/{MODEL_DEEPSEEK}"
-_OL_GEMMA = f"ollama/{MODEL_GEMMA_VISION}"
-
-MODEL_TIERS = {
-    # Chrome AI — 端侧免费，仅桌面环境可用
-    "chrome-ai/summarizer":        {"cost": 0, "capability": 0.4,  "multimodal": False, "env": "desktop"},
-    "chrome-ai/translator":        {"cost": 0, "capability": 0.5,  "multimodal": False, "env": "desktop"},
-    "chrome-ai/language-detector": {"cost": 0, "capability": 0.8,  "multimodal": False, "env": "desktop"},
-    "chrome-ai/prompt":            {"cost": 0, "capability": 0.35, "multimodal": False, "env": "desktop"},
-    _OL_QWEN_CHAT:               {"cost": 0,    "capability": 0.5,  "multimodal": False},
-    _OL_QWEN_THINK:              {"cost": 0,    "capability": 0.55, "multimodal": False},
-    _OL_DEEPSEEK:                {"cost": 0,    "capability": 0.6,  "multimodal": False},
-    MODEL_HAIKU:                 {"cost": 0.25, "capability": 0.7,  "multimodal": False},
-    _OL_GEMMA:                   {"cost": 0,    "capability": 0.65, "multimodal": True},
-    MODEL_SONNET:                {"cost": 3.0,  "capability": 0.9,  "multimodal": True},
-}
-
-ROUTES = {
-    "scrutiny":      {"cascade": [_OL_DEEPSEEK, MODEL_HAIKU], "timeout": 45, "no_think": True},
-    "debt_scan":     {"cascade": [_OL_DEEPSEEK, MODEL_HAIKU], "timeout": 90, "no_think": True},
-    "summary":       {"backend": "claude", "model": MODEL_HAIKU,  "timeout": 120},
-    "deep_analysis": {"cascade": [MODEL_HAIKU, MODEL_SONNET], "timeout": 120},
-    "profile":       {"backend": "claude", "model": MODEL_SONNET, "timeout": 120},
-    # 多模态路由 — 不适合 cascade
-    "vision":        {"backend": "ollama", "model": MODEL_GEMMA_VISION, "timeout": 90},
-    "ocr":           {"backend": "ollama", "model": MODEL_GEMMA_VISION, "timeout": 90},
-    # GUI 自动化推理 — 多模态，优先 Ollama，fallback 到 Claude
-    "gui_reason":    {"backend": "ollama", "model": MODEL_GEMMA_VISION, "timeout": 60, "fallback": "claude", "fallback_model": MODEL_HAIKU},
-    # Channel 闲聊 — 非推理模型更快更稳
-    "chat":          {"cascade": [_OL_QWEN_CHAT, MODEL_HAIKU], "timeout": 15, "no_think": True},
-    # Channel 需要推理的对话
-    "chat_reason":   {"cascade": [_OL_DEEPSEEK, _OL_QWEN_THINK], "timeout": 90},
-    # Chrome AI 路由 — 端侧免费，桌面环境优先
-    "translate":     {"cascade": ["chrome-ai/translator", MODEL_HAIKU], "timeout": 15},
-    "lang_detect":   {"backend": "chrome-ai", "model": "language-detector", "timeout": 5,
-                      "fallback": "claude", "fallback_model": MODEL_HAIKU},
-}
-
-MIN_RESPONSE_LEN = 10  # 少于这个字符数视为垃圾输出
 
 
 class LLMRouter:
     def __init__(self):
         self._ollama_available = None  # lazy probe
+        self._tracker: CostTracker | None = None  # 可选：全链路成本追踪
+
+    def set_tracker(self, tracker: CostTracker) -> None:
+        """绑定一个 CostTracker，后续所有 generate 调用自动累计成本。"""
+        self._tracker = tracker
+
+    def clear_tracker(self) -> CostTracker | None:
+        """解绑并返回当前 tracker（方便调用方拿走汇总）。"""
+        t = self._tracker
+        self._tracker = None
+        return t
+
+    @staticmethod
+    def _estimate_cost(model_id: str, text: str) -> float:
+        """估算单次调用的美元成本。基于 MODEL_TIERS.cost（$/M output tokens）。"""
+        tier = MODEL_TIERS.get(model_id, {})
+        cost_per_m = tier.get("cost", 0)
+        if cost_per_m == 0:
+            return 0.0
+        # 粗估：1 token ≈ 4 chars（中文约 2 chars）
+        est_tokens = max(len(text) / 3, 1)
+        return round(cost_per_m * est_tokens / 1_000_000, 6)
 
     def generate(self, prompt: str, task_type: str,
                  max_tokens: int = 1024, temperature: float = 0.3,
-                 images: list[str] | None = None) -> str:
-        """统一入口。根据 task_type 查路由表决定后端。
-        images: 可选的图片列表（文件路径或 base64 字符串）。仅 Ollama 多模态路由支持。
+                 images: list[str] | None = None,
+                 depth: str = DEFAULT_DEPTH,
+                 threshold: str = DEFAULT_THRESHOLD) -> str:
+        """统一入口（向后兼容，返回纯文本）。"""
+        return self.generate_rich(prompt, task_type, max_tokens, temperature,
+                                   images, depth, threshold).text
+
+    def generate_rich(self, prompt: str, task_type: str,
+                      max_tokens: int = 1024, temperature: float = 0.3,
+                      images: list[str] | None = None,
+                      depth: str = DEFAULT_DEPTH,
+                      threshold: str = DEFAULT_THRESHOLD) -> GenerateResult:
+        """Rich 入口 — 返回 GenerateResult，附带成本和诊断元数据。
+
+        偷自 Exa costDollars：每次调用精确告诉调用方花了多少钱。
+        偷自 Parallel usage：返回模型、延迟、尝试记录等诊断信息。
         """
+        t0 = time.time()
         route = ROUTES.get(task_type)
         if not route:
             raise ValueError(f"Unknown task_type: {task_type}")
+
+        # ── depth 档位修正 ──
+        tier = DEPTH_TIERS.get(depth, DEPTH_TIERS[DEFAULT_DEPTH])
+        if tier["max_tokens_cap"] is not None:
+            max_tokens = min(max_tokens, tier["max_tokens_cap"])
+        # 复制 route 避免污染全局配置
+        route = {**route, "timeout": max(5, int(route["timeout"] * tier["timeout_mult"]))}
+
+        warnings: list[str] = []
+        model_used = ""
+        attempts: list[dict] = []
 
         # 环境变量强制覆盖（cascade 路由也受此影响：跳过 cascade 直接走 Claude）
         force_claude = os.environ.get("LLM_FORCE_CLAUDE", "")
@@ -93,118 +98,213 @@ class LLMRouter:
             model = route.get("model", route.get("cascade", [MODEL_HAIKU])[-1])
             if model.startswith("ollama/"):
                 model = MODEL_HAIKU
-            return self._claude_generate(prompt, model, route["timeout"], max_tokens,
-                                         self._encode_images(images) if images else None)
-
-        # 编码图片为 base64
-        b64_images = self._encode_images(images) if images else None
-
-        # 有 cascade 字段 → 走级联
-        if "cascade" in route:
-            return self._generate_cascade(prompt, route, max_tokens, temperature, b64_images)
-
-        # 无 cascade → 走原有逻辑
-        backend = route["backend"]
-
-        if backend == "chrome-ai":
-            model_id = f"chrome-ai/{route['model']}"
-            result = self._chrome_ai_generate(prompt, model_id, max_tokens)
-            if result and len(result) >= MIN_RESPONSE_LEN:
-                return result
-            # fallback 到 Claude
-            if route.get("fallback") == "claude":
-                fallback_model = route.get("fallback_model", MODEL_HAIKU)
-                log.info(f"router: chrome-ai {task_type} fallback -> {fallback_model}")
-                return self._claude_generate(prompt, fallback_model, route["timeout"], max_tokens)
-            return result or ""
-        elif backend == "ollama":
-            # Qwen3 系列默认开 thinking，对简单任务追加 /no_think 关闭
-            if route.get("no_think") and not prompt.rstrip().endswith("/no_think"):
-                prompt = prompt.rstrip() + "\n\n/no_think"
-            return self._ollama_with_fallback(
-                prompt, task_type, route, max_tokens, temperature, b64_images
-            )
+            warnings.append(f"force_claude override: {task_type}")
+            text = claude_generate(prompt, model, route["timeout"], max_tokens,
+                                   encode_images(images) if images else None)
+            model_used = model
         else:
-            return self._claude_generate(
-                prompt, route["model"], route["timeout"], max_tokens
+            # 编码图片为 base64
+            b64_images = encode_images(images) if images else None
+
+            # 有 cascade 字段 → 走级联（depth 截断 cascade 长度）
+            if "cascade" in route:
+                text, model_used, attempts = self._generate_cascade(
+                    prompt, route, max_tokens, temperature, b64_images, tier,
+                    min_len=get_min_response_len(threshold))
+            elif route["backend"] == "chrome-ai":
+                model_id = f"chrome-ai/{route['model']}"
+                result = chrome_ai_generate(prompt, model_id, max_tokens)
+                if result and len(result) >= MIN_RESPONSE_LEN:
+                    text, model_used = result, model_id
+                elif route.get("fallback") == "claude":
+                    fallback_model = route.get("fallback_model", MODEL_HAIKU)
+                    log.info(f"router: chrome-ai {task_type} fallback -> {fallback_model}")
+                    warnings.append(f"chrome-ai fallback to {fallback_model}")
+                    text, model_used = claude_generate(
+                        prompt, fallback_model, route["timeout"], max_tokens), fallback_model
+                else:
+                    text, model_used = result or "", model_id
+            elif route["backend"] == "ollama":
+                if route.get("no_think") and not prompt.rstrip().endswith("/no_think"):
+                    prompt = prompt.rstrip() + "\n\n/no_think"
+                text = self._ollama_with_fallback(
+                    prompt, task_type, route, max_tokens, temperature, b64_images)
+                model_used = f"ollama/{route['model']}"
+            else:
+                text = claude_generate(
+                    prompt, route["model"], route["timeout"], max_tokens)
+                model_used = route["model"]
+
+        elapsed_ms = int((time.time() - t0) * 1000)
+        cost = self._estimate_cost(model_used, text)
+
+        # ── CostTracker: 全链路成本累计（偷自 Firecrawl cost-tracking.ts）──
+        if self._tracker and cost > 0:
+            self._tracker.add_call(
+                call_type=task_type, model=model_used, cost=cost,
+                tokens={"est_out": max(int(len(text) / 3), 1)},
             )
 
-    @staticmethod
-    def _encode_images(images: list[str]) -> list[str]:
-        """将图片路径或 base64 字符串统一转为 base64 列表。"""
-        result = []
-        for img in images:
-            p = Path(img)
-            if p.exists() and p.is_file():
-                result.append(base64.b64encode(p.read_bytes()).decode())
-            elif len(img) > 260:  # 已经是 base64
-                result.append(img)
-            else:
-                log.warning(f"router: image not found: {img}")
-        return result
+        return GenerateResult(
+            text=text,
+            model_used=model_used,
+            task_type=task_type,
+            depth=depth,
+            latency_ms=elapsed_ms,
+            cost_dollars=cost,
+            attempts=attempts,
+            warnings=warnings,
+        )
+
+    # ── Waterfall 超时配置 ──
+    # 每个引擎在这个时间后如果没返回，下一个引擎并发启动（而不是等它跑完）
+    WATERFALL_DELAY_S = float(os.environ.get("LLM_WATERFALL_DELAY", "3.0"))
+
+    def _call_one_model(self, model_id: str, prompt: str, route: dict,
+                         max_tokens: int, temperature: float,
+                         images: list[str] | None) -> tuple[str, str]:
+        """调用单个模型，返回 (result_text, model_id)。失败抛异常。"""
+        if model_id.startswith("chrome-ai/"):
+            tier = MODEL_TIERS.get(model_id, {})
+            if tier.get("env") == "desktop" and os.environ.get("BROWSER_HEADLESS", "false").lower() == "true":
+                raise RuntimeError("headless_environment")
+            result = chrome_ai_generate(prompt, model_id, max_tokens)
+            return result or "", model_id
+
+        if model_id.startswith("ollama/"):
+            model_name = model_id.split("/", 1)[1]
+            if self._ollama_available is False:
+                raise RuntimeError("ollama_unavailable")
+            p = prompt
+            if route.get("no_think") and not p.rstrip().endswith("/no_think"):
+                p = p.rstrip() + "\n\n/no_think"
+            return ollama_generate(p, model_name, route["timeout"],
+                                    max_tokens, temperature, images), model_id
+
+        # Claude
+        return claude_generate(prompt, model_id, route["timeout"],
+                                max_tokens, images), model_id
 
     def _generate_cascade(self, prompt: str, route: dict,
                            max_tokens: int, temperature: float,
-                           images: list[str] | None = None) -> str:
-        """级联尝试：从便宜到贵。"""
-        cascade = route["cascade"]
+                           images: list[str] | None = None,
+                           depth_tier: dict | None = None,
+                           min_len: int = MIN_RESPONSE_LEN,
+                           ) -> tuple[str, str, list[dict]]:
+        """Engine Waterfall（偷自 Firecrawl）：并发竞速 + 超时降级。
+
+        引擎按 cascade 顺序启动，但不等前一个跑完：
+        - 第一个引擎立即启动
+        - WATERFALL_DELAY_S 后如果没结果，下一个引擎并发启动
+        - 第一个返回合格结果的赢，其余取消
+        - 全部失败时走 retry（如果有预算）
+        """
+        cascade = list(route["cascade"])
+        if depth_tier and depth_tier.get("max_cascade"):
+            cascade = cascade[:depth_tier["max_cascade"]]
+        retry_budget = (depth_tier or {}).get("retry", 0)
         attempts = []
 
-        for model_id in cascade:
-            # Chrome AI 分支 — 端侧模型，headless 环境自动跳过
-            if model_id.startswith("chrome-ai/"):
-                tier = MODEL_TIERS.get(model_id, {})
-                if tier.get("env") == "desktop" and os.environ.get("BROWSER_HEADLESS", "false").lower() == "true":
-                    attempts.append({"model": model_id, "reason": "headless_environment"})
-                    continue
+        # 单引擎：直接调用，不走线程池
+        if len(cascade) == 1:
+            return self._try_single_model(
+                cascade[0], prompt, route, max_tokens, temperature, images, min_len, attempts)
+
+        # ── Waterfall：并发竞速 ──
+        waterfall_delay = self.WATERFALL_DELAY_S
+        result_text, result_model = "", ""
+
+        with ThreadPoolExecutor(max_workers=len(cascade), thread_name_prefix="waterfall") as pool:
+            futures: dict[Future, str] = {}  # future → model_id
+
+            for i, model_id in enumerate(cascade):
+                future = pool.submit(
+                    self._call_one_model, model_id, prompt, route,
+                    max_tokens, temperature, images,
+                )
+                futures[future] = model_id
+
+                # 等 waterfall_delay 看当前批次有没有合格结果
+                done_futures = set()
                 try:
-                    result = self._chrome_ai_generate(prompt, model_id, max_tokens)
-                    if result and len(result) >= MIN_RESPONSE_LEN:
-                        log.info(f"router: cascade success with {model_id}")
-                        return result
-                    attempts.append({"model": model_id, "reason": f"short_response ({len(result or '')} chars)"})
+                    for done in as_completed(futures.keys() - done_futures, timeout=waterfall_delay):
+                        done_futures.add(done)
+                        mid = futures[done]
+                        try:
+                            text, _ = done.result(timeout=0)
+                            if len(text.strip()) >= min_len:
+                                log.info(f"router: [waterfall] {mid} won ({len(text)} chars, "
+                                         f"stage={i+1}/{len(cascade)})")
+                                result_text, result_model = text, mid
+                                # 取消剩余 futures
+                                for f in futures:
+                                    if f not in done_futures:
+                                        f.cancel()
+                                return result_text, result_model, attempts
+                            attempts.append({"model": mid, "reason": f"low_quality ({len(text.strip())} chars)"})
+                        except Exception as e:
+                            attempts.append({"model": mid, "reason": str(e)})
+                except TimeoutError:
+                    # waterfall 超时，启动下一个引擎（如果还有的话）
+                    if i < len(cascade) - 1:
+                        log.info(f"router: [waterfall] {model_id} timeout after {waterfall_delay}s, "
+                                 f"launching {cascade[i+1]}")
+
+            # 所有引擎都已启动，等待剩余结果
+            for future in as_completed(futures.keys()):
+                if result_text:
+                    break
+                mid = futures[future]
+                try:
+                    text, _ = future.result(timeout=route["timeout"])
+                    if len(text.strip()) >= min_len:
+                        log.info(f"router: [waterfall] late winner {mid} ({len(text)} chars)")
+                        result_text, result_model = text, mid
+                        break
+                    attempts.append({"model": mid, "reason": f"low_quality ({len(text.strip())} chars)"})
                 except Exception as e:
-                    attempts.append({"model": model_id, "reason": str(e)})
-                continue
+                    if {"model": mid, "reason": str(e)} not in attempts:
+                        attempts.append({"model": mid, "reason": str(e)})
 
-            # 解析 model_id 格式: "ollama/xxx" 或 "claude-xxx"
-            if model_id.startswith("ollama/"):
-                model_name = model_id.split("/", 1)[1]
-                backend = "ollama"
-            else:
-                model_name = model_id
-                backend = "claude"
+        if result_text:
+            return result_text, result_model, attempts
 
-            # 跳过不可达的 ollama
-            if backend == "ollama" and self._ollama_available is False:
-                attempts.append({"model": model_id, "reason": "ollama_unavailable"})
-                continue
+        # 全部失败 — advanced 档位可重试最后一个模型
+        if retry_budget > 0 and cascade:
+            return self._retry_last(cascade[-1], prompt, route, max_tokens,
+                                     temperature, images, min_len, attempts)
 
-            try:
-                if backend == "ollama":
-                    # Qwen3 no_think
-                    p = prompt
-                    if route.get("no_think") and not p.rstrip().endswith("/no_think"):
-                        p = p.rstrip() + "\n\n/no_think"
-                    result = self._ollama_generate(p, model_name, route["timeout"],
-                                                   max_tokens, temperature, images)
-                else:
-                    result = self._claude_generate(prompt, model_name, route["timeout"],
-                                                   max_tokens, images)
+        log.warning(f"router: [waterfall] all engines failed: {attempts}")
+        return "", "", attempts
 
-                if len(result.strip()) >= MIN_RESPONSE_LEN:
-                    tier = MODEL_TIERS.get(model_id, {})
-                    log.info(f"router: [cascade] {model_id} ok ({len(result)} chars, "
-                             f"cost_tier={tier.get('cost', '?')}, attempts={len(attempts)+1})")
-                    return result
+    def _try_single_model(self, model_id, prompt, route, max_tokens, temperature,
+                           images, min_len, attempts):
+        """单引擎快速路径，不走线程池。"""
+        try:
+            text, mid = self._call_one_model(model_id, prompt, route,
+                                              max_tokens, temperature, images)
+            if len(text.strip()) >= min_len:
+                log.info(f"router: [cascade] {mid} ok ({len(text)} chars)")
+                return text, mid, attempts
+            attempts.append({"model": mid, "reason": f"low_quality ({len(text.strip())} chars)"})
+        except Exception as e:
+            attempts.append({"model": model_id, "reason": str(e)})
+        return "", "", attempts
 
-                attempts.append({"model": model_id, "reason": f"low_quality ({len(result.strip())} chars)"})
-            except Exception as e:
-                attempts.append({"model": model_id, "reason": str(e)})
-
-        # 全部失败
-        log.warning(f"router: [cascade] all models failed: {attempts}")
-        return ""
+    def _retry_last(self, last_model, prompt, route, max_tokens,
+                     temperature, images, min_len, attempts):
+        """重试最后一个模型。"""
+        log.info(f"router: [waterfall] retry with {last_model}")
+        try:
+            text, mid = self._call_one_model(last_model, prompt, route,
+                                              max_tokens, temperature, images)
+            if len(text.strip()) >= min_len:
+                log.info(f"router: [waterfall] retry success with {mid}")
+                return text, mid, attempts
+        except Exception as e:
+            attempts.append({"model": last_model, "reason": f"retry_failed: {e}"})
+        log.warning(f"router: [waterfall] all engines failed after retry: {attempts}")
+        return "", "", attempts
 
     def _ollama_with_fallback(self, prompt: str, task_type: str, route: dict,
                                max_tokens: int, temperature: float,
@@ -220,7 +320,7 @@ class LLMRouter:
 
         t0 = time.time()
         try:
-            result = self._ollama_generate(
+            result = ollama_generate(
                 prompt, route["model"], route["timeout"], max_tokens, temperature, images
             )
             elapsed = time.time() - t0
@@ -250,110 +350,11 @@ class LLMRouter:
         """Fallback 到 Claude API（支持多模态）。"""
         fallback_model = route.get("fallback_model", MODEL_HAIKU)
         t0 = time.time()
-        result = self._claude_generate(prompt, fallback_model, route["timeout"],
-                                        max_tokens, images)
+        result = claude_generate(prompt, fallback_model, route["timeout"],
+                                  max_tokens, images)
         elapsed = time.time() - t0
         log.info(f"router: [claude_fallback] {task_type} {elapsed:.1f}s ok")
         return result
-
-    def _ollama_generate(self, prompt: str, model: str, timeout: int,
-                          max_tokens: int, temperature: float,
-                          images: list[str] | None = None) -> str:
-        """调 Ollama REST API。支持多模态（images 为 base64 列表）。"""
-        url = f"{OLLAMA_HOST}/api/generate"
-        body = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "num_predict": max_tokens,
-                "temperature": temperature,
-            },
-        }
-        if images:
-            body["images"] = images
-        payload = json.dumps(body).encode()
-
-        req = urllib.request.Request(
-            url, data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode())
-        return data.get("response", "")
-
-    def _claude_generate(self, prompt: str, model: str, timeout: int,
-                          max_tokens: int,
-                          images: list[str] | None = None) -> str:
-        """调 Claude API SDK。支持多模态（images 为 base64 列表）。"""
-        from src.core.config import get_anthropic_client
-        try:
-            client = get_anthropic_client()
-
-            # 构建消息内容：有图片时用多模态格式
-            if images:
-                content = []
-                for img_b64 in images:
-                    content.append({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": img_b64,
-                        },
-                    })
-                content.append({"type": "text", "text": prompt})
-            else:
-                content = prompt
-
-            response = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": content}],
-            )
-            text = next(
-                (b.text for b in response.content if b.type == "text"), ""
-            )
-            return text.strip()
-        except Exception as e:
-            log.error(f"router: Claude API failed: {e}")
-            return ""
-
-    def _chrome_ai_generate(self, prompt: str, model_id: str, max_tokens: int) -> Optional[str]:
-        """调用 Chrome AI API。需要 BrowserAI 实例可用。"""
-        try:
-            from src.core.browser_ai import BrowserAI
-            from src.core.browser_runtime import BrowserRuntime
-        except ImportError:
-            return None
-
-        # 懒初始化 BrowserAI
-        if not hasattr(self, '_browser_ai'):
-            rt = BrowserRuntime.from_env()
-            if not rt.available:
-                self._browser_ai = None
-                return None
-            self._browser_ai = BrowserAI(rt)
-
-        if self._browser_ai is None:
-            return None
-
-        ai_type = model_id.split("/", 1)[1]  # "summarizer", "translator", etc.
-
-        if ai_type == "summarizer":
-            return self._browser_ai.summarize_sync(prompt)
-        elif ai_type == "translator":
-            # 简单处理：prompt 包含翻译指令，直接当摘要用
-            return self._browser_ai.summarize_sync(prompt)
-        elif ai_type == "language-detector":
-            result = self._browser_ai.detect_language_sync(prompt)
-            if result:
-                return json.dumps(result)
-            return None
-        elif ai_type == "prompt":
-            return self._browser_ai.summarize_sync(prompt)
-        else:
-            return None
 
     def check_ollama(self) -> bool:
         """探测 Ollama 是否可达 + 检查所需模型。启动时调用一次。"""
