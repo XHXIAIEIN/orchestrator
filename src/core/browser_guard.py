@@ -253,3 +253,12 @@ class ActionLoopDetector:
             "most_repeated": most_common,
             "fingerprints_tracked": len(self._fingerprints),
         }
+
+
+# ── 模块级单例（跨调用追踪状态，随 scheduler 生命周期存在）──
+_loop_detector = ActionLoopDetector()
+
+
+def get_loop_detector() -> ActionLoopDetector:
+    """获取全局 guard 实例（供外部查看 stats 或 reset）。"""
+    return _loop_detector
