@@ -5,12 +5,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.governance.governor import Governor
 from src.storage.events_db import EventsDB
 
-DB_PATH = str(Path(__file__).parent.parent.parent / "data" / "events.db")
+DB_PATH = str(_PROJECT_ROOT / "data" / "events.db")
 
 
 def main():
@@ -29,16 +30,16 @@ def main():
     if not task:
         print(json.dumps({"error": f"task {task_id} not found"}))
         sys.exit(1)
-    if task["status"] != "awaiting_approval":
-        print(json.dumps({"error": f"task {task_id} status is '{task['status']}', expected 'awaiting_approval'"}))
+    if task["status"] not in ("pending", "awaiting_approval"):
+        print(json.dumps({"error": f"task {task_id} status is '{task['status']}', expected 'pending' or 'awaiting_approval'"}))
         sys.exit(1)
 
     now = datetime.now(timezone.utc).isoformat()
-    db.update_task(task_id, approved_at=now)
+    db.update_task(task_id, approved_at=now, status="running")
 
     governor = Governor(db=db)
-    result = governor.execute_task(task_id)
-    print(json.dumps(result, ensure_ascii=False, default=str))
+    governor.execute_task_async(task_id)
+    print(json.dumps({"status": "running", "id": task_id, "approved_at": now}))
 
 
 if __name__ == "__main__":

@@ -1,10 +1,18 @@
 # src/governance/stuck_detector.py
 """
-StuckDetector — 5-pattern agent stuck detection.
-Stolen from OpenHands/openhands/controller/stuck.py, adapted for Agent SDK events.
+StuckDetector — 9-pattern agent stuck detection.
+
+Original 6 patterns from OpenHands/openhands/controller/stuck.py.
+Patterns 7-9 stolen from OpenFang loop_guard.rs:
+  - Result-aware detection (same call + same result = method isn't working)
+  - Ping-pong detection (A-B-A-B-A-B in sliding window)
+  - Poll tool recognition (docker ps / kubectl get get relaxed thresholds)
 """
 from __future__ import annotations
+
+import hashlib
 import logging
+from collections import Counter
 
 log = logging.getLogger(__name__)
 
@@ -13,26 +21,60 @@ MIN_EVENTS = 6
 # How many recent events to compare
 WINDOW = 4
 
+# ── OpenFang-style loop guard config ──
+RESULT_WARN_THRESHOLD = 3       # 同 call+result 重复 N 次 → warn
+RESULT_BLOCK_THRESHOLD = 5      # 同 call+result 重复 N 次 → block
+GLOBAL_CIRCUIT_BREAKER = 30     # 总调用次数熔断
+POLL_MULTIPLIER = 3             # 轮询工具阈值倍增
+PINGPONG_WINDOW = 30            # ping-pong 检测的滑动窗口
+
+# 轮询关键词 — 这些工具调用虽然重复但属于正常监控
+POLL_KEYWORDS = frozenset({
+    "status", "poll", "wait", "watch", "docker ps", "kubectl get",
+    "git status", "nvidia-smi", "systemctl", "journalctl", "tail",
+})
+
 
 class StuckDetector:
     """Detect when an agent is stuck in a loop.
 
-    Six patterns:
+    Nine patterns:
     1. REPEATED_ACTION_OBSERVATION — same action+observation pair repeats
     2. REPEATED_ACTION_ERROR — same action keeps producing same error
     3. MONOLOGUE — agent talks to itself without tool use
-    4. ACTION_OBSERVATION_CYCLE — alternating pattern repeats
+    4. ACTION_OBSERVATION_CYCLE — alternating pattern repeats (basic A-B-A-B)
     5. CONTEXT_WINDOW_LOOP — keeps hitting context limit errors
     6. SIGNATURE_REPEAT — same tool with identical input parameters 3+ times
+    7. RESULT_AWARE_REPEAT — same call + same result (method isn't working) [OpenFang]
+    8. PINGPONG_CYCLE — A-B-A-B or A-B-C-A-B-C in sliding window [OpenFang]
+    9. CIRCUIT_BREAKER — total tool calls exceed global limit [OpenFang]
     """
 
     def __init__(self, window: int = WINDOW):
         self.window = window
         self._events: list[dict] = []
+        # OpenFang-style: track (call_hash, result_hash) pairs
+        self._call_result_pairs: list[tuple[str, str]] = []
+        # Total tool call count for circuit breaker
+        self._total_tool_calls: int = 0
 
-    def record(self, event: dict) -> None:
-        """Record an agent event (from agent_events table format)."""
+    def record(self, event: dict, tool_result: str = "") -> None:
+        """Record an agent event.
+
+        Args:
+            event: Agent event dict with data.tools, data.text, data.error etc.
+            tool_result: The actual tool output text (for result-aware detection).
+        """
         self._events.append(event)
+
+        # Track call+result pairs for result-aware detection
+        data = event.get("data", {})
+        tools = data.get("tools", [])
+        if tools:
+            self._total_tool_calls += len(tools)
+            call_sig = _hash_sig(str(sorted(tools)) + str(data.get("tools_detail", ""))[:200])
+            result_sig = _hash_sig(tool_result[:2000]) if tool_result else _hash_sig(str(data.get("text", ""))[:500])
+            self._call_result_pairs.append((call_sig, result_sig))
 
     def is_stuck(self) -> tuple[bool, str]:
         """Check if agent is stuck. Returns (is_stuck, pattern_name)."""
@@ -40,6 +82,21 @@ class StuckDetector:
             return False, ""
 
         recent = self._events[-self.window * 2:]
+
+        # ── Pattern 9: Circuit breaker (check first — cheapest) ──
+        if self._check_circuit_breaker():
+            return True, "CIRCUIT_BREAKER"
+
+        # ── Pattern 7: Result-aware repeat [OpenFang] ──
+        stuck, is_poll = self._check_result_aware_repeat()
+        if stuck:
+            return True, "RESULT_AWARE_REPEAT"
+
+        # ── Pattern 8: Ping-pong cycle [OpenFang] ──
+        if self._check_pingpong_cycle():
+            return True, "PINGPONG_CYCLE"
+
+        # ── Original patterns ──
 
         # Pattern 1: Repeated action+observation
         if self._check_repeated_action_observation(recent):
@@ -53,7 +110,7 @@ class StuckDetector:
         if self._check_monologue(recent):
             return True, "MONOLOGUE"
 
-        # Pattern 4: Action-observation cycle
+        # Pattern 4: Action-observation cycle (basic)
         if self._check_cycle(recent):
             return True, "ACTION_OBSERVATION_CYCLE"
 
@@ -66,6 +123,109 @@ class StuckDetector:
             return True, "SIGNATURE_REPEAT"
 
         return False, ""
+
+    # ── New patterns from OpenFang ──
+
+    def _check_result_aware_repeat(self) -> tuple[bool, bool]:
+        """Pattern 7: Same call + same result = method isn't working.
+
+        Key insight from OpenFang: if the RESULT is also the same, the agent is
+        repeating a failed approach. If results differ (e.g. polling docker ps),
+        that's legitimate monitoring.
+
+        Returns (is_stuck, is_poll_tool).
+        """
+        if len(self._call_result_pairs) < 3:
+            return False, False
+
+        recent_pairs = self._call_result_pairs[-RESULT_BLOCK_THRESHOLD:]
+        pair_counts = Counter(recent_pairs)
+        if not pair_counts:
+            return False, False
+
+        (top_call, top_result), top_count = pair_counts.most_common(1)[0]
+
+        # Check if this is a poll tool (relaxed threshold)
+        is_poll = self._is_poll_tool(top_call)
+        threshold = RESULT_BLOCK_THRESHOLD * POLL_MULTIPLIER if is_poll else RESULT_BLOCK_THRESHOLD
+
+        # Same call + same result N times = stuck
+        if top_count >= threshold:
+            return True, is_poll
+
+        # Same call but different results = not stuck (legitimate polling)
+        call_only_counts = Counter(c for c, r in self._call_result_pairs[-RESULT_BLOCK_THRESHOLD:])
+        top_call_sig, call_count = call_only_counts.most_common(1)[0]
+        if call_count >= RESULT_BLOCK_THRESHOLD:
+            # Same call many times, but are results varying?
+            results_for_call = [r for c, r in self._call_result_pairs if c == top_call_sig]
+            unique_results = len(set(results_for_call[-RESULT_BLOCK_THRESHOLD:]))
+            if unique_results == 1:
+                # All same results = stuck
+                return True, is_poll
+            # Different results = probably polling, allow it
+            pass
+
+        return False, is_poll
+
+    def _check_pingpong_cycle(self) -> bool:
+        """Pattern 8: Detect A-B-A-B or A-B-C-A-B-C alternating patterns.
+
+        OpenFang searches the last PINGPONG_WINDOW calls for repeating subsequences
+        of length 2 or 3, requiring 3+ full repetitions to trigger.
+        """
+        if len(self._call_result_pairs) < 6:
+            return False
+
+        recent_calls = [c for c, r in self._call_result_pairs[-PINGPONG_WINDOW:]]
+
+        # Check period-2 (A-B-A-B-A-B)
+        if self._find_repeating_pattern(recent_calls, period=2, min_repeats=3):
+            return True
+
+        # Check period-3 (A-B-C-A-B-C-A-B-C)
+        if self._find_repeating_pattern(recent_calls, period=3, min_repeats=3):
+            return True
+
+        return False
+
+    def _find_repeating_pattern(self, seq: list[str], period: int, min_repeats: int) -> bool:
+        """Find a repeating subsequence of given period length."""
+        if len(seq) < period * min_repeats:
+            return False
+
+        # Slide a window and check if the pattern repeats
+        for start in range(len(seq) - period * min_repeats + 1):
+            pattern = tuple(seq[start:start + period])
+            repeats = 1
+            pos = start + period
+            while pos + period <= len(seq):
+                if tuple(seq[pos:pos + period]) == pattern:
+                    repeats += 1
+                    pos += period
+                else:
+                    break
+            if repeats >= min_repeats and len(set(pattern)) > 1:
+                return True
+        return False
+
+    def _check_circuit_breaker(self) -> bool:
+        """Pattern 9: Total tool calls exceed global limit."""
+        return self._total_tool_calls >= GLOBAL_CIRCUIT_BREAKER
+
+    def _is_poll_tool(self, call_hash: str) -> bool:
+        """Check if a call looks like a polling/monitoring operation."""
+        # Check against recent events for poll keywords
+        for e in reversed(self._events[-5:]):
+            data = e.get("data", {})
+            for td in (data.get("tools_detail") or []):
+                preview = str(td.get("input_preview", "")).lower()
+                tool = str(td.get("tool", "")).lower()
+                if any(kw in preview or kw in tool for kw in POLL_KEYWORDS):
+                    return True
+        return False
+
+    # ── Original patterns (unchanged) ──
 
     def _check_repeated_action_observation(self, events: list[dict]) -> bool:
         """Same tool call + same output repeating."""
@@ -104,7 +264,7 @@ class StuckDetector:
         return no_tool_count >= self.window
 
     def _check_cycle(self, events: list[dict]) -> bool:
-        """A-B-A-B pattern detection."""
+        """A-B-A-B pattern detection (basic — Pattern 8 is the advanced version)."""
         if len(events) < 4:
             return False
         sigs = []
@@ -125,7 +285,11 @@ class StuckDetector:
         return ctx_errors >= 2
 
     def _check_signature_repeat(self, events: list[dict]) -> bool:
-        """Same tool with same input parameters repeating 3+ times."""
+        """Same tool with same input parameters repeating 3+ times.
+
+        Poll-aware: monitoring tools (docker ps, kubectl get, etc.) get
+        POLL_MULTIPLIER × the normal threshold.
+        """
         signatures = []
         for e in events:
             data = e.get("data", {})
@@ -134,11 +298,21 @@ class StuckDetector:
                 signatures.append(sig)
         if len(signatures) < 3:
             return False
-        from collections import Counter
         counts = Counter(signatures)
-        _, top_count = counts.most_common(1)[0]
-        return top_count >= 3
+        top_sig, top_count = counts.most_common(1)[0]
+        # Poll tools get relaxed threshold
+        threshold = 3
+        if any(kw in top_sig.lower() for kw in POLL_KEYWORDS):
+            threshold = 3 * POLL_MULTIPLIER
+        return top_count >= threshold
 
     def reset(self) -> None:
         """Clear recorded events."""
         self._events.clear()
+        self._call_result_pairs.clear()
+        self._total_tool_calls = 0
+
+
+def _hash_sig(text: str) -> str:
+    """SHA-256 短哈希，用于去重比较。"""
+    return hashlib.sha256(text.encode()).hexdigest()[:16]

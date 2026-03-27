@@ -16,3 +16,8 @@ try:
     from .agent_semaphore import AgentSemaphore
 except ImportError:
     pass
+
+try:
+    from .taint import TaintTracker, TaintViolation, TaintLabel
+except ImportError:
+    pass

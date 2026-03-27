@@ -37,16 +37,27 @@ IGNORED_PROJECTS: set[str] = set()
 
 
 def load_ignored_projects(db) -> None:
-    """从 DB 中加载被整体 dismiss 过的项目，自动加入黑名单。"""
+    """从 DB 中加载永久忽略的项目列表。"""
     global IGNORED_PROJECTS
     try:
+        import json
         with db._connect() as conn:
+            # Primary: explicit ignored_projects list in scheduler_status
+            row = conn.execute(
+                "SELECT value FROM scheduler_status WHERE key = 'ignored_projects'"
+            ).fetchone()
+            if row:
+                try:
+                    IGNORED_PROJECTS.update(json.loads(row[0]))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Fallback: projects with 5+ dismissed debts (legacy)
             rows = conn.execute(
                 "SELECT DISTINCT project FROM attention_debts "
                 "WHERE status='dismissed' GROUP BY project "
                 "HAVING COUNT(*) >= 5"
             ).fetchall()
-        IGNORED_PROJECTS.update(r[0] for r in rows)
+            IGNORED_PROJECTS.update(r[0] for r in rows)
     except Exception:
         pass
 
