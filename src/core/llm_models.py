@@ -26,17 +26,86 @@ _OL_GEMMA = f"ollama/{MODEL_GEMMA_VISION}"
 
 MODEL_TIERS = {
     # Chrome AI — 端侧免费，仅桌面环境可用
-    "chrome-ai/summarizer":        {"cost": 0, "capability": 0.4,  "multimodal": False, "env": "desktop"},
-    "chrome-ai/translator":        {"cost": 0, "capability": 0.5,  "multimodal": False, "env": "desktop"},
-    "chrome-ai/language-detector": {"cost": 0, "capability": 0.8,  "multimodal": False, "env": "desktop"},
-    "chrome-ai/prompt":            {"cost": 0, "capability": 0.35, "multimodal": False, "env": "desktop"},
-    _OL_QWEN_CHAT:               {"cost": 0,    "capability": 0.5,  "multimodal": False},
-    _OL_QWEN_THINK:              {"cost": 0,    "capability": 0.55, "multimodal": False},
-    _OL_DEEPSEEK:                {"cost": 0,    "capability": 0.6,  "multimodal": False},
-    MODEL_HAIKU:                 {"cost": 0.25, "capability": 0.7,  "multimodal": True},
-    _OL_GEMMA:                   {"cost": 0,    "capability": 0.65, "multimodal": True},
-    MODEL_SONNET:                {"cost": 3.0,  "capability": 0.9,  "multimodal": True},
+    "chrome-ai/summarizer":        {"cost": 0, "capability": 0.4,  "multimodal": False, "env": "desktop",
+                                    "speed": 9, "vision": False, "json_mode": False, "max_output": 1024},
+    "chrome-ai/translator":        {"cost": 0, "capability": 0.5,  "multimodal": False, "env": "desktop",
+                                    "speed": 9, "vision": False, "json_mode": False, "max_output": 1024},
+    "chrome-ai/language-detector": {"cost": 0, "capability": 0.8,  "multimodal": False, "env": "desktop",
+                                    "speed": 10, "vision": False, "json_mode": False, "max_output": 256},
+    "chrome-ai/prompt":            {"cost": 0, "capability": 0.35, "multimodal": False, "env": "desktop",
+                                    "speed": 9, "vision": False, "json_mode": False, "max_output": 2048},
+    _OL_QWEN_CHAT:               {"cost": 0,    "capability": 0.5,  "multimodal": False,
+                                   "speed": 8, "vision": False, "json_mode": True,  "max_output": 4096},
+    _OL_QWEN_THINK:              {"cost": 0,    "capability": 0.55, "multimodal": False,
+                                   "speed": 6, "vision": False, "json_mode": True,  "max_output": 4096},
+    _OL_DEEPSEEK:                {"cost": 0,    "capability": 0.6,  "multimodal": False,
+                                   "speed": 4, "vision": False, "json_mode": True,  "max_output": 8192},
+    MODEL_HAIKU:                 {"cost": 0.25, "capability": 0.7,  "multimodal": True,
+                                  "speed": 8, "vision": True,  "json_mode": True,  "max_output": 8192},
+    _OL_GEMMA:                   {"cost": 0,    "capability": 0.65, "multimodal": True,
+                                  "speed": 5, "vision": True,  "json_mode": False, "max_output": 8192},
+    MODEL_SONNET:                {"cost": 3.0,  "capability": 0.9,  "multimodal": True,
+                                  "speed": 7, "vision": True,  "json_mode": True,  "max_output": 16384},
 }
+
+
+# ── Feature Flag Engine Selection（偷自 Firecrawl feature-flag 矩阵）──
+# 按需求特征筛选引擎，而不是硬编码路由。
+# required 示例: {"vision": True, "json_mode": True, "min_output": 8000}
+
+def select_engine_by_features(
+    required: dict,
+    preference: str = "cost",
+    exclude: set[str] | None = None,
+) -> list[str]:
+    """根据 feature 需求筛选引擎，按偏好排序返回。
+
+    Args:
+        required: 硬性需求字典。支持的 key：
+            - vision (bool): 需要图像理解
+            - json_mode (bool): 需要结构化 JSON 输出
+            - min_output (int): 最小输出 token 数
+            - min_capability (float): 最低能力分（0-1）
+            - local_only (bool): 仅本地模型（cost=0）
+        preference: 排序策略 — "cost"（最便宜优先）、"speed"（最快优先）、
+                    "quality"（最强优先）
+        exclude: 排除的引擎 ID 集合
+
+    Returns:
+        符合条件的引擎 ID 列表，按偏好排序。空列表 = 没有引擎满足需求。
+    """
+    exclude = exclude or set()
+    candidates = []
+
+    for engine_id, feat in MODEL_TIERS.items():
+        if engine_id in exclude:
+            continue
+        # ── 硬性过滤 ──
+        if required.get("vision") and not feat.get("vision"):
+            continue
+        if required.get("json_mode") and not feat.get("json_mode"):
+            continue
+        if required.get("min_output", 0) > feat.get("max_output", 0):
+            continue
+        if required.get("min_capability", 0) > feat.get("capability", 0):
+            continue
+        if required.get("local_only") and feat.get("cost", 0) > 0:
+            continue
+        # desktop-only 引擎在非桌面环境不可用
+        if feat.get("env") == "desktop":
+            import os as _os
+            if _os.environ.get("BROWSER_HEADLESS", "false").lower() == "true":
+                continue
+        candidates.append((engine_id, feat))
+
+    # ── 按偏好排序 ──
+    _sort_keys = {
+        "cost":    lambda x: (x[1]["cost"], -x[1].get("speed", 0)),
+        "speed":   lambda x: (-x[1].get("speed", 0), x[1]["cost"]),
+        "quality": lambda x: (-x[1].get("capability", 0), x[1]["cost"]),
+    }
+    candidates.sort(key=_sort_keys.get(preference, _sort_keys["cost"]))
+    return [eid for eid, _ in candidates]
 
 ROUTES = {
     "scrutiny":      {"cascade": [_OL_DEEPSEEK, MODEL_HAIKU], "timeout": 45, "no_think": True},

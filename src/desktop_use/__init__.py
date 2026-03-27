@@ -10,7 +10,7 @@ from .types import (
 )
 from .ocr import OCREngine, WinOCREngine
 from .match import MatchStrategy, FuzzyMatchStrategy
-from .screen import ScreenCapture, MSSScreenCapture
+from .screen import ScreenCapture, MSSScreenCapture, SharedFrameBuffer
 from .window import WindowManager, Win32WindowManager
 from .actions import ActionExecutor, PyAutoGUIExecutor, ALLOWED_ACTIONS
 from .trajectory import Trajectory
@@ -39,7 +39,7 @@ __all__ = [
     # Match
     "MatchStrategy", "FuzzyMatchStrategy",
     # Screen
-    "ScreenCapture", "MSSScreenCapture",
+    "ScreenCapture", "MSSScreenCapture", "SharedFrameBuffer",
     # Window
     "WindowManager", "Win32WindowManager",
     # Actions

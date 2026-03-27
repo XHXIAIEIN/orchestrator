@@ -21,6 +21,7 @@ from src.core.llm_models import (
     OLLAMA_HOST, MODEL_TIERS, ROUTES, MIN_RESPONSE_LEN,
     DEPTH_TIERS, DEFAULT_DEPTH, THRESHOLD_MODES, DEFAULT_THRESHOLD,
     GenerateResult, get_min_response_len,
+    select_engine_by_features,
 )
 from src.core.llm_backends import (
     encode_images, ollama_generate, claude_generate, chrome_ai_generate,
@@ -125,17 +126,22 @@ class LLMRouter:
                  images: list[str] | None = None,
                  depth: str = DEFAULT_DEPTH,
                  threshold: str = DEFAULT_THRESHOLD,
-                 output_schema: dict | None = None) -> str:
+                 output_schema: dict | None = None,
+                 features: dict | None = None,
+                 feature_preference: str = "cost") -> str:
         """统一入口（向后兼容，返回纯文本）。"""
         return self.generate_rich(prompt, task_type, max_tokens, temperature,
-                                   images, depth, threshold, output_schema).text
+                                   images, depth, threshold, output_schema,
+                                   features, feature_preference).text
 
     def generate_rich(self, prompt: str, task_type: str,
                       max_tokens: int = 1024, temperature: float = 0.3,
                       images: list[str] | None = None,
                       depth: str = DEFAULT_DEPTH,
                       threshold: str = DEFAULT_THRESHOLD,
-                      output_schema: dict | None = None) -> GenerateResult:
+                      output_schema: dict | None = None,
+                      features: dict | None = None,
+                      feature_preference: str = "cost") -> GenerateResult:
         """Rich 入口 — 返回 GenerateResult，附带成本和诊断元数据。
 
         偷自 Exa costDollars：每次调用精确告诉调用方花了多少钱。
@@ -149,9 +155,27 @@ class LLMRouter:
         if not route:
             raise ValueError(f"Unknown task_type: {task_type}")
 
+        warnings: list[str] = []
+        model_used = ""
+        attempts: list[dict] = []
+
+        # ── Feature Flag Engine Selection（偷自 Firecrawl feature-flag 矩阵）──
+        # features 参数优先：按需求特征筛选引擎构建 cascade，而非走固定路由
+        if features:
+            selected = select_engine_by_features(
+                required=features, preference=feature_preference)
+            if selected:
+                log.info(f"router: [features] {features} pref={feature_preference} "
+                         f"-> {selected}")
+                route = {**route, "cascade": selected}
+            else:
+                warnings.append(f"feature_select_empty: {features}, fallback to route default")
+                log.warning(f"router: [features] no engine matches {features}, "
+                            f"using route default")
+
         # ── Schema complexity → model tier override（偷自 Firecrawl）──
-        # 仅在 route 有 cascade 且未被 force_claude 覆盖时生效
-        if output_schema and "cascade" in route:
+        # 仅在 route 有 cascade 且未被 force_claude/features 覆盖时生效
+        if output_schema and "cascade" in route and not features:
             tier_name = select_model_for_schema(output_schema)
             _tier_model_map = {"fast": MODEL_HAIKU, "balanced": MODEL_SONNET, "strong": MODEL_SONNET}
             schema_model = _tier_model_map.get(tier_name, MODEL_HAIKU)
@@ -166,10 +190,6 @@ class LLMRouter:
             max_tokens = min(max_tokens, tier["max_tokens_cap"])
         # 复制 route 避免污染全局配置
         route = {**route, "timeout": max(5, int(route["timeout"] * tier["timeout_mult"]))}
-
-        warnings: list[str] = []
-        model_used = ""
-        attempts: list[dict] = []
 
         # 环境变量强制覆盖（cascade 路由也受此影响：跳过 cascade 直接走 Claude）
         force_claude = os.environ.get("LLM_FORCE_CLAUDE", "")
@@ -385,6 +405,89 @@ class LLMRouter:
             attempts.append({"model": last_model, "reason": f"retry_failed: {e}"})
         log.warning(f"router: [waterfall] all engines failed after retry: {attempts}")
         return "", "", attempts
+
+    # ── Async Waterfall（偷自 Firecrawl Engine Waterfall）──
+    # 给 asyncio 调用方提供原生协程版本，而不是强制走 ThreadPoolExecutor。
+    # 与 _generate_cascade 互补：同步走线程池竞速，异步走 asyncio.wait。
+
+    async def _waterfall_generate(
+        self,
+        engines: list[dict],
+        prompt: str,
+        delay_s: float | None = None,
+        **kwargs,
+    ) -> dict:
+        """异步竞速多引擎，staggered start，第一个返回合格结果的赢。
+
+        Args:
+            engines: 引擎配置列表，每个: {"backend": str, "model": str, "timeout": int}
+            prompt: 输入 prompt
+            delay_s: 引擎间启动间隔（秒）。None = 使用 WATERFALL_DELAY_S 环境配置。
+            **kwargs: 透传给 _generate_single_async
+
+        Returns:
+            {"text": str, "model": str, "attempts": list[dict]}
+
+        Raises:
+            RuntimeError: 所有引擎都失败时
+        """
+        import asyncio
+
+        if delay_s is None:
+            delay_s = self.WATERFALL_DELAY_S
+        min_len = kwargs.pop("min_len", MIN_RESPONSE_LEN)
+        attempts = []
+
+        async def _try_engine(engine: dict, start_delay: float) -> dict:
+            if start_delay > 0:
+                await asyncio.sleep(start_delay)
+            # 用线程跑同步的 _call_one_model（因为底层 HTTP 调用是同步的）
+            loop = asyncio.get_running_loop()
+            route = {"timeout": engine.get("timeout", 30), **kwargs}
+            text, model_id = await loop.run_in_executor(
+                None,
+                self._call_one_model,
+                engine["model"], prompt, route,
+                kwargs.get("max_tokens", 1024),
+                kwargs.get("temperature", 0.3),
+                kwargs.get("images"),
+            )
+            if len(text.strip()) < min_len:
+                raise ValueError(f"low_quality ({len(text.strip())} chars)")
+            return {"text": text, "model": model_id}
+
+        tasks = []
+        for i, engine in enumerate(engines):
+            task = asyncio.create_task(
+                _try_engine(engine, delay_s * i),
+                name=f"waterfall-{engine['model']}",
+            )
+            tasks.append(task)
+
+        # 逐个收结果，第一个成功的赢
+        winner = None
+        pending = set(tasks)
+        while pending:
+            done, pending = await asyncio.wait(
+                pending, return_when=asyncio.FIRST_COMPLETED)
+            for t in done:
+                if t.cancelled():
+                    continue
+                exc = t.exception()
+                if exc:
+                    attempts.append({"model": t.get_name(), "reason": str(exc)})
+                    continue
+                winner = t.result()
+                # 取消所有还在跑的
+                for p in pending:
+                    p.cancel()
+                log.info(f"router: [async-waterfall] winner={winner['model']} "
+                         f"({len(winner['text'])} chars)")
+                return {**winner, "attempts": attempts}
+
+        # 全部失败
+        log.warning(f"router: [async-waterfall] all engines failed: {attempts}")
+        raise RuntimeError(f"All waterfall engines failed: {attempts}")
 
     def _ollama_with_fallback(self, prompt: str, task_type: str, route: dict,
                                max_tokens: int, temperature: float,

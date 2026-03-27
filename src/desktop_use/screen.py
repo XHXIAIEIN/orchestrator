@@ -12,10 +12,15 @@ from __future__ import annotations
 
 import ctypes
 import io
+import struct
 import sys
+import time
 import logging
 from abc import ABC, abstractmethod
+from multiprocessing import shared_memory
 from typing import List, Tuple
+
+import numpy as np
 
 from .types import MonitorInfo
 
@@ -30,6 +35,114 @@ except ImportError:
     Image = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Shared-memory zero-copy frame buffer (P12 — Carbonyl pattern)
+# ---------------------------------------------------------------------------
+
+class SharedFrameBuffer:
+    """Zero-copy frame buffer using shared memory.
+
+    Layout: [8 bytes timestamp][4 bytes width][4 bytes height][4 bytes channels][... pixel data ...]
+
+    Producer writes frames, consumers read directly — zero copy.
+    Uses a simple header to communicate frame metadata.
+    """
+
+    HEADER_SIZE = 20  # 8 (timestamp) + 4 (width) + 4 (height) + 4 (channels)
+
+    def __init__(
+        self,
+        name: str = "orchestrator_frame",
+        width: int = 1920,
+        height: int = 1080,
+        channels: int = 4,
+    ):
+        self._name = name
+        self._width = width
+        self._height = height
+        self._channels = channels
+        self._frame_size = width * height * channels
+        self._total_size = self.HEADER_SIZE + self._frame_size
+        self._shm: shared_memory.SharedMemory | None = None
+
+    def create(self):
+        """Create shared memory (producer side)."""
+        try:
+            # Clean up any stale buffer with the same name
+            old = shared_memory.SharedMemory(name=self._name, create=False)
+            old.close()
+            old.unlink()
+        except FileNotFoundError:
+            pass
+        self._shm = shared_memory.SharedMemory(
+            name=self._name, create=True, size=self._total_size
+        )
+
+    def attach(self):
+        """Attach to existing shared memory (consumer side)."""
+        self._shm = shared_memory.SharedMemory(name=self._name, create=False)
+
+    def write_frame(self, frame: np.ndarray):
+        """Write a frame to shared memory (producer)."""
+        if self._shm is None:
+            raise RuntimeError("SharedFrameBuffer not initialized — call create() first")
+
+        h, w = frame.shape[:2]
+        c = frame.shape[2] if frame.ndim == 3 else 1
+
+        # Write header
+        header = struct.pack("<dIII", time.time(), w, h, c)
+        self._shm.buf[: self.HEADER_SIZE] = header
+
+        # Write pixel data
+        flat = frame.tobytes()
+        end = self.HEADER_SIZE + len(flat)
+        self._shm.buf[self.HEADER_SIZE : end] = flat
+
+    def read_frame(self) -> tuple[np.ndarray | None, float]:
+        """Read the latest frame from shared memory (consumer).
+
+        Returns (frame_array, timestamp). frame is None if no frame written yet.
+        """
+        if self._shm is None:
+            raise RuntimeError("SharedFrameBuffer not initialized — call attach() first")
+
+        # Read header
+        header = bytes(self._shm.buf[: self.HEADER_SIZE])
+        timestamp, w, h, c = struct.unpack("<dIII", header)
+
+        if timestamp == 0:
+            return None, 0.0
+
+        # Read pixel data
+        pixel_size = w * h * c
+        data = bytes(self._shm.buf[self.HEADER_SIZE : self.HEADER_SIZE + pixel_size])
+
+        shape = (h, w, c) if c > 1 else (h, w)
+        frame = np.frombuffer(data, dtype=np.uint8).reshape(shape)
+        return frame, timestamp
+
+    def get_timestamp(self) -> float:
+        """Read just the timestamp (cheaper than full frame read)."""
+        if self._shm is None:
+            return 0.0
+        header = bytes(self._shm.buf[:8])
+        return struct.unpack("<d", header)[0]
+
+    def close(self):
+        """Close connection to shared memory."""
+        if self._shm:
+            self._shm.close()
+            self._shm = None
+
+    def destroy(self):
+        """Destroy shared memory (producer cleanup)."""
+        if self._shm:
+            self._shm.close()
+            self._shm.unlink()
+            self._shm = None
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +221,36 @@ class MSSScreenCapture(ScreenCapture):
     def capture_all(self) -> List[Tuple[bytes, MonitorInfo]]:
         """Capture each physical monitor separately."""
         return [self.capture(m.id) for m in self.monitors]
+
+    def capture_to_shared(self, buffer: SharedFrameBuffer, monitor_id: int = 0) -> float:
+        """Capture screenshot directly to shared memory. Returns timestamp.
+
+        This is an optional optimization path — raw BGRA pixels are written
+        to *buffer* so that consumers (OCR, CV pipeline) can read them
+        without serialization overhead.
+        """
+        if mss_module is None:
+            raise RuntimeError("mss is not installed")
+
+        if monitor_id == 0:
+            with mss_module.mss() as sct:
+                shot = sct.grab(sct.monitors[0])
+        else:
+            mon = self._get_monitor(monitor_id)
+            with mss_module.mss() as sct:
+                region = {
+                    "left": mon.x_offset,
+                    "top": mon.y_offset,
+                    "width": mon.width,
+                    "height": mon.height,
+                }
+                shot = sct.grab(region)
+
+        frame = np.frombuffer(shot.rgb, dtype=np.uint8).reshape(
+            shot.height, shot.width, 3
+        )
+        buffer.write_frame(frame)
+        return time.time()
 
     def to_logical_coords(
         self, phys_x: int, phys_y: int, monitor_id: int
