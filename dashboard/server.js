@@ -507,6 +507,53 @@ app.post('/api/debts/batch/dismiss', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Permanently ignore a project — dismiss all debts + add to ignored list so debt_scan skips it
+app.post('/api/debts/ignore-project', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const { project } = req.body || {};
+    if (!project) return res.status(400).json({ error: 'project is required' });
+    // Dismiss all open debts for this project
+    dbRun(db, "UPDATE attention_debts SET status = 'dismissed', resolved_at = datetime('now') WHERE project = ? AND status = 'open'", [project]);
+    // Persist to scheduler_status as ignored_projects list
+    const existing = dbAll(db, "SELECT value FROM scheduler_status WHERE key = 'ignored_projects'");
+    let list = [];
+    try { list = JSON.parse(existing[0]?.value || '[]'); } catch {}
+    if (!list.includes(project)) list.push(project);
+    dbRun(db, "INSERT OR REPLACE INTO scheduler_status (key, value, updated_at) VALUES ('ignored_projects', ?, datetime('now'))", [JSON.stringify(list)]);
+    res.json({ ok: true, project, ignored: true, ignored_projects: list });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Remove project from ignore list
+app.post('/api/debts/unignore-project', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const { project } = req.body || {};
+    if (!project) return res.status(400).json({ error: 'project is required' });
+    const existing = dbAll(db, "SELECT value FROM scheduler_status WHERE key = 'ignored_projects'");
+    let list = [];
+    try { list = JSON.parse(existing[0]?.value || '[]'); } catch {}
+    list = list.filter(p => p !== project);
+    dbRun(db, "INSERT OR REPLACE INTO scheduler_status (key, value, updated_at) VALUES ('ignored_projects', ?, datetime('now'))", [JSON.stringify(list)]);
+    res.json({ ok: true, project, ignored: false, ignored_projects: list });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get ignored projects list
+app.get('/api/debts/ignored-projects', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const existing = dbAll(db, "SELECT value FROM scheduler_status WHERE key = 'ignored_projects'");
+    let list = [];
+    try { list = JSON.parse(existing[0]?.value || '[]'); } catch {}
+    res.json(list);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/debts/:id/resolve', (req, res) => {
   const db = getDb();
   if (!db) return res.status(500).json({ error: 'db unavailable' });
@@ -1397,6 +1444,76 @@ app.get('/api/policy-advisor/summary', (req, res) => {
     summary[dept] = { denials: denialCount, has_suggestions: hasSuggestions };
   }
   res.json(summary);
+});
+
+// Policy advisor history — all suggestions, denials, auto-applied rules across departments
+app.get('/api/policy-advisor/history', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const items = [];
+  const deptNames = { engineering: '工部', operations: '户部', protocol: '礼部', security: '兵部', quality: '刑部', personnel: '吏部' };
+
+  for (const dept of DEPT_KEYS) {
+    const deptDir = path.join(DEPARTMENTS_DIR, dept);
+
+    // Collect suggestions (parse markdown for timestamp)
+    const sugPath = path.join(deptDir, 'policy-suggestions.md');
+    try {
+      const md = fs.readFileSync(sugPath, 'utf8');
+      const tsMatch = md.match(/Generated\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+UTC)/);
+      const evtMatch = md.match(/from\s+(\d+)\s+denial/);
+      items.push({
+        type: 'suggestion',
+        department: dept,
+        department_zh: deptNames[dept] || dept,
+        ts: tsMatch ? tsMatch[1].replace(' UTC', ':00Z').replace(' ', 'T') : null,
+        content: md,
+        denial_count: evtMatch ? parseInt(evtMatch[1]) : 0,
+      });
+    } catch {}
+
+    // Collect auto-applied rules
+    const rulesPath = path.join(deptDir, 'auto-applied-rules.jsonl');
+    try {
+      const lines = fs.readFileSync(rulesPath, 'utf8').trim().split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const rule = JSON.parse(line);
+          items.push({
+            type: 'auto_applied',
+            department: dept,
+            department_zh: deptNames[dept] || dept,
+            ts: rule.ts,
+            detail: rule.detail,
+            rule_type: rule.rule_type,
+          });
+        } catch {}
+      }
+    } catch {}
+
+    // Collect denial events (summarized)
+    const denialsPath = path.join(deptDir, 'policy-denials.jsonl');
+    try {
+      const lines = fs.readFileSync(denialsPath, 'utf8').trim().split('\n').filter(Boolean);
+      for (const line of lines.slice(-limit)) {
+        try {
+          const d = JSON.parse(line);
+          items.push({
+            type: 'denial',
+            department: dept,
+            department_zh: deptNames[dept] || dept,
+            ts: d.ts,
+            denial_type: d.type,
+            detail: d.detail,
+            suggested_fix: d.suggested_fix || '',
+          });
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // Sort by timestamp descending
+  items.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  res.json(items.slice(0, limit));
 });
 
 app.get('/api/departments/:name/guidelines', (req, res) => {

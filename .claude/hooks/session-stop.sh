@@ -64,27 +64,45 @@ detail = data.get('detail', '')[:200]
 today = '$TODAY'
 db_path = '$DB_PATH'
 jsonl_path = '$JSONL_PATH'
+project_dir = '$SCRIPT_DIR'
 
 if not summary:
     sys.exit(0)
 
-# Write to DB
+# Unified write: DB + JSONL in one call
+sys.path.insert(0, project_dir)
 try:
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        'INSERT OR IGNORE INTO experiences (date, type, summary, detail, created_at) VALUES (?, ?, ?, ?, datetime(\"now\"))',
-        (today, etype, summary, detail)
+    from src.storage.events_db import EventsDB
+    db = EventsDB(db_path)
+    exp_id = db.add_experience_unified(
+        today, etype, summary, detail,
+        jsonl_path=jsonl_path
     )
-    conn.commit()
-    conn.close()
-except: pass
-
-# Append to jsonl backup
-try:
-    entry = json.dumps({'date': today, 'type': etype, 'summary': summary, 'detail': detail}, ensure_ascii=False)
-    with open(jsonl_path, 'a', encoding='utf-8') as f:
-        f.write(entry + '\n')
-except: pass
+    # Close most recent active session
+    active = db.get_active_session()
+    if active:
+        db.close_session(
+            active['session_id'],
+            summary=summary,
+            topics=[etype],
+            experience_ids=[exp_id] if exp_id else []
+        )
+except:
+    # Fallback: direct DB + JSONL (old behavior)
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            'INSERT OR IGNORE INTO experiences (date, type, summary, detail, created_at) VALUES (?, ?, ?, ?, datetime(\"now\"))',
+            (today, etype, summary, detail)
+        )
+        conn.commit()
+        conn.close()
+    except: pass
+    try:
+        entry = json.dumps({'date': today, 'type': etype, 'summary': summary, 'detail': detail}, ensure_ascii=False)
+        with open(jsonl_path, 'a', encoding='utf-8') as f:
+            f.write(entry + '\n')
+    except: pass
 " 2>/dev/null
 ) &
 

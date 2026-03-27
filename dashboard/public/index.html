@@ -168,6 +168,31 @@ section:last-of-type { border-bottom: none; }
 .dept-grid-last-action.s-failed { color: var(--red); }
 .dept-grid-last-time { flex-shrink: 0; margin-left: 6px; }
 
+/* 政策建议 */
+.policy-adopt-btn {
+  font-family: var(--mono); font-size: .6rem; letter-spacing: .5px;
+  color: var(--accent); background: none; border: 1px solid var(--accent);
+  border-radius: var(--radius); padding: 3px 10px; cursor: pointer;
+  transition: all .15s; flex-shrink: 0; white-space: nowrap; margin-top: 2px;
+}
+.policy-adopt-btn:hover { background: var(--accent); color: #fff; }
+.policy-adopt-btn:disabled { opacity: .4; pointer-events: none; }
+.policy-history-toggle {
+  font-family: var(--mono); font-size: .6rem; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--text-dim); background: none; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 12px; cursor: pointer; transition: all .15s;
+}
+.policy-history-toggle:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
+.policy-history-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid #f4f4f0; font-size: .72rem;
+}
+.policy-history-item:last-child { border-bottom: none; }
+.policy-h-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
+.policy-h-dept { font-family: var(--serif); font-size: .7rem; color: var(--text-mid); }
+.policy-h-detail { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.policy-h-time { font-size: .6rem; color: var(--text-dim); flex-shrink: 0; }
+
 /* 最近任务（全宽，三省下方） */
 .gov-sub-label { font-size: .6rem; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
 .gov-recent-block {
@@ -270,8 +295,10 @@ section:last-of-type { border-bottom: none; }
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 }
 .rec-item:last-child { margin-bottom: 0; }
-.rec-action { font-family: var(--serif); font-size: .9rem; color: var(--text); line-height: 1.7; }
+.rec-head { display: flex; align-items: flex-start; gap: 10px; }
+.rec-action { font-family: var(--serif); font-size: .9rem; color: var(--text); line-height: 1.7; flex: 1; }
 .rec-reason { font-family: var(--serif); font-size: .8rem; color: var(--text-dim); margin-top: 6px; line-height: 1.65; font-style: italic; }
+.policy-dept-tag { font-family: var(--mono); font-size: .55rem; padding: 1px 6px; border-radius: 3px; margin-left: 6px; background: #f0f0ec; color: var(--text-mid); vertical-align: middle; }
 .rec-priority { font-family: var(--mono); font-size: .55rem; padding: 2px 8px; border-radius: 3px; margin-left: 8px; vertical-align: middle; letter-spacing: .5px; text-transform: uppercase; }
 .rec-high { background: #fde8e8; color: var(--red); }
 .rec-medium { background: #e6f4ea; color: var(--green); }
@@ -507,6 +534,8 @@ section:last-of-type { border-bottom: none; }
         <div id="insights-patterns"></div>
         <div class="sub-label" style="margin-top:32px">建议</div>
         <div id="insights-recs"></div>
+        <button class="policy-history-toggle" id="policy-history-btn" onclick="togglePolicyHistory()" style="display:none;margin-top:10px">往期记录</button>
+        <div id="policy-history" class="collapsed" style="margin-top:12px"></div>
       </div>
       <div class="insight-side">
         <div class="sub-label">时间分布</div>
@@ -719,6 +748,100 @@ function renderGovernance(tasks){
   }).join('')||'<div style="font-size:.72rem;color:var(--text-dim)">暂无任务</div>';
 }
 
+/* ── Policy Suggestions ── */
+const _adopted={};  // key: "dept:action" → {taskId, status}
+let _policyHistory=[];
+async function loadPolicySuggestions(container, existingHtml){
+  try{
+    const items=await fetch('/api/policy-advisor/history').then(r=>r.json());
+    // Build policy rec-items from denials with suggested_fix
+    const denials=items.filter(i=>i.type==='denial');
+    const autoApplied=items.filter(i=>i.type==='auto_applied');
+    const suggestions=items.filter(i=>i.type==='suggestion');
+    const policyItems=[];
+    // From suggestion markdown: extract bullet lines
+    for(const s of suggestions){
+      const lines=(s.content||'').split('\n').filter(l=>l.startsWith('- ')).map(l=>l.slice(2));
+      for(const line of lines){
+        policyItems.push({dept:s.department,deptZh:s.department_zh,action:line,reason:`来自 ${s.department_zh} 政策观察`,priority:'medium'});
+      }
+    }
+    // From denial suggested_fix
+    for(const d of denials){
+      if(d.suggested_fix){
+        policyItems.push({dept:d.department,deptZh:d.department_zh,action:d.suggested_fix,reason:d.detail,priority:'high'});
+      }
+    }
+    const policyHtml=policyItems.map(p=>{
+      const safeAction=esc(p.action).replace(/"/g,'&quot;');
+      const key=p.dept+':'+p.action;
+      const a=_adopted[key];
+      const btnHtml=a
+        ?`<button class='policy-adopt-btn' disabled style='border-color:var(--green);color:var(--green)'>执行中 #${a.taskId}</button>`
+        :`<button class='policy-adopt-btn' onclick="adoptSuggestion('${p.dept}','${safeAction}',this)">采纳派单</button>`;
+      return`<div class='rec-item'><div class='rec-head'><div class='rec-action'>${esc(p.action)}<span class='rec-priority rec-${p.priority}'>${p.priority}</span><span class='policy-dept-tag'>${esc(p.deptZh)}</span></div>${btnHtml}</div><div class='rec-reason'>${esc(p.reason)}</div></div>`;
+    }).join('');
+    const combined=existingHtml+policyHtml;
+    container.innerHTML=combined||"<div style='color:var(--text-dim);font-size:.8rem'>None</div>";
+    // History = auto-applied
+    _policyHistory=autoApplied;
+    if(autoApplied.length){
+      $('policy-history-btn').style.display='';
+      renderPolicyHistory();
+    }
+  }catch{
+    container.innerHTML=existingHtml||"<div style='color:var(--text-dim);font-size:.8rem'>None</div>";
+  }
+}
+function renderPolicyHistory(){
+  $('policy-history').innerHTML=_policyHistory.slice(0,20).map(h=>{
+    const ts=h.ts?relTime(h.ts):'';
+    const detail=h.detail||'';
+    return`<div class='policy-history-item'>
+      <div class='policy-h-dot'></div>
+      <span class='policy-h-dept'>${esc(h.department_zh)}</span>
+      <span class='policy-h-detail'>${esc(detail)}</span>
+      <span class='policy-h-time'>${ts}</span>
+    </div>`;
+  }).join('')||"<div style='color:var(--text-dim);font-size:.72rem'>暂无历史记录</div>";
+}
+function togglePolicyHistory(){
+  $('policy-history').classList.toggle('collapsed');
+}
+async function adoptSuggestion(dept,preview,btn){
+  btn.disabled=true;btn.textContent='派单中...';
+  const key=dept+':'+preview.replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+  try{
+    const resp=await fetch('/api/tasks',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        action:`采纳政策建议: ${preview}`,
+        reason:'Dashboard 政策建议采纳派单',
+        priority:'medium',
+        spec:{department:dept,cognitive_mode:'execute'}
+      })
+    });
+    const data=await resp.json();
+    if(data.id){
+      btn.textContent=`审批中 #${data.id}...`;
+      const approveResp=await fetch(`/api/tasks/${data.id}/approve`,{method:'POST'});
+      const result=await approveResp.json();
+      if(result.error){
+        btn.textContent=`#${data.id} 审批失败`;btn.style.borderColor='var(--red)';btn.style.color='var(--red)';
+      }else{
+        btn.textContent=`执行中 #${data.id}`;btn.style.borderColor='var(--green)';btn.style.color='var(--green)';
+        _adopted[key]={taskId:data.id};
+      }
+      refreshTasks();
+    }else{
+      btn.textContent='失败';btn.style.borderColor='var(--red)';btn.style.color='var(--red)';
+    }
+  }catch{
+    btn.textContent='失败';btn.style.borderColor='var(--red)';btn.style.color='var(--red)';
+  }
+}
+
 /* ── Heatmap ── */
 let _heatmap={};
 function renderHeatmap(data){
@@ -791,6 +914,9 @@ async function loadCats(days,btn){
 const SZ={done:'完成',failed:'失败',running:'执行中',pending:'待处理',awaiting_approval:'待审批',scrutinizing:'审查中',scrutiny_failed:'驳回',preflight_failed:'预检失败'};
 const SC={done:'t-done',failed:'t-failed',running:'t-running',pending:'t-pending',awaiting_approval:'t-awaiting',scrutinizing:'t-awaiting',scrutiny_failed:'t-failed'};
 const SD={done:'task-dot-done',failed:'task-dot-failed',running:'task-dot-running',pending:'task-dot-pending',awaiting_approval:'task-dot-awaiting',scrutinizing:'task-dot-awaiting',scrutiny_failed:'task-dot-failed'};
+async function refreshTasks(){
+  try{const tasks=await fetch('/api/tasks').then(r=>r.json());_tasks=tasks;renderTasks(tasks);renderGovernance(tasks)}catch{}
+}
 function renderTasks(tasks){
   const deptMap={engineering:'工部',operations:'户部',protocol:'礼部',security:'兵部',quality:'刑部',personnel:'吏部'};
   const counts={};tasks.forEach(t=>{counts[t.status]=(counts[t.status]||0)+1});
@@ -803,7 +929,7 @@ function renderTasks(tasks){
     const ts=t.created_at?relTime(t.created_at):'';
     const dept=deptMap[t.spec?.department]||'';
     const dur=t.started_at&&t.finished_at?Math.round((new Date(t.finished_at)-new Date(t.started_at))/1000)+'s':'';
-    const approve=t.status==='awaiting_approval'?`<button class='btn-approve' onclick='event.stopPropagation();openModal(${t.id})'>执行</button>`:'';
+    const approve=(t.status==='awaiting_approval'||t.status==='pending')?`<button class='btn-approve' onclick='event.stopPropagation();openModal(${t.id})'>执行</button>`:'';
     let detail='';
     if(t.spec?.problem)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>问题</span><span class='gov-entry-text'>${esc(t.spec.problem)}</span></div>`;
     if(t.spec?.observation)detail+=`<div class='gov-entry'><span class='gov-entry-tag' style='min-width:40px'>观察</span><span class='gov-entry-text'>${esc(t.spec.observation)}</span></div>`;
@@ -847,8 +973,12 @@ function openModal(id){const t=_tasks.find(t=>t.id===id);if(!t)return;_mid=id;
   if(t.reason)h+=`<div class='modal-field'><div class='modal-label'>Reason</div><div class='modal-value'>${esc(t.reason)}</div></div>`;
   $('modal-body').innerHTML=h;$('modal').classList.add('open')}
 function closeModal(){$('modal').classList.remove('open');_mid=null}
-$('modal-go').onclick=async()=>{if(!_mid)return;$('modal-go').disabled=true;$('modal-go').textContent='执行中...';
-  try{await fetch('/api/tasks/'+_mid+'/approve',{method:'POST'})}catch{}
+$('modal-go').onclick=async()=>{if(!_mid)return;$('modal-go').disabled=true;$('modal-go').textContent='提交中...';
+  try{
+    const resp=await fetch('/api/tasks/'+_mid+'/approve',{method:'POST'});
+    const result=await resp.json();
+    if(result.error){$('modal-go').textContent='失败: '+result.error.slice(0,40);$('modal-go').style.color='var(--red)';setTimeout(()=>{closeModal();$('modal-go').disabled=false;$('modal-go').textContent='确认执行';$('modal-go').style.color='';loadAll()},2000);return}
+  }catch(e){$('modal-go').textContent='网络错误';setTimeout(()=>{closeModal();$('modal-go').disabled=false;$('modal-go').textContent='确认执行';loadAll()},1500);return}
   closeModal();$('modal-go').disabled=false;$('modal-go').textContent='确认执行';loadAll()};
 
 /* ── Logs ── */
@@ -895,15 +1025,16 @@ function renderInsightsSection(insights) {
   } else {
     pa.innerHTML = "<div style='color:var(--text-dim);font-size:.8rem'>None</div>";
   }
-  // Recommendations
+  // Recommendations + policy suggestions merged
   const re = $('insights-recs');
-  if (Array.isArray(insights.recommendations) && insights.recommendations.length) {
-    re.innerHTML = insights.recommendations.map(r =>
-      `<div class='rec-item'><div class='rec-action'>${esc(r.action||'')}<span class='rec-priority rec-${r.priority||'low'}'>${r.priority||''}</span></div><div class='rec-reason'>${esc(r.reason||'')}</div></div>`
-    ).join('');
-  } else {
-    re.innerHTML = "<div style='color:var(--text-dim);font-size:.8rem'>None</div>";
-  }
+  const recHtml = (Array.isArray(insights.recommendations) && insights.recommendations.length)
+    ? insights.recommendations.map((r,i) => {
+        const safeAction = esc(r.action||'').replace(/"/g,'&quot;');
+        return `<div class='rec-item'><div class='rec-head'><div class='rec-action'>${esc(r.action||'')}<span class='rec-priority rec-${r.priority||'low'}'>${r.priority||''}</span></div><button class='policy-adopt-btn' onclick="adoptSuggestion('engineering','${safeAction}',this)">采纳派单</button></div><div class='rec-reason'>${esc(r.reason||'')}</div></div>`;
+      }).join('')
+    : '';
+  // Also load policy suggestions into the same list
+  loadPolicySuggestions(re, recHtml);
 }
 
 function renderDailySummary(summary) {
@@ -964,7 +1095,7 @@ function renderDebts(debts){
           ${pHigh?`<span class='debt-proj-sev high'>${pHigh}</span>`:''}
           ${pMed?`<span class='debt-proj-sev med'>${pMed}</span>`:''}
         </div>
-        ${pOpen>0?`<div class='debt-actions'><button class='logs-btn' onclick='event.stopPropagation();debtProjectDismiss("${esc(proj)}",this)'>全部忽略</button></div>`:''}
+        ${pOpen>0?`<div class='debt-actions'><button class='logs-btn' onclick='event.stopPropagation();debtProjectDismiss("${esc(proj)}",this)'>全部忽略</button><button class='logs-btn' onclick='event.stopPropagation();debtProjectIgnore("${esc(proj)}",this)' style='color:var(--red)'>永久忽略</button></div>`:''}
         <span class='debt-proj-count'>${allDone?'已处理':pOpen+' / '+items.length}</span>
       </div>
       <div class='debt-detail${allDone?"":" open"}' id='${id}'>`;
@@ -1034,6 +1165,14 @@ async function debtProjectDismiss(project,btn){
     const debts=await fetch('/api/debts').then(r=>r.json()).catch(()=>[]);
     renderDebts(debts);
   }catch{btn.textContent='失败';setTimeout(()=>{btn.textContent='全部忽略';btn.disabled=false},1500)}
+}
+async function debtProjectIgnore(project,btn){
+  btn.disabled=true;btn.textContent='…';
+  try{
+    await fetch('/api/debts/ignore-project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project})});
+    const debts=await fetch('/api/debts').then(r=>r.json()).catch(()=>[]);
+    renderDebts(debts);
+  }catch{btn.textContent='失败';setTimeout(()=>{btn.textContent='永久忽略';btn.disabled=false},1500)}
 }
 
 /* ── System section ── */

@@ -6,9 +6,26 @@
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 DB_PATH="$PROJECT_DIR/data/events.db"
 SOUL_DIR="$PROJECT_DIR/SOUL"
+MEMORY_DIR="${CLAUDE_MEMORY_DIR:-$HOME/.claude/projects/D--Users-Administrator-Documents-GitHub-orchestrator/memory}"
 
 # ── 0. 重新编译 boot.md（每次启动刷新校准样本） ──
 python3 "$SOUL_DIR/tools/compiler.py" 2>/dev/null
+
+# ── 0.5 注册会话 + 同步记忆索引 ──
+SESSION_ID="cli-$(date +%s)-$$"
+python3 -c "
+import sys
+sys.path.insert(0, '$PROJECT_DIR')
+try:
+    from src.storage.events_db import EventsDB
+    db = EventsDB('$DB_PATH')
+    db.register_session('$SESSION_ID', source='cli')
+    stats = db.sync_memory_dir('$MEMORY_DIR')
+    if stats.get('added') or stats.get('updated') or stats.get('removed'):
+        print(f'[memory] synced: +{stats[\"added\"]} ~{stats[\"updated\"]} -{stats[\"removed\"]}')
+except Exception as e:
+    pass  # non-blocking
+" 2>/dev/null
 
 OUTPUT=""
 

@@ -8,8 +8,14 @@ websockets>=14.0
 PyYAML>=6.0
 cryptography>=42.0.0
 
+# Audio transcription (voice messages)
+faster-whisper>=1.0.0
+
 # Dev
 pytest>=8.0.0
+
+# Optional: system monitoring backpressure (src/core/system_monitor.py)
+psutil>=5.9.0
 
 # Optional: vector search (only used by src/storage/vector_db.py)
 # numpy
