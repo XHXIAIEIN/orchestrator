@@ -1,0 +1,8 @@
+{
+  "task": "找到本地的model文件夹，列出所有可用的聊天模型，然后把当前Orchestrator用的模型换成最合适的聊天模型。换完后告诉我结果。",
+  "context": "",
+  "priority": "normal",
+  "chat_id": "o9cq803QCOmSxJifmRGI8zPRH3rA@im.wechat",
+  "status": "pending",
+  "created_at": "2026-03-23T08:13:04.998123+00:00"
+}

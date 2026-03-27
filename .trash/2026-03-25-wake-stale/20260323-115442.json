@@ -1,0 +1,8 @@
+{
+  "task": "打开并检查 /orchestrator/src/events_db.py，确保 EventsDB 类有完整的 query() 方法定义。如果缺失或破损，修复它。然后重启 Docker",
+  "context": "EventsDB query 方法丢失，导致系统无法查询任务状态",
+  "priority": "normal",
+  "chat_id": "7802929184",
+  "status": "pending",
+  "created_at": "2026-03-23T11:54:42.625477+00:00"
+}

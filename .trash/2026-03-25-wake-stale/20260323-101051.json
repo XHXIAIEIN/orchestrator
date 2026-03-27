@@ -1,0 +1,8 @@
+{
+  "task": "检查一下你之前有没有处理完模型切换的任务，现在状态怎么样",
+  "context": "用户问我有没有收到你的通知，系统状态查询也有问题",
+  "priority": "normal",
+  "chat_id": "o9cq803QCOmSxJifmRGI8zPRH3rA@im.wechat",
+  "status": "pending",
+  "created_at": "2026-03-23T10:10:51.617068+00:00"
+}

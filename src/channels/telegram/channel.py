@@ -146,8 +146,10 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
         # 鉴权
         if ch_cfg.ALLOWED_USERS:
             if not ch_cfg.user_can(chat_id, "chat"):
+                log.info("telegram: unauthorized chat_id=%s (ALLOWED_USERS mode)", chat_id)
                 return
         elif self.chat_id and chat_id != self.chat_id:
+            log.info("telegram: unauthorized chat_id=%s (legacy mode, expected %s)", chat_id, self.chat_id)
             return
 
         # 频率限制

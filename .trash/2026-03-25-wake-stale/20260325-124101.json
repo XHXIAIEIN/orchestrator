@@ -1,0 +1,8 @@
+{
+  "task": "读取 TG bot 的消息日志，找出错误并修复。检查最近的消息处理、API 调用和错误日志。",
+  "context": "用户要求检查 TG bot 的消息，定位并修复问题",
+  "priority": "normal",
+  "chat_id": "o9cq803QCOmSxJifmRGI8zPRH3rA@im.wechat",
+  "status": "pending",
+  "created_at": "2026-03-25T12:41:01.235378+00:00"
+}

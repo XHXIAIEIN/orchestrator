@@ -1,0 +1,10 @@
+{
+  "task": "回复一句话即可：wake_claude 链路测试成功！watcher 和 Agent SDK 工作正常。",
+  "context": "测试请求",
+  "priority": "normal",
+  "chat_id": "7802929184",
+  "status": "failed",
+  "created_at": "2026-03-25T14:15:15.829253+00:00",
+  "error": "Agent SDK error: Invalid API key · Fix external API key",
+  "completed_at": "2026-03-25T22:15:21.112730"
+}

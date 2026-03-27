@@ -1,0 +1,10 @@
+{
+  "task": "回复一句话：wake_claude 链路测试成功",
+  "context": "这是一个测试请求，验证 watcher → Agent SDK → Telegram 推送是否正常",
+  "priority": "normal",
+  "chat_id": "7802929184",
+  "status": "failed",
+  "created_at": "2026-03-25T14:13:32.704550+00:00",
+  "error": "Command failed with exit code 1 (exit code: 1)\nError output: Check stderr output for details",
+  "completed_at": "2026-03-25T22:13:38.322133"
+}

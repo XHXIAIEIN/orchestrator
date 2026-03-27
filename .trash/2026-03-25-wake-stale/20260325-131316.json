@@ -1,0 +1,8 @@
+{
+  "task": "检查 TG bot 日志，找出错误信息，诊断是什么坏了，修复它",
+  "context": "之前尝试修复 TG bot 消息，但好像没成功。系统状态显示整体异常",
+  "priority": "normal",
+  "chat_id": "o9cq803QCOmSxJifmRGI8zPRH3rA@im.wechat",
+  "status": "pending",
+  "created_at": "2026-03-25T13:13:16.189468+00:00"
+}

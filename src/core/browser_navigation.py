@@ -25,6 +25,71 @@ def browser_screenshot(runtime, page_id: str) -> str:
         cdp.close()
 
 
+# ── Carbonyl 偷师 #1: screencastFrame 帧流 ──────────────────────
+# 原理：Carbonyl 用自定义 SoftwareOutputDevice 让 compositor 每帧直接
+# 写入共享内存，实现零拷贝帧流。CDP 层没法做到那么底层，但
+# Page.screencastFrame 是最接近的——持续推帧而非逐次截图。
+
+
+def browser_screencast_start(runtime, page_id: str,
+                             format: str = "png",
+                             quality: int = 60,
+                             max_width: int = 1280,
+                             max_height: int = 720,
+                             every_nth_frame: int = 1) -> "CDPClient":
+    """启动 screencast 帧流，返回持有连接的 CDPClient。
+
+    调用方通过 cdp.recv_event() 接收 Page.screencastFrame 事件，
+    每帧包含 {data: base64, metadata: {offsetTop, pageScaleFactor, ...}, sessionId}。
+    **必须**对每帧调用 browser_screencast_ack() 确认，否则推帧停止。
+
+    用法示例::
+
+        cdp = browser_screencast_start(runtime, page_id)
+        try:
+            for _ in range(30):  # 收 30 帧
+                ev = cdp.recv_event(timeout=2.0)
+                if ev and ev.get("method") == "Page.screencastFrame":
+                    frame_b64 = ev["params"]["data"]
+                    session_id = ev["params"]["sessionId"]
+                    browser_screencast_ack(cdp, session_id)
+                    # ... process frame_b64
+        finally:
+            browser_screencast_stop(cdp)
+    """
+    pages = runtime.list_pages()
+    target = next((p for p in pages if p["id"] == page_id), None)
+    if not target:
+        raise ValueError(f"Page {page_id} not found")
+
+    cdp = runtime.new_cdp_client(target["webSocketDebuggerUrl"])
+    cdp.send("Page.enable")
+    cdp.send("Page.startScreencast", {
+        "format": format,
+        "quality": quality,
+        "maxWidth": max_width,
+        "maxHeight": max_height,
+        "everyNthFrame": every_nth_frame,
+    })
+    log.info("screencast started for page %s (%dx%d, q=%d)",
+             page_id, max_width, max_height, quality)
+    return cdp
+
+
+def browser_screencast_ack(cdp, session_id: int) -> None:
+    """确认收到 screencast 帧，释放下一帧推送。"""
+    cdp.send("Page.screencastFrameAck", {"sessionId": session_id})
+
+
+def browser_screencast_stop(cdp) -> None:
+    """停止 screencast 并关闭连接。"""
+    try:
+        cdp.send("Page.stopScreencast")
+    except Exception:
+        pass
+    cdp.close()
+
+
 def browser_navigate(runtime, url: str) -> dict:
     """打开新 tab 并导航到 URL，返回 {title, url, page_id}。"""
     page_info = runtime.open_page("about:blank")

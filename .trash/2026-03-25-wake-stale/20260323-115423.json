@@ -1,0 +1,8 @@
+{
+  "task": "检查 /orchestrator/src/events_db.py，看 query 方法定义在不在。如果在的话检查有没有 __init__ 方法初始化问题。给我代码片段。",
+  "context": "",
+  "priority": "normal",
+  "chat_id": "7802929184",
+  "status": "pending",
+  "created_at": "2026-03-23T11:54:23.101531+00:00"
+}
