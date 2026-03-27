@@ -145,9 +145,9 @@ Step 2: Expression Layer（人设模式）
 
 ---
 
-## 待实施
+## 实施记录（2026-03-28）
 
-- [ ] Governor 调度逻辑中实装 Fact-Expression Split（刑部→礼部 pipeline）
-- [ ] 刑部 SKILL.md 加入置信度标注要求和 UNVERIFIED 机制
-- [ ] 礼部 SKILL.md 加入"只改措辞不改事实"的硬约束
-- [ ] boot.md learnings 追加"举例前先查证"
+- [x] Governor 调度逻辑中实装 Fact-Expression Split（刑部→礼部 pipeline） → `governance/dispatcher.py`
+- [x] 刑部 SKILL.md 加入置信度标注要求和 UNVERIFIED 机制 → `departments/quality/SKILL.md`
+- [x] 礼部 SKILL.md 加入"只改措辞不改事实"的硬约束 → `departments/protocol/SKILL.md`
+- [x] boot.md learnings 追加"举例前先查证" → `SOUL/private/experiences.jsonl`
