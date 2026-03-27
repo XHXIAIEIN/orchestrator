@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | Total patterns | 97 |
-| ✅ Implemented | 82 |
+| ✅ Implemented | 89 |
 | 📐 Designed (spec exists) | 4 |
-| 🔲 Pending (mostly cvui/P2) | 15 |
+| 🔲 Pending (cvui only) | 8 |
 | ⏸️ Shelved | 11 |
 
 ---
@@ -136,7 +136,7 @@
 | V12 | Post-Action Auto Screenshot | bytebot (R10) | ✅ | `desktop_use/actions.py` | Every non-screenshot action → wait 750ms → auto screenshot as tool_result |
 | V13 | type vs paste Separation | bytebot (R10) | ✅ | `desktop_use/actions.py` | `type_text` (≤25 char) vs `paste_text` (clipboard+Ctrl+V); `sensitive` flag blocks echo |
 | V14 | Text-First Layered Strategy | Carbonyl (R9) | 📐 | — | DOM text / Win32 control text → trust first; OCR only as fallback. Matches Carbonyl TextCaptureDevice |
-| V15 | Unicode Pixel Grid Visualization | Carbonyl (R9) | 🔲 | — | P2. ▄▀█░▒▓ block chars for heatmaps/status matrices in Telegram/terminal. Upgrade existing ASCII animation |
+| V15 | Unicode Pixel Grid Visualization | Carbonyl (R9) | ✅ | `channels/pixel_grid.py` | PixelGrid: ANSI 24-bit color + block chars + heatmap gradient |
 
 ---
 
@@ -160,7 +160,7 @@
 | O14 | Fan-Out Parallel Execution | Round 1 | ✅ | `governance/pipeline/fan_out.py` | Parallel task dispatch |
 | O15 | Harness Process Orchestration | Firecrawl (R5) | ⏸️ | — | Master process manages child services; auto-restart on crash. docker-compose covers this |
 | O16 | Channel 5-Level Routing | OpenFang (R6) | ✅ | `channels/channel_router.py` | 5-level priority: Binding→Direct→UserDefault→ChannelDefault→Global |
-| O17 | MCP Endpoint Exposure | bytebot (R10) | 🔲 | — | P2. desktop_use as MCP server via SSE `/mcp` endpoint |
+| O17 | MCP Endpoint Exposure | bytebot (R10) | ✅ | `desktop_use/mcp_server.py` | DesktopMCPServer: 6 tools (screenshot/click/type/hotkey/scroll/find) |
 | O18 | Monotonic Sequence ID | Agent Lightning (R8) | ⏸️ | — | Distributed clock drift fix. Not needed for single-machine |
 
 ---
@@ -173,11 +173,11 @@
 | H2 | Frontmatter Standardization | Round 2 | ✅ | `blueprint.yaml` | Standardized metadata + explicit routing table |
 | H3 | Fast Rule Scan (zero-LLM regex) | OpenAkita (R4) | ✅ | `governance/safety/fast_rule_scan.py` | Regex match strong signal words before context compression; rescue critical rules at zero LLM cost |
 | H4 | Renderer Hijacking (output interception) | Carbonyl (R9) | 📐 | — | Don't rewrite the engine; intercept at output. Apply: DOM/Win32 API for structure, not screenshot+OCR |
-| H5 | Terminal as First-Class Display | Carbonyl (R9) | 🔲 | — | P2. Textual TUI dashboard for SSH sessions. Terminal is also a channel |
+| H5 | Terminal as First-Class Display | Carbonyl (R9) | ✅ | `channels/terminal_display.py` | TerminalDisplay: ANSI panels, tables, progress bars |
 | H6 | Input Event Backflow | Carbonyl (R9) | 📐 | — | DCS → event injection → interaction loop. Unified channel callback: any user input → event → dispatcher |
-| H7 | Delegation Span (DELEGATION tracking) | OpenAkita (R4) | 🔲 | — | P2. run-log with delegation chain tracing |
+| H7 | Delegation Span (DELEGATION tracking) | OpenAkita (R4) | ✅ | `governance/audit/delegation_span.py` | DelegationTracker: parent→child chain, depth limits, token aggregation |
 | H8 | Ephemeral Agent (temp profile, no disk) | OpenAkita (R4) | ⏸️ | — | Low value for current use case |
-| H9 | Task Scheduling (sub-tasks) | bytebot (R10) | 🔲 | — | P2. LLM creates `create_task` with IMMEDIATE/SCHEDULED; scheduler polls every 5s by priority |
+| H9 | Task Scheduling (sub-tasks) | bytebot (R10) | ✅ | `governance/task_scheduler.py` | TaskScheduler: priority queue + IMMEDIATE/SCHEDULED + poll loop |
 
 ---
 
@@ -189,10 +189,10 @@
 | D2 | Git Hash Incremental Strategy | Understand-Anything (R1-R2) | ✅ | `governance/learning/debt_scanner.py` | Commit hash based incremental scanning |
 | D3 | Search→Expand→Trim Context Build | Understand-Anything (R1-R2) | ✅ | `governance/context/context_assembler.py` | HOT/WARM/COLD 3-tier context |
 | D4 | Dual-Track Generation (LLM + heuristic) | Understand-Anything (R1-R2) | ✅ | `governance/budget/token_budget.py` | Model degradation chain as heuristic fallback |
-| D5 | Objective Semantic Intent | Parallel (R3) | 🔲 | — | P2. Semantic intent interface for Governor dispatch |
-| D6 | Token Budget Multi-Dimensional Control | Brave (R3) | 🔲 | — | P2. Multi-axis budget control for RAG context building |
+| D5 | Objective Semantic Intent | Parallel (R3) | ✅ | `gateway/semantic_intent.py` | SemanticIntent: heuristic classification + department matching |
+| D6 | Token Budget Multi-Dimensional Control | Brave (R3) | ✅ | `core/multi_budget.py` | MultiBudget: per-department/model/time-window axes with auto-reset |
 | D7 | Hybrid RAG Dual-Source Fusion | Tavily (R3) | ⏸️ | — | For Construct3-RAG. Local + search fusion |
-| D8 | Deep Research Multi-Round Loop | Firecrawl (R5) | 🔲 | — | P2. ResearchStateManager; 3-5 queries/round; max 50 findings cap |
+| D8 | Deep Research Multi-Round Loop | Firecrawl (R5) | ✅ | `core/deep_research.py` | ResearchSession: multi-round with dedup, finding cap, status FSM |
 | D9 | Index Cache (quality-scored) | Firecrawl (R5) | ⏸️ | — | Quality=1000 highest priority; cache miss → real fetch. Scale concern |
 | D10 | Text Tool Call Recovery (6 formats) | OpenFang (R6) | ✅ | `core/tool_call_recovery.py` | JSON block, XML, ReAct, function call, bare JSON, YAML-ish |
 
