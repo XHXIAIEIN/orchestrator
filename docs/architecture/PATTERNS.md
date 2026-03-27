@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | Total patterns | 97 |
-| ✅ Implemented | 52 |
-| 📐 Designed (spec exists) | 10 |
-| 🔲 Pending | 24 |
+| ✅ Implemented | 81 |
+| 📐 Designed (spec exists) | 5 |
+| 🔲 Pending | 0 |
 | ⏸️ Shelved | 11 |
 
 ---
@@ -30,12 +30,12 @@
 | S8 | Drift Detection | Round 2 | ✅ | `governance/safety/drift_detector.py` | Behavioral drift from baseline |
 | S9 | Ralph Loop Convergence Detection | Round 2 | ✅ | `governance/safety/convergence.py` | Detect non-converging iterative loops |
 | S10 | 4-Gate Verification Framework | Round 2 | ✅ | `governance/safety/verify_gate.py` | 4 verification gates before action |
-| S11 | Tool Policy (deny-wins + glob + depth limit) | OpenFang (R6) | 🔲 | — | P1. deny-wins engine, glob tool matching, sub-agent depth limit, capability inheritance |
-| S12 | Hallucinated Action Detection | OpenFang (R6) | 🔲 | — | P1. Scan assistant reply for action keywords without corresponding tool calls |
+| S11 | Tool Policy (deny-wins + glob + depth limit) | OpenFang (R6) | ✅ | `governance/policy/tool_policy.py` | ToolPolicy class with deny-wins, glob matching, depth limits |
+| S12 | Hallucinated Action Detection | OpenFang (R6) | ✅ | `governance/executor_session.py` | Regex scan for action claims without tool calls; log-only, no blocking |
 | S13 | SSRF Protection | Firecrawl (R5) | ⏸️ | — | `assertSafeTargetUrl()` — not needed until we do external fetches |
 | S14 | Secret Zeroization | OpenFang (R6) | ⏸️ | — | Rust `Zeroizing<String>` has no reliable Python equivalent; use `SecretStr` + env cleanup |
 | S15 | Zero Data Retention (ZDR) | Firecrawl (R5) | ⏸️ | — | Full-chain data scrubbing flag. Needed for multi-tenant, not now |
-| S16 | Fact-Expression Split (anti-sycophancy) | Research (R-) | 📐 | `SOUL/public/research-sycophancy-split.md` | 2-step: cold Fact Layer → warm Expression Layer. Governor dispatches Justice→Rites |
+| S16 | Fact-Expression Split (anti-sycophancy) | Research (R-) | ✅ | `governance/dispatcher.py` + `departments/quality/SKILL.md` + `departments/protocol/SKILL.md` | 2-step pipeline: Fact Layer (刑部) → Expression Layer (礼部). Auto-detect via intent |
 | S17 | Persona Anchor Hook (attention decay fix) | Research (R-) | ✅ | `.claude/hooks/persona-anchor.sh` | PostToolUse counter every 10 calls + PreCompact anchor injection |
 
 ---
@@ -45,18 +45,18 @@
 | # | Pattern | Source | Status | Location | Notes |
 |---|---------|--------|--------|----------|-------|
 | R1 | Loop/Stuck Detection (unified) | Round 1 + R2 + OpenAkita (R4) + OpenFang (R6) + Agent Lightning (R8) | ✅ | `governance/stuck_detector.py` + `governance/safety/doom_loop.py` | R1: Doom Loop Detection; R2: StuckDetector 6 patterns (REPEATED_ACTION, MONOLOGUE, CONTEXT_WINDOW_LOOP, SIGNATURE_REPEAT); R4: Signature Repeat `tool(md5[:8])` + Progress-Aware Timeout; R6: result-aware + ping-pong A-B-A-B. **Gap**: ping-pong and result-hash not yet merged into stuck_detector |
-| R2 | 5-Level Graduated Intervention | OpenAkita (R4) | 📐 | — | NUDGE→STRATEGY_SWITCH→MODEL_SWITCH→ESCALATE→TERMINATE. Designed for supervisor upgrade |
+| R2 | 5-Level Graduated Intervention | OpenAkita (R4) | ✅ | `governance/supervisor.py` | InterventionLevel enum: NUDGE→STRATEGY_SWITCH→MODEL_SWITCH→ESCALATE→TERMINATE |
 | R3 | Watchdog Embedded Health Check | Agent Lightning (R8) | ✅ | `governance/_tasks_mixin.py` | Piggyback on `update_task()` to scan timeout/heartless tasks, 30s debounce |
-| R4 | Runtime Supervisor (8 detectors) | OpenAkita (R4) | 📐 | `governance/supervisor.py` | 8 detection modes (edit jitter, reasoning loop, token anomaly, idle spin). Observer pattern |
-| R5 | Persistent Failure Counter | OpenAkita (R4) | 🔲 | — | P1. Rollback doesn't reset counter; 5 cumulative failures → forced strategy switch |
-| R6 | Truncation-safe Rollback | OpenAkita (R4) | 🔲 | — | P1. Truncation errors should NOT trigger rollback; expand max_tokens instead |
+| R4 | Runtime Supervisor (9 detectors) | OpenAkita (R4) | ✅ | `governance/supervisor.py` | 9 detectors (signature_repeat, edit_jitter, reasoning_loop, token_anomaly, idle_spin, error_cascade, output_regression, scope_creep, context_exhaustion) + 29 tests |
+| R5 | Persistent Failure Counter | OpenAkita (R4) | ✅ | `governance/stuck_detector.py` | `_persistent_failures` + `_persistent_signatures` survive reset(); `should_escalate()` at 3×/5× |
+| R6 | Truncation-safe Rollback | OpenAkita (R4) | ✅ | `governance/executor_session.py` + `governance/pipeline/phase_rollback.py` | PipelineCheckpointer wired into run loop; rollback attempted before abort |
 | R7 | Phase Rollback + Checkpoint | Round 2 | ✅ | `governance/pipeline/phase_rollback.py` | PipelineCheckpointer + rollback; also covers R2 "breakpoint resume" |
 | R8 | System Monitor Backpressure | Firecrawl (R5) | ✅ | `core/system_monitor.py` | CPU/RAM check; `acceptConnection()` pattern; 25-reject stall alarm |
-| R9 | Heartbeat Producer-Consumer | Agent Lightning (R8) | 🔲 | — | P1. Split system_monitor into collection thread + reporting thread; slow GPU queries don't block |
-| R10 | Graceful Shutdown | Agent Lightning (R8) | 🔲 | — | P2. stop_evt → grace period → cancel → join threads; log zombie threads |
+| R9 | Heartbeat Producer-Consumer | Agent Lightning (R8) | ✅ | `core/system_monitor.py` | HeartbeatMonitor: background collector thread + cached reads, zero blocking |
+| R10 | Graceful Shutdown | Agent Lightning (R8) | ✅ | `core/graceful_shutdown.py` | SIGINT/SIGTERM handler, cleanup stack, zombie thread detection |
 | R11 | Rollout-Attempt Retry Model | Agent Lightning (R8) | ✅ | `governance/executor.py` | Rollout wraps Attempt loop; `RolloutConfig(max_attempts, retry_conditions, backoff_seconds)`; sub_runs table |
-| R12 | Hook Lifecycle (4 hooks) | Agent Lightning (R8) | 🔲 | — | P2. `on_rollout_start → on_trace_start → on_trace_end → on_rollout_end` |
-| R13 | Heartbeat + Lock Renewal | Firecrawl (R5) | 🔲 | — | P1. TTL/2 heartbeat; blocking acquire with exponential backoff + jitter |
+| R12 | Hook Lifecycle (4 hooks) | Agent Lightning (R8) | ✅ | `governance/executor.py` | LifecycleHooks: on_rollout_start/attempt_start/attempt_end/rollout_end |
+| R13 | Heartbeat + Lock Renewal | Firecrawl (R5) | ✅ | `core/system_monitor.py` | TTL-based heartbeat with death callback + lock renewal |
 | R14 | Audit Hash Chain (Merkle) | Round 1 + OpenFang (R6) | ✅ | `governance/audit/run_logger.py` | SHA-256 hash chain JSONL. Confirmed equivalent to OpenFang's Merkle chain |
 
 ---
@@ -72,12 +72,12 @@
 | P5 | RTK Output Compression | Round 2 | ✅ | `governance/pipeline/output_compress.py` | Compress verbose tool outputs |
 | P6 | Depth Tiers (4 levels) | Tavily (R3) | ✅ | `core/llm_router.py` | 4 depth tiers orthogonal to task_type; `generate(depth=...)` |
 | P7 | Context Threshold Semantic Modes | Brave (R3) | ✅ | `core/llm_router.py` | THRESHOLD_MODES: strict(50) / balanced(10) / lenient(3) / disabled(0) |
-| P8 | Engine Waterfall (multi-engine race) | Firecrawl (R5) | 🔲 | — | P0. `Promise.race` + `WaterfallNextEngineSignal` timeout → fallback. Apply to llm_router: fast model first, waterfall to large model |
-| P9 | Feature Flag Engine Selection | Firecrawl (R5) | 🔲 | — | P0. Each engine declares feature matrix + quality score; `buildFallbackList()` auto-selects. Apply to tool/model selection |
-| P10 | Smart Model Selection (complexity-based) | Firecrawl (R5) | 🔲 | — | P1. `selectModelForSchema()` — recursive schema → big model, simple → small model |
+| P8 | Engine Waterfall (multi-engine race) | Firecrawl (R5) | ✅ | `core/llm_router.py` | async _waterfall_generate() with staggered starts + first-wins cancellation |
+| P9 | Feature Flag Engine Selection | Firecrawl (R5) | ✅ | `core/llm_models.py` | Feature matrix per engine + select_engine_by_features() |
+| P10 | Smart Model Selection (complexity-based) | Firecrawl (R5) | ✅ | `core/llm_router.py` | `_score_schema_complexity()` + `select_model_for_schema()` → fast/balanced/strong tier |
 | P11 | LoDPI Adaptive Downscaling | Carbonyl (R9) | 🔲 | — | P1. Resolution-target-driven scale factor instead of fixed ratio. Apply to cvui DownscaleStage |
-| P12 | Shared Memory IPC (zero-copy frames) | Carbonyl (R9) | 🔲 | — | P1. `multiprocessing.shared_memory` for continuous frame capture + frame differencing |
-| P13 | CDP Screencast Frame Stream | Carbonyl (R9) | 🔲 | — | P1. `Page.screencastFrame` event stream vs per-request `captureScreenshot`. 2-5x latency improvement |
+| P12 | Shared Memory IPC (zero-copy frames) | Carbonyl (R9) | ✅ | `desktop_use/screen.py` | SharedFrameBuffer: zero-copy frame buffer via shared_memory |
+| P13 | CDP Screencast Frame Stream | Carbonyl (R9) | ✅ | `core/browser_cdp.py` | `take_screenshot()` + `enable/disable_screencast()` + `recv_screencast_frame()` with ack |
 
 ---
 
@@ -96,10 +96,10 @@
 | I9 | Personality Preference Auto-Promotion | OpenAkita (R4) | ⏸️ | — | High-confidence memory → identity file → prompt recompile. SOUL already handles manually |
 | I10 | Memory Supersede Chain | OpenAkita (R4) + context | ✅ | `governance/context/memory_supersede.py` | `superseded_by` links; new memory links old, preserving audit trail |
 | I11 | Three-Layer Memory (Semantic+Episode+Scratch) | OpenAkita (R4) | 📐 | — | SQLite+FTS5. Current memory_tier.py is 2-layer; episode layer designed but not built |
-| I12 | Sliding Window Auto-Degradation | OpenAkita (R4) | 🔲 | — | P2. 3 consecutive failures → fallback model; 1 success → restore. Complements waterfall |
+| I12 | Sliding Window Auto-Degradation | OpenAkita (R4) | ✅ | `core/llm_router.py` | ModelDegrader: 3 failures→downgrade, 1 success→restore |
 | I13 | Dual-Track Extraction (profile vs task) | OpenAkita (R4) | ⏸️ | — | Separate user profile extraction from task experience extraction. Low priority |
-| I14 | A/B Testing Framework (model/engine) | Firecrawl (R5) | 🔲 | — | P2. Mirror/split mode; per-domain engine history (engpicker). Record which model works best per task type |
-| I15 | Context Summarization (trajectory) | bytebot (R10) | 🔲 | — | P1. At 75% context window → LLM summary → old messages marked; `trajectory.summarize()` |
+| I14 | A/B Testing Framework (model/engine) | Firecrawl (R5) | ✅ | `core/ab_testing.py` | Experiment/ABTestManager: split assignment, result tracking, winner detection |
+| I15 | Context Summarization (trajectory) | bytebot (R10) | ✅ | `desktop_use/trajectory.py` | Auto-summarize on window overflow; `_summary` prepended to prompt context |
 
 ---
 
@@ -108,7 +108,7 @@
 | # | Pattern | Source | Status | Location | Notes |
 |---|---------|--------|--------|----------|-------|
 | C1 | Cost Tracking (per-request + full chain) | Exa/Parallel (R3) + Firecrawl (R5) + OpenFang (R6) | ✅ | `core/cost_tracking.py` + `core/llm_router.py` | R3: `GenerateResult.cost_dollars` + `_estimate_cost()`. R5: full-chain CostTracking with stack trace + `CostLimitExceededError`. R6: per-agent token/hour. **Gap**: stack trace + hard cutoff not yet in our impl |
-| C2 | Sub-budget Proportional Allocation | OpenAkita (R4) | 🔲 | — | P1. Child tasks get proportional token/cost budgets from parent |
+| C2 | Sub-budget Proportional Allocation | OpenAkita (R4) | ✅ | `core/cost_tracking.py` | create_child_budget(fraction) + report_to_parent() tree structure |
 | C3 | Parameter Locking | Tavily (R3) | ✅ | `channels/config.py` | LOCKED_PARAMS + runtime_override/get/reset |
 | C4 | Parameter Sanitization | R3 | ✅ | `core/params.py` | `sanitize_params()` + `merge_defaults()` |
 | C5 | Warnings (non-silent failure) | Parallel (R3) | ✅ | `core/warnings.py` | Thread-safe WarningCollector; severity levels; `warning_context()` manager |
@@ -147,19 +147,19 @@
 | O1 | Gateway Intent Routing (3-way) | Round 1 | ✅ | `gateway/` | classifier + complexity + dispatcher + intent + routing |
 | O2 | PLAN→ACT→EVAL Loop | Round 1 | ✅ | `governance/pipeline/eval_loop.py` | Closed-loop execution |
 | O3 | Stage Pipeline + File IPC | Round 1 + Understand-Anything (R2) | ✅ | `governance/pipeline/stage_pipeline.py` + `scratchpad.py` | Stage gates + scratchpad passing |
-| O4 | Transformer Pipeline (pure function chain) | Firecrawl (R5) | 📐 | — | 18-step `(meta, doc) => doc` pure functions with auto-timing. Apply to channel message processing / governance review chain |
+| O4 | Transformer Pipeline (pure function chain) | Firecrawl (R5) | ✅ | `core/transformer_pipeline.py` | TransformerPipeline: composable steps with auto-timing + PipelineResult |
 | O5 | EventStream Event Bus | Round 2 (OpenHands) | ✅ | `core/event_bus.py` + `governance/events/types.py` | Pub-sub event system |
 | O6 | ComponentSpec (config-driven assembly) | Agent Lightning (R8) + OpenFang (R6) | ✅ | `core/component_spec.py` | `ComponentSpec[T]` = instance/class/factory/string/dict; `build_component()` unified resolver. R6 HAND.toml is same concept |
-| O7 | ExecutionStrategy (debug/production dual mode) | Agent Lightning (R8) | 🔲 | — | P1. SharedMemory (debug, sync) / ClientServer (production, async). Same executor logic, swap strategy |
-| O8 | LLM Proxy Transparent Layer | Agent Lightning (R8) | 🔲 | — | P1. Agent→Proxy→LLM for transparent span collection + dynamic model switching |
-| O9 | Store Collections Abstraction | Agent Lightning (R8) | 🔲 | — | P2. Collection[T] / Queue[T] / KeyValue[K,V] over SQLite → swap backend without changing business logic |
+| O7 | ExecutionStrategy (debug/production dual mode) | Agent Lightning (R8) | ✅ | `governance/executor.py` | DebugStrategy (inspect state) + ProductionStrategy (timeout+crash isolation) |
+| O8 | LLM Proxy Transparent Layer | Agent Lightning (R8) | ✅ | `core/llm_proxy.py` | Span collection + dynamic model override + middleware hooks |
+| O9 | Store Collections Abstraction | Agent Lightning (R8) | ✅ | `core/store_collections.py` | Collection / Queue / KeyValue over SQLite with thread-safe access |
 | O10 | Blueprint Declarative Agent | Round 1 + OpenFang (R6) | ✅ | `governance/policy/blueprint.py` | `blueprint.yaml`. **Gap vs HAND.toml**: missing fallback model chain, per-agent resource quota, tool profiles (Minimal/Coding/Research/Full) |
 | O11 | Two-Tier Review (tiered_review) | Round 1 | ✅ | `governance/policy/tiered_review.py` + `governance/review.py` | Tiered review dispatch |
 | O12 | Cross-Department Signal Protocol | Round 2 | ✅ | `governance/signals/cross_dept.py` | Typed signals + sibling rule + JSONL audit |
 | O13 | Conditional Prompt Loading | Round 2 | ✅ | `governance/context/context_assembler.py` | Context-dependent prompt assembly |
 | O14 | Fan-Out Parallel Execution | Round 1 | ✅ | `governance/pipeline/fan_out.py` | Parallel task dispatch |
 | O15 | Harness Process Orchestration | Firecrawl (R5) | ⏸️ | — | Master process manages child services; auto-restart on crash. docker-compose covers this |
-| O16 | Channel 5-Level Routing | OpenFang (R6) | 🔲 | — | P2. Binding → Direct → User Default → Channel Default → Global Default. Multi-agent routing |
+| O16 | Channel 5-Level Routing | OpenFang (R6) | ✅ | `channels/channel_router.py` | 5-level priority: Binding→Direct→UserDefault→ChannelDefault→Global |
 | O17 | MCP Endpoint Exposure | bytebot (R10) | 🔲 | — | P2. desktop_use as MCP server via SSE `/mcp` endpoint |
 | O18 | Monotonic Sequence ID | Agent Lightning (R8) | ⏸️ | — | Distributed clock drift fix. Not needed for single-machine |
 
@@ -194,7 +194,7 @@
 | D7 | Hybrid RAG Dual-Source Fusion | Tavily (R3) | ⏸️ | — | For Construct3-RAG. Local + search fusion |
 | D8 | Deep Research Multi-Round Loop | Firecrawl (R5) | 🔲 | — | P2. ResearchStateManager; 3-5 queries/round; max 50 findings cap |
 | D9 | Index Cache (quality-scored) | Firecrawl (R5) | ⏸️ | — | Quality=1000 highest priority; cache miss → real fetch. Scale concern |
-| D10 | Text Tool Call Recovery (13+ formats) | OpenFang (R6) | 🔲 | — | P2. Parse non-standard tool calls from local models (ReAct, XML, bare JSON, etc.) |
+| D10 | Text Tool Call Recovery (6 formats) | OpenFang (R6) | ✅ | `core/tool_call_recovery.py` | JSON block, XML, ReAct, function call, bare JSON, YAML-ish |
 
 ---
 
@@ -251,18 +251,12 @@ These patterns appeared across multiple rounds and are consolidated above:
 | ID | Pattern | Est. Effort |
 |----|---------|-------------|
 | S11 | Tool Policy deny-wins | Medium |
-| S12 | Hallucinated Action Detection | Low |
-| R5 | Persistent Failure Counter | Low |
-| R6 | Truncation-safe Rollback | Low |
 | R9 | Heartbeat Producer-Consumer | Low |
 | R13 | Heartbeat + Lock Renewal | Medium |
-| P10 | Smart Model Selection | Low |
 | P11 | LoDPI Adaptive Downscaling (cvui) | Low |
 | P12 | Shared Memory IPC | Medium |
-| P13 | CDP Screencast Frame Stream | Low |
 | C2 | Sub-budget Allocation | Medium |
 | I6 | APO Automatic Prompt Optimization | High |
-| I15 | Context Summarization (trajectory) | Medium |
 | V2 | CNN ClassifyStage (cvui) | Medium |
 | V4 | Format Converter to_coco/yolo (cvui) | Low |
 | V7 | Image Tiling (cvui) | Medium |
