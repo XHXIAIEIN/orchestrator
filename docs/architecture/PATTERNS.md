@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | Total patterns | 97 |
-| ✅ Implemented | 81 |
-| 📐 Designed (spec exists) | 5 |
-| 🔲 Pending | 0 |
+| ✅ Implemented | 82 |
+| 📐 Designed (spec exists) | 4 |
+| 🔲 Pending (mostly cvui/P2) | 15 |
 | ⏸️ Shelved | 11 |
 
 ---
@@ -171,7 +171,7 @@
 |---|---------|--------|--------|----------|-------|
 | H1 | Compaction Recovery Loop | Round 2 | ✅ | `.claude/hooks/pre-compact.sh` + `session-start.sh` | Pre-compact save + session-start restore |
 | H2 | Frontmatter Standardization | Round 2 | ✅ | `blueprint.yaml` | Standardized metadata + explicit routing table |
-| H3 | Fast Rule Scan (zero-LLM regex) | OpenAkita (R4) | 📐 | — | Regex match strong signal words before context compression; rescue critical rules at zero LLM cost |
+| H3 | Fast Rule Scan (zero-LLM regex) | OpenAkita (R4) | ✅ | `governance/safety/fast_rule_scan.py` | Regex match strong signal words before context compression; rescue critical rules at zero LLM cost |
 | H4 | Renderer Hijacking (output interception) | Carbonyl (R9) | 📐 | — | Don't rewrite the engine; intercept at output. Apply: DOM/Win32 API for structure, not screenshot+OCR |
 | H5 | Terminal as First-Class Display | Carbonyl (R9) | 🔲 | — | P2. Textual TUI dashboard for SSH sessions. Terminal is also a channel |
 | H6 | Input Event Backflow | Carbonyl (R9) | 📐 | — | DCS → event injection → interaction loop. Unified channel callback: any user input → event → dispatcher |
@@ -242,23 +242,14 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 | ID | Pattern | Est. Effort |
 |----|---------|-------------|
-| P8 | Engine Waterfall | Medium |
-| P9 | Feature Flag Engine Selection | Medium |
 | V1 | VLM Zone Stage (cvui) | Medium |
 
 ### P1 — Near Term
 
 | ID | Pattern | Est. Effort |
 |----|---------|-------------|
-| S11 | Tool Policy deny-wins | Medium |
-| R9 | Heartbeat Producer-Consumer | Low |
-| R13 | Heartbeat + Lock Renewal | Medium |
 | P11 | LoDPI Adaptive Downscaling (cvui) | Low |
-| P12 | Shared Memory IPC | Medium |
-| C2 | Sub-budget Allocation | Medium |
 | I6 | APO Automatic Prompt Optimization | High |
 | V2 | CNN ClassifyStage (cvui) | Medium |
 | V4 | Format Converter to_coco/yolo (cvui) | Low |
 | V7 | Image Tiling (cvui) | Medium |
-| O7 | ExecutionStrategy dual mode | Medium |
-| O8 | LLM Proxy Transparent Layer | Medium |
