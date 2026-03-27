@@ -61,6 +61,11 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
         self._last_msg_time: dict[str, float] = {}
         self._system_prompt: Optional[str] = None
 
+        # message_id 去重缓存 — TTL 60s，防止同一消息触发多次处理
+        self._msg_id_cache: dict[int, float] = {}  # message_id → timestamp
+        self._msg_id_ttl = 60.0
+        self._dedup_count = 0  # 累计去重次数
+
         # 消息防抖 — 连发多条消息时攒一批再处理
         self._pending: dict[str, dict] = {}  # chat_id → {texts, attachments, timer, start_ts}
         self._pending_lock = threading.Lock()
@@ -85,6 +90,14 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
         if self._polling_thread:
             self._polling_thread.join(timeout=5)
             self._polling_thread = None
+
+    def _purge_msg_id_cache(self, now: float = None):
+        """Remove expired entries from message_id dedup cache."""
+        now = now or time.time()
+        expired = [mid for mid, ts in self._msg_id_cache.items()
+                   if now - ts >= self._msg_id_ttl]
+        for mid in expired:
+            del self._msg_id_cache[mid]
 
     def _poll_loop(self):
         while not self._stop_event.is_set():
@@ -145,6 +158,18 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
 
         text = (message.get("text") or message.get("caption") or "").strip()
         msg_id = message.get("message_id")  # 用于 reaction
+
+        # ── message_id 去重 ──────────────────────────────────────────────
+        if msg_id is not None:
+            if msg_id in self._msg_id_cache and (now - self._msg_id_cache[msg_id]) < self._msg_id_ttl:
+                self._dedup_count += 1
+                log.info(f"telegram: deduplicated message_id={msg_id} "
+                         f"(deduplicated_count={self._dedup_count})")
+                return
+            self._msg_id_cache[msg_id] = now
+            # 惰性清理过期条目
+            self._purge_msg_id_cache(now)
+
         attachments = []
 
         if "photo" in message:
