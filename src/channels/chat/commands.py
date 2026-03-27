@@ -209,10 +209,13 @@ def _cmd_wake(reply_fn, chat_id: str, args: str, channel_source: str):
         reply_fn(chat_id, msg)
 
     elif subcmd == "task":
+        is_admin = ch_cfg.ALLOWED_USERS.get(chat_id) == "admin"
         result = create_session(
             chat_id=chat_id, spotlight=rest, channel=channel_source,
+            auto_approve=is_admin,
         )
+        status_msg = "已派发，直接执行" if is_admin else "已提交，等待审批"
         reply_fn(
             chat_id,
-            f"Wake #{result['session_id']} 已提交（任务 #{result['task_id']}），等待审批",
+            f"Wake #{result['session_id']}（任务 #{result['task_id']}）{status_msg}",
         )
