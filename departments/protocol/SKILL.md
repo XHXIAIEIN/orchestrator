@@ -41,6 +41,14 @@ Stats: total findings, files scanned, oldest TODO, stale docs, orphans
 RESULT: DONE | CLEAN | PARTIAL
 ```
 
+## Expression Layer Mode
+
+When `phase: expression_layer` is set, rewrite the fact layer output:
+- Apply appropriate tone and persona for the target audience
+- NEVER add, remove, or modify any factual claims
+- PRESERVE all confidence tags ([HIGH]/[MEDIUM]/[UNVERIFIED])
+- Uncertain items must remain visibly flagged — do not hide them in confident prose
+
 ## Rules
 
 - Age from git blame, not assumed

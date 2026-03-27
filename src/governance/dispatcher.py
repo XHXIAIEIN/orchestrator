@@ -19,6 +19,27 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
+# ── Fact-Expression Split: intents that benefit from two-phase dispatch ──
+_SPLIT_INTENTS = {"answer", "review", "analyze", "report", "explain", "advise", "assess"}
+
+
+def _needs_fact_expression_split(spec: dict) -> bool:
+    """Determine if a task should use the Fact-Expression Split pipeline.
+
+    Triggers when task involves both fact-judgment AND user-facing output.
+    Examples: answering questions, producing reports, reviewing code with feedback.
+    Counter-examples: pure code generation, file operations, data collection.
+    """
+    intent = spec.get("intent", "")
+    department = spec.get("department", "")
+
+    # Already specialized — don't re-split
+    if department in ("quality", "protocol"):
+        return False
+
+    return intent in _SPLIT_INTENTS
+
+
 CLAUDE_TIMEOUT = 300
 STALE_THRESHOLD = CLAUDE_TIMEOUT + 120
 MAX_CONCURRENT = 3
@@ -76,12 +97,86 @@ class TaskDispatcher:
                 pass
         return slots, busy_slots
 
+    def dispatch_with_fact_expression_split(
+        self, spec: dict, action: str, reason: str,
+        priority: str = "high", source: str = "auto",
+    ) -> list[int]:
+        """Two-phase dispatch: Fact Layer (刑部) → Expression Layer (礼部).
+
+        Phase 1: Send to quality dept with neutral prompt, get confidence-tagged facts.
+        Phase 2: Send to protocol dept with persona, rewrite for tone without changing facts.
+
+        Returns list of task_ids created (0–2 depending on success).
+        """
+        original_department = spec.get("department", "engineering")
+        dispatched: list[int] = []
+
+        # Phase 1: Fact Layer — route to quality dept
+        fact_spec = {
+            **spec,
+            "department": "quality",
+            "phase": "fact_layer",
+            "original_department": original_department,
+            "extra_instructions": (
+                "Output ONLY verified facts. Tag each with [HIGH], [MEDIUM], or [UNVERIFIED]. "
+                "List uncertain items separately. Do not fill gaps with guesses. "
+                "No persona, no humor, no style — just facts."
+            ),
+        }
+        fact_task_id = self.dispatch_task(
+            fact_spec, action=f"[Fact Layer] {action}", reason=reason,
+            priority=priority, source=source,
+        )
+        if fact_task_id is None:
+            log.warning("Fact-Expression Split: fact layer dispatch failed, aborting split")
+            return dispatched
+        dispatched.append(fact_task_id)
+
+        # Phase 2: Expression Layer — route to protocol dept
+        expression_spec = {
+            **spec,
+            "department": "protocol",
+            "phase": "expression_layer",
+            "original_department": original_department,
+            "fact_layer_task_id": fact_task_id,
+            "extra_instructions": (
+                "Rewrite the fact layer output with appropriate tone and persona. "
+                "You MUST NOT add, remove, or modify any facts. "
+                "You MUST preserve all confidence tags ([HIGH]/[MEDIUM]/[UNVERIFIED]). "
+                "Uncertain items MUST remain visibly marked."
+            ),
+        }
+        expr_task_id = self.dispatch_task(
+            expression_spec, action=f"[Expression Layer] {action}", reason=reason,
+            priority=priority, source=source,
+        )
+        if expr_task_id is not None:
+            dispatched.append(expr_task_id)
+        else:
+            log.warning("Fact-Expression Split: expression layer dispatch failed")
+
+        return dispatched
+
     def dispatch_task(self, spec: dict, action: str, reason: str,
                       priority: str = "high", source: str = "auto") -> int | None:
         """Atomic dispatch pipeline: create → classify → preflight → scrutinize.
 
         Returns task_id on success, None if preflight/scrutiny rejects.
         NOTE: Does NOT execute the task — caller is responsible for execution."""
+
+        # ── Fact-Expression Split: two-phase dispatch for judgment+presentation tasks ──
+        if spec.get("phase") is None and _needs_fact_expression_split(spec):
+            self.db.write_log(
+                f"Fact-Expression Split triggered for intent={spec.get('intent', '?')}",
+                "INFO", "governor",
+            )
+            log.info(f"TaskDispatcher: routing to fact-expression split (intent={spec.get('intent')})")
+            task_ids = self.dispatch_with_fact_expression_split(
+                spec, action=action, reason=reason, priority=priority, source=source,
+            )
+            # Return the last task_id (expression layer) as the "main" result
+            return task_ids[-1] if task_ids else None
+
         task_id = self.db.create_task(
             action=action, reason=reason, priority=priority, spec=spec, source=source,
         )

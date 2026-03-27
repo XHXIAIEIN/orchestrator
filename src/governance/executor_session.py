@@ -16,6 +16,7 @@ from claude_agent_sdk import (
 
 from src.governance.context.prompts import find_git_bash
 from src.core.component_spec import build_component
+from src.governance.pipeline.phase_rollback import PipelineCheckpointer, RollbackDecision
 
 # Event types — still needed for structured logging
 try:
@@ -133,6 +134,8 @@ class AgentSessionRunner:
         taint = build_component(self._component_specs.get("taint_tracker"))
         budget = build_component(self._component_specs.get("context_budget"))
         check_doom_loop = build_component(self._component_specs.get("doom_loop_checker"))
+        checkpointer = PipelineCheckpointer(task_id=task_id)
+        tool_count = 0
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
@@ -223,6 +226,17 @@ class AgentSessionRunner:
                         except Exception:
                             pass
 
+                # ── Checkpoint: save after successful tool execution ──
+                if tool_calls:
+                    tool_count += len(tool_calls)
+                    result_summary = text_parts[0][:200] if text_parts else ""
+                    checkpointer.save(
+                        stage_name="execute",
+                        stage_index=turn,
+                        task_state={"turn": turn, "tool_calls": tool_count},
+                        outputs={"last_result": result_summary},
+                    )
+
                 # ── Context Budget: 记录工具输出 ──
                 if budget:
                     budget.advance_turn()
@@ -254,6 +268,29 @@ class AgentSessionRunner:
                                 pattern=pattern, turn=turn,
                             ).to_dict() if AgentTurnEvent else {"pattern": pattern, "turn": turn})
                             self._log_event(task_id, "stuck_detected", stuck_data)
+
+                            # ── Phase Rollback: try recovery before aborting ──
+                            decision = checkpointer.decide_rollback(
+                                failed_stage="execute",
+                                error=pattern,
+                            )
+                            if decision.should_rollback:
+                                self._log_event(task_id, "rollback_attempt", {
+                                    "target_stage": decision.target_stage,
+                                    "strategy": decision.alternative_strategy,
+                                    "reason": decision.reason,
+                                    "turn": turn,
+                                })
+                                checkpointer.save(
+                                    stage_name="execute",
+                                    stage_index=turn,
+                                    task_state={"turn": turn, "tool_calls": tool_count},
+                                    success=False,
+                                )
+                                detector.reset()
+                                log.info(f"PhaseRollback: task #{task_id} rolling back to {decision.target_stage} (strategy={decision.alternative_strategy})")
+                                continue  # Retry the loop
+
                             result_text = f"[STUCK: {pattern}] Agent detected in loop after {turn} turns"
                             break
 

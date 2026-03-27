@@ -30,6 +30,70 @@ from src.core.cost_tracking import CostTracker, CostLimitExceededError
 log = logging.getLogger(__name__)
 
 
+# ── Schema Complexity → Model Tier（偷自 Firecrawl）──
+# 简单 schema 用便宜模型，复杂嵌套 schema 用强模型
+
+_COMPLEXITY_TIERS = {
+    "fast": 5,       # score 0-5: 最便宜/最快
+    "balanced": 15,   # score 6-15: 平衡
+    "strong": 999,    # score 16+: 最强
+}
+
+
+def _score_schema_complexity(schema: dict | None) -> int:
+    """Score JSON schema complexity. Higher = needs stronger model.
+
+    Scoring:
+    - Each top-level field: +1
+    - Nested object: +3 per level
+    - Array of objects: +2
+    - Enum constraints: +1
+    - Required fields > 5: +2
+    """
+    if not schema:
+        return 0
+
+    score = 0
+    properties = schema.get("properties", {})
+    score += len(properties)
+
+    required = schema.get("required", [])
+    if len(required) > 5:
+        score += 2
+
+    for _prop_name, prop_def in properties.items():
+        if not isinstance(prop_def, dict):
+            continue
+        prop_type = prop_def.get("type", "")
+        if prop_type == "object":
+            score += 3
+            score += _score_schema_complexity(prop_def)
+        elif prop_type == "array":
+            items = prop_def.get("items", {})
+            if isinstance(items, dict) and items.get("type") == "object":
+                score += 2
+                score += _score_schema_complexity(items)
+        if "enum" in prop_def:
+            score += 1
+
+    return score
+
+
+def select_model_for_schema(schema: dict | None) -> str:
+    """Select appropriate model tier based on schema complexity.
+
+    Returns tier name: "fast", "balanced", or "strong".
+    """
+    score = _score_schema_complexity(schema)
+
+    if score <= _COMPLEXITY_TIERS["fast"]:
+        return "fast"
+    elif score <= _COMPLEXITY_TIERS["balanced"]:
+        return "balanced"
+    else:
+        return "strong"
+
+
 class LLMRouter:
     def __init__(self):
         self._ollama_available = None  # lazy probe
@@ -60,25 +124,41 @@ class LLMRouter:
                  max_tokens: int = 1024, temperature: float = 0.3,
                  images: list[str] | None = None,
                  depth: str = DEFAULT_DEPTH,
-                 threshold: str = DEFAULT_THRESHOLD) -> str:
+                 threshold: str = DEFAULT_THRESHOLD,
+                 output_schema: dict | None = None) -> str:
         """统一入口（向后兼容，返回纯文本）。"""
         return self.generate_rich(prompt, task_type, max_tokens, temperature,
-                                   images, depth, threshold).text
+                                   images, depth, threshold, output_schema).text
 
     def generate_rich(self, prompt: str, task_type: str,
                       max_tokens: int = 1024, temperature: float = 0.3,
                       images: list[str] | None = None,
                       depth: str = DEFAULT_DEPTH,
-                      threshold: str = DEFAULT_THRESHOLD) -> GenerateResult:
+                      threshold: str = DEFAULT_THRESHOLD,
+                      output_schema: dict | None = None) -> GenerateResult:
         """Rich 入口 — 返回 GenerateResult，附带成本和诊断元数据。
 
         偷自 Exa costDollars：每次调用精确告诉调用方花了多少钱。
         偷自 Parallel usage：返回模型、延迟、尝试记录等诊断信息。
+
+        output_schema: 可选 JSON Schema。提供时自动根据 schema 复杂度选模型档位
+                       （偷自 Firecrawl schema-complexity routing）。
         """
         t0 = time.time()
         route = ROUTES.get(task_type)
         if not route:
             raise ValueError(f"Unknown task_type: {task_type}")
+
+        # ── Schema complexity → model tier override（偷自 Firecrawl）──
+        # 仅在 route 有 cascade 且未被 force_claude 覆盖时生效
+        if output_schema and "cascade" in route:
+            tier_name = select_model_for_schema(output_schema)
+            _tier_model_map = {"fast": MODEL_HAIKU, "balanced": MODEL_SONNET, "strong": MODEL_SONNET}
+            schema_model = _tier_model_map.get(tier_name, MODEL_HAIKU)
+            score = _score_schema_complexity(output_schema)
+            log.info(f"router: [schema] complexity={score} tier={tier_name} -> {schema_model}")
+            # 用 schema 选出的模型替换 cascade，变成单引擎直连
+            route = {**route, "cascade": [schema_model]}
 
         # ── depth 档位修正 ──
         tier = DEPTH_TIERS.get(depth, DEPTH_TIERS[DEFAULT_DEPTH])

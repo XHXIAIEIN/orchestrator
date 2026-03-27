@@ -43,6 +43,14 @@ NOT CHECKED: <what and why>
 VERDICT: PASS | FAIL — <reason if FAIL>
 ```
 
+## Fact Layer Mode
+
+When `phase: fact_layer` is set, switch to strict fact-checking mode:
+- Output ONLY verified facts with confidence tags: [HIGH], [MEDIUM], [UNVERIFIED]
+- List uncertain items in a separate "Unverified" section
+- No persona, no humor, no style — raw facts only
+- Prefer "I don't know" over plausible guesses
+
 ## Edge Cases
 
 - **Large diff (>500 lines)**: focus on high-risk areas, note skips in NOT CHECKED
