@@ -8,7 +8,12 @@ Available actions:
 - click: {"action": "click", "x": <int>, "y": <int>, "button": "left"|"right"}
 - double_click: {"action": "double_click", "x": <int>, "y": <int>}
 - right_click: {"action": "right_click", "x": <int>, "y": <int>}
-- type_text: {"action": "type_text", "text": "<string>"}
+- type_text: {"action": "type_text", "text": "<string>", "sensitive": false}
+  Character-by-character typing. Use for passwords or short ASCII text (<25 chars).
+  Set "sensitive": true for passwords -- the text will NOT be logged.
+- paste_text: {"action": "paste_text", "text": "<string>", "sensitive": false}
+  Clipboard paste (Ctrl+V). Use for long text, unicode, or CJK characters.
+  Set "sensitive": true if the content should not be logged.
 - hotkey: {"action": "hotkey", "keys": ["ctrl", "a"]}
 - scroll: {"action": "scroll", "x": <int>, "y": <int>, "clicks": <int>}
 - drag: {"action": "drag", "x1": <int>, "y1": <int>, "x2": <int>, "y2": <int>}

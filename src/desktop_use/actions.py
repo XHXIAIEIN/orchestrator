@@ -21,7 +21,8 @@ ALLOWED_ACTIONS = {
     "click":        {"params": ["x", "y"], "optional": {"button": "left"}},
     "double_click": {"params": ["x", "y"]},
     "right_click":  {"params": ["x", "y"]},
-    "type_text":    {"params": ["text"]},
+    "type_text":    {"params": ["text"], "optional": {"sensitive": False}},  # char-by-char, for passwords
+    "paste_text":   {"params": ["text"], "optional": {"sensitive": False}},  # clipboard paste, for long/unicode text
     "hotkey":       {"params": ["keys"]},       # e.g. ["ctrl", "s"]
     "scroll":       {"params": ["x", "y", "clicks"]},
     "drag":         {"params": ["x1", "y1", "x2", "y2"]},
@@ -110,7 +111,12 @@ class PyAutoGUIExecutor(ActionExecutor):
             pyautogui.rightClick(action["x"], action["y"])
 
         elif name == "type_text":
-            # Clipboard paste instead of pyautogui.write() to bypass IME.
+            # Char-by-char typing via pyautogui -- use for passwords / short ASCII.
+            text = action["text"]
+            pyautogui.write(text, interval=0.03)
+
+        elif name == "paste_text":
+            # Clipboard paste -- use for long text, unicode, CJK.
             text = action["text"]
             _clipboard_paste(text)
 

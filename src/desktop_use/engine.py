@@ -24,6 +24,7 @@ from .window import WindowManager, Win32WindowManager
 from .actions import ActionExecutor, PyAutoGUIExecutor
 from .trajectory import Trajectory
 from .prompts import REASONER_SYSTEM, build_reasoner_prompt
+from .input_capture import InputCapture
 
 try:
     from PIL import Image as _PIL_Image
@@ -31,6 +32,8 @@ except ImportError:
     _PIL_Image = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
+
+POST_ACTION_DELAY = 0.75  # seconds -- let UI settle before post-action screenshot
 
 
 class DesktopEngine:
@@ -55,6 +58,7 @@ class DesktopEngine:
         max_steps: int = 15,
         trajectory_size: int = 8,
         background: bool = False,
+        capture_input: bool = False,
         ocr_engine: OCREngine | None = None,
         match_strategy: MatchStrategy | None = None,
         screen: ScreenCapture | None = None,
@@ -74,6 +78,7 @@ class DesktopEngine:
         self.trajectory = Trajectory(max_steps=trajectory_size)
         self.ocr_lang = ocr_lang
         self._kill_listener = None
+        self._input_capture = InputCapture() if capture_input else None
 
     # ------------------------------------------------------------------
     # Public API
@@ -108,9 +113,13 @@ class DesktopEngine:
                             target_spec)
 
         self._start_kill_listener()
+        if self._input_capture:
+            self._input_capture.start()
         try:
             result = self._run_loop(instruction, target_app, monitor_id)
         finally:
+            if self._input_capture:
+                self._input_capture.stop()
             self._stop_kill_listener()
             self.window.unlock()
         return result
@@ -158,6 +167,11 @@ class DesktopEngine:
 
     def _run_loop(self, instruction: str, target_app: str, monitor_id: int) -> GUIResult:
         """Main perception-action loop."""
+        # Post-action screenshot cache: reuse on next iteration to avoid
+        # redundant captures.  None means "take a fresh screenshot".
+        _cached_screenshot: bytes | None = None
+        _cached_thumbnail: bytes | None = None
+
         for step_num in range(1, self.max_steps + 1):
             # 1. Kill-switch check
             if self.kill_event.is_set():
@@ -169,14 +183,30 @@ class DesktopEngine:
                     trajectory=self.trajectory,
                 )
 
-            # 2. Capture screenshot
-            screenshot_png = self._capture(monitor_id)
+            # 1.5 Drain user input events into trajectory
+            if self._input_capture:
+                for user_action in self._input_capture.drain():
+                    self.trajectory.append(TrajectoryStep(
+                        screenshot_thumbnail=b"",
+                        action=user_action,
+                        result="user_input",
+                        timestamp=time.time(),
+                        source="user",
+                    ))
 
-            # 3. Make thumbnail
-            thumbnail = self._make_thumbnail(screenshot_png)
+            # 2. Capture screenshot (reuse post-action cache if available)
+            if _cached_screenshot is not None:
+                screenshot_png = _cached_screenshot
+                thumbnail = _cached_thumbnail
+                _cached_screenshot = None
+                _cached_thumbnail = None
+            else:
+                screenshot_png = self._capture(monitor_id)
+                thumbnail = self._make_thumbnail(screenshot_png)
+
             thumb_b64 = base64.b64encode(thumbnail).decode("ascii")
 
-            # 4. Build reasoner prompt
+            # 3. Build reasoner prompt
             prompt = build_reasoner_prompt(
                 instruction=instruction,
                 step_number=step_num,
@@ -185,7 +215,7 @@ class DesktopEngine:
                 target_app=target_app,
             )
 
-            # 5. Collect images: trajectory history + current thumbnail (last 3 total)
+            # 4. Collect images: trajectory history + current thumbnail (last 3 total)
             images_b64 = self.trajectory.get_images_b64()
             images_b64.append(thumb_b64)
             images_b64 = images_b64[-3:]
@@ -198,7 +228,7 @@ class DesktopEngine:
                 images=images_b64,
             )
 
-            # 6. Parse action
+            # 5. Parse action
             action = self._parse_action(raw_response)
             if action is None:
                 log.warning("engine: step %d -- failed to parse LLM response: %r",
@@ -213,7 +243,7 @@ class DesktopEngine:
 
             action_name = action.get("action", "")
 
-            # 7. Done / Fail signals
+            # 6. Done / Fail signals
             if action_name == "done":
                 summary = action.get("summary", "Task completed")
                 log.info("engine: step %d -- DONE: %s", step_num, summary)
@@ -234,7 +264,7 @@ class DesktopEngine:
                     trajectory=self.trajectory,
                 )
 
-            # 8. Target-based grounding -- resolve "target" -> x/y via OCR
+            # 7. Target-based grounding -- resolve "target" -> x/y via OCR
             if "target" in action and "x" not in action:
                 target_text = action["target"]
                 locate_result = self._locate(target_text, screenshot_png, monitor_id)
@@ -258,7 +288,7 @@ class DesktopEngine:
                 action["y"] = gy
                 del action["target"]
 
-            # 9. Execute action
+            # 8. Execute action
             if self.background and self.window.target:
                 result_str = self._execute_background(action)
             else:
@@ -266,7 +296,7 @@ class DesktopEngine:
                     self.window.focus()
                 result_str = self.executor.execute(action)
 
-            # 10. Kill check after execution
+            # 9. Kill check after execution
             if result_str.startswith("INTERRUPTED"):
                 log.warning("engine: step %d -- execution interrupted: %s",
                             step_num, result_str)
@@ -277,10 +307,21 @@ class DesktopEngine:
                     trajectory=self.trajectory,
                 )
 
-            # 11. Append to trajectory
+            # 10. Post-action screenshot: wait for UI to settle, then capture.
+            #     Cache it so next iteration skips redundant capture.
+            if result_str == "success" and action_name not in ("wait", "screenshot"):
+                time.sleep(POST_ACTION_DELAY)
+                _cached_screenshot = self._capture(monitor_id)
+                _cached_thumbnail = self._make_thumbnail(_cached_screenshot)
+                post_thumb = _cached_thumbnail
+            else:
+                post_thumb = thumbnail
+
+            # 11. Append to trajectory (mask sensitive text, use post-action screenshot)
+            logged_action = _mask_sensitive(action)
             self.trajectory.append(TrajectoryStep(
-                screenshot_thumbnail=thumbnail,
-                action=action,
+                screenshot_thumbnail=post_thumb,
+                action=logged_action,
                 result=result_str,
                 timestamp=time.time(),
             ))
@@ -300,7 +341,20 @@ class DesktopEngine:
 
     def _locate(self, target_text: str, screenshot_png: bytes,
                 monitor_id: int) -> LocateResult | None:
-        """Locate a text element in the screenshot using OCR + match strategy."""
+        """Locate a text element using text-first strategy + OCR fallback.
+
+        从 Carbonyl 偷师 #2: TextCaptureDevice 文本保真拦截。
+        Carbonyl 在 Skia 光栅化前拦截文字，根本不需要 OCR。
+        同理：如果 Win32 API 能直接拿到控件文本和坐标，就不走 OCR。
+        分层策略: Win32 文本 → OCR fallback，和 Carbonyl 的
+        TextCapture + 像素 fallback 同构。
+        """
+        # ── 快速路径: Win32 控件文本匹配（0ms，confidence=1.0）──
+        result = self._locate_via_win32(target_text, monitor_id)
+        if result is not None:
+            return result
+
+        # ── 慢路径: OCR 文本匹配（~100ms）──
         if _PIL_Image is None:
             return None
         img = _PIL_Image.open(io.BytesIO(screenshot_png))
@@ -321,6 +375,60 @@ class DesktopEngine:
             monitor_id=monitor_id,
             method="ocr",
         )
+
+    def _locate_via_win32(self, target_text: str,
+                          monitor_id: int) -> LocateResult | None:
+        """尝试通过 Win32 API 定位文本元素（不需要截图/OCR）。
+
+        仅在有锁定窗口时可用——通过 EnumChildWindows 获取控件文本
+        和坐标，做模糊匹配。成本为零，准确度 100%。
+        """
+        if not self.window.target:
+            return None
+        try:
+            from .perception import Win32Layer
+            hwnd = self.window.target.hwnd
+            info = self.window.target
+            rect = (info.rect.left, info.rect.top, info.rect.right, info.rect.bottom)
+
+            layer = Win32Layer()
+            result = layer.analyze(hwnd, rect)
+            if not result.elements:
+                return None
+
+            # 构造 OCRWord 格式的列表给 match_strategy 复用
+            pseudo_words = []
+            for el in result.elements:
+                if not el.text or not el.text.strip():
+                    continue
+                x1, y1, x2, y2 = el.rect
+                pseudo_words.append(OCRWord(
+                    text=el.text,
+                    left=x1, top=y1,
+                    width=x2 - x1, height=y2 - y1,
+                    conf=100.0,
+                    line_num=0, word_num=0,
+                ))
+
+            if not pseudo_words:
+                return None
+
+            hit = self.match_strategy.match(target_text, pseudo_words)
+            if hit is None:
+                return None
+
+            cx = hit.left + hit.width // 2
+            cy = hit.top + hit.height // 2
+            # Win32 坐标已经是全局逻辑坐标（GetWindowRect 返回的）
+            return LocateResult(
+                x=cx, y=cy,
+                confidence=1.0,
+                monitor_id=monitor_id,
+                method="win32",
+            )
+        except Exception as exc:
+            log.debug("win32 locate fallthrough: %s", exc)
+            return None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -345,7 +453,7 @@ class DesktopEngine:
         wm = self.window
 
         try:
-            if name == "type_text":
+            if name in ("type_text", "paste_text"):
                 ok = wm.send_text(action["text"])
                 return "success" if ok else "ERROR: send_text failed"
 
@@ -523,3 +631,13 @@ class DesktopEngine:
             line_words = sorted(by_line[ln], key=lambda w: w.left)
             lines.append("".join(w.text for w in line_words))
         return lines
+
+
+def _mask_sensitive(action: dict) -> dict:
+    """Return a copy of *action* with text masked if sensitive=True."""
+    if not action.get("sensitive"):
+        return action
+    masked = dict(action)
+    if "text" in masked:
+        masked["text"] = "***"
+    return masked

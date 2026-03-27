@@ -15,6 +15,7 @@ from .window import WindowManager, Win32WindowManager
 from .actions import ActionExecutor, PyAutoGUIExecutor, ALLOWED_ACTIONS
 from .trajectory import Trajectory
 from .engine import DesktopEngine
+from .input_capture import InputCapture
 from .prompts import REASONER_SYSTEM, build_reasoner_prompt
 from .types import UIElement, UIZone, UIBlueprint
 from .perception import PerceptionLayer, Win32Layer, CVLayer, OCRLayer, PerceptionResult
@@ -47,6 +48,8 @@ __all__ = [
     "Trajectory",
     # Engine
     "DesktopEngine",
+    # Input capture
+    "InputCapture",
     # Prompts
     "REASONER_SYSTEM", "build_reasoner_prompt",
     # Blueprint

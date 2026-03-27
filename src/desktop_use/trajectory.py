@@ -52,7 +52,8 @@ class Trajectory:
         ctx: list[dict] = []
         for idx, step in enumerate(self.steps, start=1):
             action_json = json.dumps(step.action, ensure_ascii=False)
-            text = f"Step {idx}: {action_json} -> {step.result}"
+            prefix = f"[{step.source}] " if step.source != "agent" else ""
+            text = f"Step {idx}: {prefix}{action_json} -> {step.result}"
             b64 = base64.b64encode(step.screenshot_thumbnail).decode("ascii")
             ctx.append({"text": text, "image": b64, "screenshot": b64})
         return ctx
@@ -75,5 +76,6 @@ class Trajectory:
         lines: list[str] = []
         for idx, step in enumerate(self.steps, start=1):
             action_json = json.dumps(step.action, ensure_ascii=False)
-            lines.append(f"Step {idx}: {action_json} -> {step.result}")
+            prefix = f"[{step.source}] " if step.source != "agent" else ""
+            lines.append(f"Step {idx}: {prefix}{action_json} -> {step.result}")
         return "\n".join(lines)

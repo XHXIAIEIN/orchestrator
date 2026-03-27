@@ -76,6 +76,7 @@ class TrajectoryStep:
     action: dict                 # the action that was taken
     result: str                  # "success" / error string
     timestamp: float
+    source: str = "agent"        # "agent" (LLM-driven) or "user" (human takeover)
 
 
 @dataclass
