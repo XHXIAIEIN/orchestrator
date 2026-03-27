@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | Total patterns | 97 |
-| ✅ Implemented | 89 |
-| 📐 Designed (spec exists) | 4 |
-| 🔲 Pending (cvui only) | 8 |
+| ✅ Implemented | 93 |
+| 📐 Designed (spec exists) | 1 |
+| 🔲 Pending (cvui only) | 6 |
 | ⏸️ Shelved | 11 |
 
 ---
@@ -90,7 +90,7 @@
 | I3 | Usage-based Experience Culling | Round 2 | ✅ | `governance/learning/experience_cull.py` | DB migration + usage-based pruning |
 | I4 | 5-Dimension Confidence Scoring | Round 2 | ✅ | `governance/preflight/confidence.py` | 5 axes of confidence evaluation |
 | I5 | Critic Auto-Scoring | Round 2 | ✅ | `governance/quality/critic.py` | Automated quality scoring interface |
-| I6 | APO (Automatic Prompt Optimization) | Agent Lightning (R8) | 🔲 | — | P1. Beam Search + Textual Gradient → iterative prompt improvement. Apply to policy_advisor |
+| I6 | APO (Automatic Prompt Optimization) | Agent Lightning (R8) | ✅ | `governance/apo.py` | APOOptimizer: beam search + textual gradient + rule mutations + early stopping |
 | I7 | Self-Evolution (3-phase) | OpenAkita (R4) | ⏸️ | — | Log+review+history → LLM analysis → graded self-repair (tools only, not core). Too ambitious for now |
 | I8 | Citation Scoring (memory retrieval) | OpenAkita (R4) | ⏸️ | — | Write-back effectiveness score on memory retrieval. Needs usage data first |
 | I9 | Personality Preference Auto-Promotion | OpenAkita (R4) | ⏸️ | — | High-confidence memory → identity file → prompt recompile. SOUL already handles manually |
@@ -172,9 +172,9 @@
 | H1 | Compaction Recovery Loop | Round 2 | ✅ | `.claude/hooks/pre-compact.sh` + `session-start.sh` | Pre-compact save + session-start restore |
 | H2 | Frontmatter Standardization | Round 2 | ✅ | `blueprint.yaml` | Standardized metadata + explicit routing table |
 | H3 | Fast Rule Scan (zero-LLM regex) | OpenAkita (R4) | ✅ | `governance/safety/fast_rule_scan.py` | Regex match strong signal words before context compression; rescue critical rules at zero LLM cost |
-| H4 | Renderer Hijacking (output interception) | Carbonyl (R9) | 📐 | — | Don't rewrite the engine; intercept at output. Apply: DOM/Win32 API for structure, not screenshot+OCR |
+| H4 | Renderer Hijacking (output interception) | Carbonyl (R9) | ✅ | `desktop_use/output_interceptor.py` | OutputInterceptor: Win32 control text → UIA → clipboard, before OCR |
 | H5 | Terminal as First-Class Display | Carbonyl (R9) | ✅ | `channels/terminal_display.py` | TerminalDisplay: ANSI panels, tables, progress bars |
-| H6 | Input Event Backflow | Carbonyl (R9) | 📐 | — | DCS → event injection → interaction loop. Unified channel callback: any user input → event → dispatcher |
+| H6 | Input Event Backflow | Carbonyl (R9) | ✅ | `channels/event_backflow.py` | EventDispatcher: unified InputEvent model, middleware chain, pattern-based routing |
 | H7 | Delegation Span (DELEGATION tracking) | OpenAkita (R4) | ✅ | `governance/audit/delegation_span.py` | DelegationTracker: parent→child chain, depth limits, token aggregation |
 | H8 | Ephemeral Agent (temp profile, no disk) | OpenAkita (R4) | ⏸️ | — | Low value for current use case |
 | H9 | Task Scheduling (sub-tasks) | bytebot (R10) | ✅ | `governance/task_scheduler.py` | TaskScheduler: priority queue + IMMEDIATE/SCHEDULED + poll loop |
@@ -185,7 +185,7 @@
 
 | # | Pattern | Source | Status | Location | Notes |
 |---|---------|--------|--------|----------|-------|
-| D1 | Knowledge Graph + Blast Radius | Understand-Anything (R1-R2) | 📐 | `governance/scrutiny.py` (partial) | Partial blast_radius in scrutiny.py; full knowledge graph shelved |
+| D1 | Knowledge Graph + Blast Radius | Understand-Anything (R1-R2) | ✅ | `governance/knowledge_graph.py` | KnowledgeGraph: import-based BFS dependency graph + blast_radius() |
 | D2 | Git Hash Incremental Strategy | Understand-Anything (R1-R2) | ✅ | `governance/learning/debt_scanner.py` | Commit hash based incremental scanning |
 | D3 | Search→Expand→Trim Context Build | Understand-Anything (R1-R2) | ✅ | `governance/context/context_assembler.py` | HOT/WARM/COLD 3-tier context |
 | D4 | Dual-Track Generation (LLM + heuristic) | Understand-Anything (R1-R2) | ✅ | `governance/budget/token_budget.py` | Model degradation chain as heuristic fallback |
