@@ -47,6 +47,8 @@ from src.gateway.complexity import classify_complexity, should_skip_scrutiny, ge
 
 from src.governance.executor_prompt import build_execution_prompt
 from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
+from src.governance.worktree import WorktreeManager
+from src.governance.patch_manager import PatchManager
 
 
 # ── Rollout Configuration (stolen from agent-lightning Round 8) ──
@@ -308,6 +310,8 @@ class TaskExecutor:
         self._session_runner = AgentSessionRunner(db=self.db, log_event_fn=self._log_agent_event)
         self._strategy = strategy or ProductionStrategy()
         self._hooks = hooks or LifecycleHooks()
+        self._worktree = WorktreeManager()
+        self._patches = PatchManager()
 
     def execute_task_async(self, task_id: int):
         """在线程池中执行任务，不阻塞调用方。"""
@@ -354,6 +358,30 @@ class TaskExecutor:
         dept = DEPARTMENTS.get(dept_key, DEPARTMENTS["engineering"])
         project_name = spec.get("project", "orchestrator")
         task_cwd = _resolve_project_cwd(project_name, spec.get("cwd", ""))
+
+        # ── Worktree Isolation (stolen from Cline Kanban) ──
+        use_worktree = spec.get("isolation", False)
+        if not use_worktree:
+            running_count = self.db.count_running_tasks()
+            if running_count >= 1:
+                use_worktree = True
+
+        worktree_path = None
+        if use_worktree:
+            worktree_path = self._worktree.create(task_id)
+            if worktree_path:
+                task_cwd = str(worktree_path)
+                log.info(f"TaskExecutor: task #{task_id} using worktree at {task_cwd}")
+            else:
+                log.warning(f"TaskExecutor: worktree creation failed for task #{task_id}, using shared cwd")
+
+        # ── Patch Restore (stolen from Cline Kanban) ──
+        if self._patches.has_patch(task_id):
+            restored = self._patches.restore(task_id, task_cwd)
+            if restored:
+                log.info(f"TaskExecutor: restored saved patch for task #{task_id}")
+            else:
+                log.warning(f"TaskExecutor: patch restore failed for task #{task_id}")
 
         # ── Blueprint resolution ──
         blueprint = load_blueprint(dept_key)
@@ -625,6 +653,16 @@ class TaskExecutor:
                 "final_status": status,
                 "max_attempts": rollout_cfg.max_attempts,
             })
+
+        # ── Patch: save on failure, cleanup on success ──
+        if status == "done":
+            self._patches.cleanup(task_id)
+        elif status == "failed":
+            self._patches.save(task_id, task_cwd)
+
+        # ── Worktree: cleanup after execution ──
+        if worktree_path:
+            self._worktree.cleanup(task_id)
 
         # Finalize via callback
         if self.on_finalize:
