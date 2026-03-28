@@ -58,7 +58,7 @@ WEBHOOK_TIMEOUT = _int("CHANNEL_WEBHOOK_TIMEOUT", 5)
 
 # ── 安全 ──
 READ_ALLOW_PATHS = _list("CHANNEL_READ_ALLOW_PATHS", "/orchestrator,/git-repos")
-RATE_LIMIT_WINDOW = 2  # 秒，防刷，不可配置
+BURST_WINDOW = 2  # 秒，连续消息间隔低于此值时合并到 debounce 缓冲
 
 # ── 用户权限 ──
 # 格式: "chat_id:role,chat_id:role" — role: admin (full) / viewer (query+chat only)
@@ -135,7 +135,7 @@ WECHAT_CDN_BASE_URL = _str("WECHAT_CDN_BASE_URL", "https://novac2c.cdn.weixin.qq
 # 但安全参数（路径白名单、速率限制）锁死不让碰。
 
 LOCKED_PARAMS: frozenset[str] = frozenset({
-    "RATE_LIMIT_WINDOW",       # 防刷窗口 — 改了就是开后门
+    "BURST_WINDOW",            # 连续消息合并窗口 — 安全参数
     "READ_ALLOW_PATHS",        # 文件读取白名单 — 安全边界
     "ALLOWED_USERS",           # 用户权限表 — 身份边界
     "ROLE_PERMISSIONS",        # 角色权限定义 — 权限边界

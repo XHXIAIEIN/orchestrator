@@ -152,10 +152,9 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
             log.info("telegram: unauthorized chat_id=%s (legacy mode, expected %s)", chat_id, self.chat_id)
             return
 
-        # 频率限制
+        # 连续消息检测 → burst 时强制走 debounce 合并，不丢弃
         now = time.time()
-        if now - self._last_msg_time.get(chat_id, 0) < ch_cfg.RATE_LIMIT_WINDOW:
-            return
+        is_burst = (now - self._last_msg_time.get(chat_id, 0)) < ch_cfg.BURST_WINDOW
         self._last_msg_time[chat_id] = now
 
         text = (message.get("text") or message.get("caption") or "").strip()
@@ -249,7 +248,7 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
         with self._pending_lock:
             has_pending = chat_id in self._pending
 
-        if not has_media and not has_pending and not is_long:
+        if not has_media and not has_pending and not is_long and not is_burst:
             self._process_message(chat_id, text, attachments, msg_id=msg_id)
             return
 
