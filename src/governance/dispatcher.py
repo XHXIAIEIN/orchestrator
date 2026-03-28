@@ -177,11 +177,24 @@ class TaskDispatcher:
             # Return the last task_id (expression layer) as the "main" result
             return task_ids[-1] if task_ids else None
 
+        # ── Extract depends_on from spec (if provided by caller) ──
+        depends_on = spec.pop("depends_on", None)
+
         task_id = self.db.create_task(
             action=action, reason=reason, priority=priority, spec=spec, source=source,
+            depends_on=depends_on,
         )
         summary = spec.get("summary", "")
         dept = spec.get("department", "?")
+
+        # ── Blocked tasks skip pipeline — they'll be processed when unblocked ──
+        if depends_on:
+            dep_str = ", ".join(f"#{d}" for d in depends_on)
+            self.db.write_log(
+                f"任务 #{task_id} 等待依赖完成: {dep_str}", "INFO", "governor"
+            )
+            log.info(f"TaskDispatcher: task #{task_id} blocked on dependencies: {dep_str}")
+            return task_id
         log.info(f"TaskDispatcher: created task #{task_id}: {summary} [{dept}]")
 
         # Cognitive mode
