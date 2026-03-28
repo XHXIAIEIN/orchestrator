@@ -196,6 +196,24 @@ class ReviewManager:
         self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
         log.info(f"ReviewManager: task #{task_id} {status}")
 
+        # ── Dependency Chain: unblock downstream tasks (stolen from Cline Kanban) ──
+        if status == "done":
+            try:
+                unblocked = self.db.unblock_ready_dependents(task_id)
+                if unblocked:
+                    ids_str = ", ".join(f"#{uid}" for uid in unblocked)
+                    self.db.write_log(
+                        f"依赖链触发: 任务 #{task_id} 完成 → 解锁 {ids_str}",
+                        "INFO", "governor",
+                    )
+                    log.info(f"ReviewManager: dependency chain unblocked {ids_str} after task #{task_id}")
+                    # Auto-execute unblocked tasks
+                    if self.on_execute:
+                        for uid in unblocked:
+                            self.on_execute(uid)
+            except Exception as e:
+                log.warning(f"ReviewManager: dependency chain trigger failed for task #{task_id}: {e}")
+
         # 部门执行记忆
         commit_hash = ""
         if append_run_log:
