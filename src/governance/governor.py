@@ -13,6 +13,14 @@ class Governor:
 
     def __init__(self, db: EventsDB = None, db_path: str = None):
         self.db = db or (EventsDB(db_path) if db_path else EventsDB())
+
+        # ── DB Migration: add depends_on column if needed ──
+        try:
+            self.db.migrate_depends_on()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Governor: depends_on migration failed: {e}")
+
         self.scrutinizer = Scrutinizer(self.db)
         self.dispatcher = TaskDispatcher(self.db, self.scrutinizer)
         self.reviewer = ReviewManager(self.db, on_execute=self._scrutinize_and_execute)
@@ -72,3 +80,33 @@ class Governor:
             return None
         self.executor.execute_task_async(task_id)
         return self.db.get_task(task_id)
+
+    def dispatch_chain(self, tasks: list[dict]) -> list[int]:
+        """Dispatch a sequence of tasks as a dependency chain.
+
+        Each task in the list depends on the previous one.
+        First task runs immediately, subsequent tasks block until predecessor completes.
+
+        Args:
+            tasks: List of dicts, each with keys: spec, action, reason, priority (optional)
+
+        Returns: List of created task_ids.
+        """
+        task_ids = []
+        for i, t in enumerate(tasks):
+            spec = t.get("spec", {})
+            if task_ids:
+                spec["depends_on"] = [task_ids[-1]]
+
+            task_id = self.dispatcher.dispatch_task(
+                spec,
+                action=t.get("action", ""),
+                reason=t.get("reason", ""),
+                priority=t.get("priority", "medium"),
+            )
+            if task_id is not None:
+                task_ids.append(task_id)
+                if i == 0:
+                    self.executor.execute_task_async(task_id)
+
+        return task_ids

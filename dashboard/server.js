@@ -159,7 +159,7 @@ app.get('/api/tasks', (req, res) => {
     if (status) { sql += ' AND status = ?'; params.push(status); }
     sql += ' ORDER BY created_at DESC LIMIT 50';
     let rows = dbAll(db, sql, params);
-    rows = rows.map(r => ({ ...r, spec: JSON.parse(r.spec || '{}') }));
+    rows = rows.map(r => ({ ...r, spec: JSON.parse(r.spec || '{}'), depends_on: JSON.parse(r.depends_on || '[]') }));
     if (department) rows = rows.filter(r => r.spec.department === department);
     res.json(rows);
   } catch {
@@ -174,28 +174,45 @@ app.get('/api/tasks/:id', (req, res) => {
     const rows = dbAll(db, 'SELECT * FROM tasks WHERE id = ?', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     const r = rows[0];
-    res.json({ ...r, spec: JSON.parse(r.spec || '{}') });
+    const task = { ...r, spec: JSON.parse(r.spec || '{}'), depends_on: JSON.parse(r.depends_on || '[]') };
+    res.json(task);
   } catch {
     res.status(404).json({ error: 'not found' });
   }
 });
 
 app.post('/api/tasks', (req, res) => {
-  const { action, reason, priority, spec } = req.body || {};
-  if (!action) return res.status(400).json({ error: 'action is required' });
-
-  const db = ensureDb();
-  if (!db) return res.status(500).json({ error: 'database not available' });
-
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  const { action, reason, priority, spec, depends_on } = req.body;
+  if (!action) return res.status(400).json({ error: 'action required' });
+  const now = new Date().toISOString();
+  const deps = JSON.stringify(depends_on || []);
+  const status = (depends_on && depends_on.length > 0) ? 'blocked' : 'awaiting_approval';
   try {
-    const now = new Date().toISOString();
-    const result = db.prepare(
-      'INSERT INTO tasks (action, reason, priority, spec, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(action, reason || '', priority || 'medium', JSON.stringify(spec || {}), 'pending', 'manual', now);
-    res.json({ id: Number(result.lastInsertRowid) });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+    const result = dbRun(db,
+      `INSERT INTO tasks (spec, action, reason, priority, source, status, created_at, depends_on)
+       VALUES (?, ?, ?, ?, 'dashboard', ?, ?, ?)`,
+      [JSON.stringify(spec || {}), action, reason || '', priority || 'medium', status, now, deps]
+    );
+    res.json({ id: result.lastInsertRowid, status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/tasks/:id/dependents', (req, res) => {
+  const db = getDb();
+  if (!db) return res.status(500).json({ error: 'db unavailable' });
+  try {
+    const taskId = parseInt(req.params.id);
+    const rows = dbAll(db,
+      "SELECT * FROM tasks WHERE depends_on LIKE ? AND status = 'blocked'",
+      [`%${taskId}%`]
+    );
+    const filtered = rows
+      .map(r => ({ ...r, spec: JSON.parse(r.spec || '{}'), depends_on: JSON.parse(r.depends_on || '[]') }))
+      .filter(r => r.depends_on.includes(taskId));
+    res.json(filtered);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/tasks/:id/approve', (req, res) => {
