@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 _ALLOWED_TASK_COLUMNS = {
     'spec', 'action', 'reason', 'priority', 'source',
     'status', 'output', 'approved_at', 'started_at', 'finished_at',
-    'scrutiny_note', 'parent_task_id',
+    'scrutiny_note', 'parent_task_id', 'depends_on',
 }
 
 _log = logging.getLogger(__name__)
@@ -24,15 +24,19 @@ class TasksMixin:
 
     def create_task(self, action: str, reason: str, priority: str,
                     spec: dict, source: str = 'auto',
-                    parent_task_id: int = None) -> int:
+                    parent_task_id: int = None,
+                    depends_on: list[int] | None = None) -> int:
         now = datetime.now(timezone.utc).isoformat()
         status = 'pending' if source == 'auto' else 'awaiting_approval'
+        if depends_on:
+            status = 'blocked'
+        deps_json = json.dumps(depends_on or [])
         with self._connect() as conn:
             cur = conn.execute(
-                """INSERT INTO tasks (spec, action, reason, priority, source, status, created_at, parent_task_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO tasks (spec, action, reason, priority, source, status, created_at, parent_task_id, depends_on)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (json.dumps(spec, ensure_ascii=False, default=str), action, reason, priority, source, status, now,
-                 parent_task_id)
+                 parent_task_id, deps_json)
             )
             return cur.lastrowid
 
@@ -170,3 +174,59 @@ class TasksMixin:
 
         for tid, tag, action in reaped:
             _log.warning(f"Watchdog reaped task #{tid} ({action[:50]}): {tag}")
+
+    # ── Dependency Chain (stolen from Cline Kanban) ──
+
+    def migrate_depends_on(self):
+        """Add depends_on column if it doesn't exist (safe to call multiple times)."""
+        with self._connect() as conn:
+            cols = [row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()]
+            if "depends_on" not in cols:
+                conn.execute("ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT '[]'")
+                _log.info("Migrated tasks table: added depends_on column")
+
+    def get_task_dependents(self, task_id: int) -> list[dict]:
+        """Find all tasks that depend on this task_id (still blocked)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE depends_on LIKE ? AND status = 'blocked'",
+                (f'%{task_id}%',)
+            ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            d['spec'] = json.loads(d['spec'])
+            deps = json.loads(d.get('depends_on', '[]'))
+            if task_id in deps:
+                result.append(d)
+        return result
+
+    def check_dependencies_resolved(self, task_id: int) -> bool:
+        """Check if ALL dependencies of a task are completed (status=done)."""
+        task = self.get_task(task_id)
+        if not task:
+            return False
+        deps = json.loads(task.get('depends_on', '[]'))
+        if not deps:
+            return True
+        with self._connect() as conn:
+            placeholders = ','.join('?' * len(deps))
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM tasks WHERE id IN ({placeholders}) AND status = 'done'",
+                deps,
+            ).fetchone()[0]
+        return count == len(deps)
+
+    def unblock_ready_dependents(self, completed_task_id: int) -> list[int]:
+        """After a task completes, find and unblock downstream tasks whose deps are all resolved."""
+        dependents = self.get_task_dependents(completed_task_id)
+        unblocked = []
+        for dep_task in dependents:
+            if self.check_dependencies_resolved(dep_task['id']):
+                self.update_task(dep_task['id'], status='pending')
+                _log.info(
+                    f"Dependency chain: unblocked task #{dep_task['id']} "
+                    f"(dependency #{completed_task_id} completed)"
+                )
+                unblocked.append(dep_task['id'])
+        return unblocked

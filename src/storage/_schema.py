@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     approved_at TEXT,
     started_at TEXT,
     finished_at TEXT,
-    parent_task_id INTEGER
+    parent_task_id INTEGER,
+    depends_on TEXT DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS logs (
@@ -260,6 +261,7 @@ CREATE INDEX IF NOT EXISTS idx_wake_task ON wake_sessions(task_id);
 MIGRATIONS_TASKS = [
     ("tasks", "scrutiny_note", "TEXT"),
     ("tasks", "parent_task_id", "INTEGER"),
+    ("tasks", "depends_on", "TEXT DEFAULT '[]'"),
 ]
 
 MIGRATIONS_LOGS = [
