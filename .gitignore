@@ -8,6 +8,10 @@ SOUL/private/
 .superpowers/
 data/
 !data/knowledge/
+# Worktree isolation (task execution)
+data/worktrees/
+# Patch files (task retry)
+data/patches/
 __pycache__/
 *.pyc
 *.db
