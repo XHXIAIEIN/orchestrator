@@ -100,6 +100,7 @@ class SessionsMixin:
 
                 # Parse frontmatter
                 name, description, mtype = p.stem, "", "project"
+                l0, l1 = "", ""
                 if content.startswith("---"):
                     parts = content.split("---", 2)
                     if len(parts) >= 3:
@@ -111,6 +112,10 @@ class SessionsMixin:
                                 description = line.split(":", 1)[1].strip()
                             elif line.startswith("type:"):
                                 mtype = line.split(":", 1)[1].strip()
+                            elif line.startswith("l0:"):
+                                l0 = line.split(":", 1)[1].strip()
+                            elif line.startswith("l1:"):
+                                l1 = line.split(":", 1)[1].strip()
 
                 mtime = datetime.fromtimestamp(
                     p.stat().st_mtime, tz=timezone.utc
@@ -119,16 +124,16 @@ class SessionsMixin:
                 if fpath not in existing:
                     conn.execute(
                         "INSERT INTO memory_entries "
-                        "(path, name, description, type, content_hash, last_modified, synced_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (fpath, name, description, mtype, content_hash, mtime, now),
+                        "(path, name, description, type, content_hash, last_modified, synced_at, l0, l1) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (fpath, name, description, mtype, content_hash, mtime, now, l0, l1),
                     )
                     stats["added"] += 1
                 elif existing[fpath] != content_hash:
                     conn.execute(
                         "UPDATE memory_entries SET name=?, description=?, type=?, "
-                        "content_hash=?, last_modified=?, synced_at=? WHERE path=?",
-                        (name, description, mtype, content_hash, mtime, now, fpath),
+                        "content_hash=?, last_modified=?, synced_at=?, l0=?, l1=? WHERE path=?",
+                        (name, description, mtype, content_hash, mtime, now, l0, l1, fpath),
                     )
                     stats["updated"] += 1
 
@@ -164,6 +169,15 @@ class SessionsMixin:
                 (pattern, pattern),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def migrate_memory_l0_l1(self):
+        """Add l0, l1 columns to memory_entries if missing."""
+        with self._connect() as conn:
+            cols = [row[1] for row in conn.execute("PRAGMA table_info(memory_entries)").fetchall()]
+            if "l0" not in cols:
+                conn.execute("ALTER TABLE memory_entries ADD COLUMN l0 TEXT NOT NULL DEFAULT ''")
+                conn.execute("ALTER TABLE memory_entries ADD COLUMN l1 TEXT NOT NULL DEFAULT ''")
+                log.info("Migrated memory_entries: added l0, l1 columns")
 
     # ── Unified Experience Writer ──
 

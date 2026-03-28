@@ -217,7 +217,9 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     type TEXT NOT NULL DEFAULT 'project',
     content_hash TEXT NOT NULL DEFAULT '',
     last_modified TEXT NOT NULL,
-    synced_at TEXT NOT NULL
+    synced_at TEXT NOT NULL,
+    l0 TEXT NOT NULL DEFAULT '',
+    l1 TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_memory_type ON memory_entries(type);
 

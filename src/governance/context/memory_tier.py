@@ -33,11 +33,13 @@ while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_d
 
 @dataclass
 class MemoryEntry:
-    """单条记忆。"""
+    """单条记忆，支持 L0/L1/L2 三层加载（stolen from OpenViking）。"""
     name: str
-    content: str
-    tier: str       # "hot" | "extended"
-    tags: list = field(default_factory=list)  # 关联标签（部门/项目/话题）
+    content: str           # L2: full content
+    tier: str              # "hot" | "extended"
+    tags: list = field(default_factory=list)
+    l0: str = ""           # ~100 tokens: one-line summary for search ranking
+    l1: str = ""           # ~1000 tokens: structural overview for navigation
 
     @property
     def char_count(self) -> int:
@@ -46,6 +48,60 @@ class MemoryEntry:
     @property
     def token_estimate(self) -> int:
         return self.char_count // 4
+
+
+def _parse_frontmatter(content: str) -> dict:
+    """Parse YAML frontmatter, extracting l0, l1, name, description, type."""
+    if not content.startswith("---"):
+        return {}
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    meta = {}
+    for line in parts[1].strip().split("\n"):
+        if ":" in line:
+            key, val = line.split(":", 1)
+            meta[key.strip()] = val.strip()
+    return meta
+
+
+def _body_without_frontmatter(content: str) -> str:
+    """Return content after frontmatter block."""
+    if not content.startswith("---"):
+        return content
+    parts = content.split("---", 2)
+    return parts[2].strip() if len(parts) >= 3 else content
+
+
+def _generate_l0(name: str, content: str, meta: dict) -> str:
+    """Generate L0 (one-line summary) from description or first line."""
+    if meta.get("l0"):
+        return meta["l0"]
+    if meta.get("description"):
+        return meta["description"][:200]
+    # Fallback: first non-empty line of body
+    body = _body_without_frontmatter(content)
+    for line in body.split("\n"):
+        line = line.strip().lstrip("#").strip()
+        if line and len(line) > 10:
+            return line[:200]
+    return name
+
+
+def _generate_l1(content: str, meta: dict, max_chars: int = 4000) -> str:
+    """Generate L1 (structural overview) from l1 field or first ~1000 tokens."""
+    if meta.get("l1"):
+        return meta["l1"]
+    body = _body_without_frontmatter(content)
+    # Take first max_chars of body as L1 approximation
+    if len(body) <= max_chars:
+        return body
+    # Try to cut at a paragraph boundary
+    cut = body[:max_chars]
+    last_para = cut.rfind("\n\n")
+    if last_para > max_chars // 2:
+        return cut[:last_para].strip()
+    return cut.strip()
 
 
 # ── Extended Memory Tags ──
@@ -68,8 +124,14 @@ EXTENDED_TAG_RULES: dict[str, list[str]] = {
 }
 
 
-def load_extended_memory(tags: list[str], memory_dir: Path = None) -> list[MemoryEntry]:
-    """按标签加载 extended memory 文件。
+def load_extended_memory(tags: list[str], memory_dir: Path = None,
+                         load_level: int = 1) -> list[MemoryEntry]:
+    """按标签加载 extended memory 文件，支持 L0/L1/L2 三级加载。
+
+    load_level:
+      0 — L0: one-line summary only (~100 tokens each)
+      1 — L1: structural overview (~1000 tokens each)
+      2 — L2: full content
 
     扫描 memory 目录中的 .md 文件，读取 frontmatter 的 type 和 description，
     匹配标签后加载内容。
@@ -93,35 +155,68 @@ def load_extended_memory(tags: list[str], memory_dir: Path = None) -> list[Memor
         except Exception:
             continue
 
-        # 检查标签匹配
-        content_lower = content.lower()
+        # Parse frontmatter for L0/L1
+        meta = _parse_frontmatter(content)
         name_lower = md_file.stem.lower()
-        matched = False
+        l0 = _generate_l0(md_file.stem, content, meta)
+        l1 = _generate_l1(content, meta)
 
+        # Tag matching: check l0 + l1 + name (cheaper than full content)
+        search_text = f"{name_lower} {l0.lower()} {l1[:500].lower()}"
+        matched = False
         for tag in tags:
             tag_lower = tag.lower()
-            if tag_lower in name_lower or tag_lower in content_lower[:500]:
+            if tag_lower in name_lower or tag_lower in search_text:
                 matched = True
                 break
 
         if not matched:
             continue
 
-        # Token 预算控制
-        if total_chars + len(content) > EXTENDED_MAX_CHARS * 3:  # 最多 3 个 extended 文件
+        # Progressive loading based on load_level
+        if load_level == 0:
+            entry_content = l0
+        elif load_level == 1:
+            entry_content = l1
+        else:
+            entry_content = content  # L2: full content
+
+        # Token budget control
+        if total_chars + len(entry_content) > EXTENDED_MAX_CHARS * 3:
             break
 
         entries.append(MemoryEntry(
             name=md_file.stem,
-            content=content,
+            content=entry_content,
             tier="extended",
             tags=tags,
+            l0=l0,
+            l1=l1 if load_level >= 1 else "",
         ))
-        total_chars += len(content)
+        total_chars += len(entry_content)
 
     log.info(f"memory_tier: loaded {len(entries)} extended memories "
-             f"({total_chars} chars) for tags {tags}")
+             f"(L{load_level}, {total_chars} chars) for tags {tags}")
     return entries
+
+
+def escalate_to_l2(entry: MemoryEntry, memory_dir: Path = None) -> MemoryEntry:
+    """Load full L2 content for a previously L1-loaded entry."""
+    if memory_dir is None:
+        memory_dir = _find_memory_dir()
+    if not memory_dir:
+        return entry
+
+    file_path = memory_dir / f"{entry.name}.md"
+    if not file_path.exists():
+        return entry
+
+    try:
+        full_content = file_path.read_text(encoding="utf-8")
+        entry.content = full_content
+        return entry
+    except Exception:
+        return entry
 
 
 def resolve_tags_from_spec(spec: dict) -> list[str]:
@@ -152,7 +247,7 @@ def format_extended_for_prompt(entries: list[MemoryEntry]) -> str:
     if not entries:
         return ""
 
-    lines = ["## Extended Memory（按需加载）"]
+    lines = ["## Extended Memory（按需加载，L1 概览）"]
     for entry in entries:
         # 截断过长的内容
         content = entry.content
@@ -160,6 +255,8 @@ def format_extended_for_prompt(entries: list[MemoryEntry]) -> str:
             content = content[:EXTENDED_MAX_CHARS] + "\n\n(... 截断，完整内容见文件)"
 
         lines.append(f"\n### {entry.name}")
+        if entry.l0:
+            lines.append(f"*{entry.l0}*")
         lines.append(content)
 
     return "\n".join(lines)
