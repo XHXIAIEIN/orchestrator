@@ -5,6 +5,7 @@ from typing import Callable
 
 from src.storage.events_db import EventsDB
 from src.governance.pipeline.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
+from src.governance.department_fsm import fsm
 
 # Optional imports
 try:
@@ -79,14 +80,16 @@ class ReviewDispatcher:
         self.db = db
         self.on_execute = on_execute
 
-    def dispatch_quality_review(self, parent_id: int, parent_task: dict, task_cwd: str, project_name: str):
+    def dispatch_quality_review(self, parent_id: int, parent_task: dict, task_cwd: str, project_name: str, handoff=None):
         """工部完成任务后，自动创建刑部验收任务。跳过门下省审查（验收本身就是审查）。"""
         parent_spec = parent_task.get("spec", {})
         parent_action = parent_task.get("action", "")
-        if parent_spec.get("department") == "quality":
+        parent_dept = parent_spec.get("department", "")
+        if not fsm.can_review(parent_dept):
             return
 
-        artifact = _extract_artifact(parent_task)
+        # Use handoff.artifact if available, otherwise extract
+        artifact = handoff.artifact if handoff and handoff.artifact else _extract_artifact(parent_task)
         files_str = ", ".join(artifact["files_changed"]) if artifact["files_changed"] else "未检测到"
         commit_str = artifact["commit"] or "未检测到"
 
@@ -131,7 +134,7 @@ class ReviewDispatcher:
         observation += f"\n\n{review_cfg['instructions']}"
 
         review_spec = {
-            "department": "quality",
+            "department": fsm.get_next_department(parent_dept, "quality_review") or "quality",
             "intent": "quality_review" if review_tier == "quick" else "quality_regression",
             "project": project_name,
             "cwd": task_cwd,
@@ -159,8 +162,11 @@ class ReviewDispatcher:
 
     def dispatch_rework(self, review_task_id: int, review_task: dict,
                         task_cwd: str, project_name: str, review_output: str,
-                        eval_result=None):
+                        eval_result=None, handoff=None):
         """刑部验收失败，打回工部重做。追溯原始工部任务，携带结构化反馈。"""
+        # Log handoff if available
+        if handoff:
+            log.info(f"ReviewManager: rework handoff from {handoff.from_dept} → {handoff.to_dept} (count={handoff.rework_count})")
         parent_id = review_task.get("parent_task_id")
         if not parent_id:
             log.warning(f"ReviewManager: review #{review_task_id} has no parent_task_id, skip rework")
@@ -209,7 +215,7 @@ class ReviewDispatcher:
                 feedback = "\n".join(feedback_lines[-10:])
 
         rework_spec = {
-            "department": "engineering",
+            "department": fsm.get_next_department("quality", "rework") or "engineering",
             "intent": "code_fix",
             "project": project_name,
             "cwd": task_cwd,

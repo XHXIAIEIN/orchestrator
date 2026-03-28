@@ -12,6 +12,7 @@ from src.governance.policy.blueprint import load_blueprint
 from src.governance.pipeline.eval_loop import parse_eval_output, format_eval_for_rework, MAX_EVAL_ITERATIONS
 from src.governance.output_validator import validate_output
 from src.governance.review_dispatch import ReviewDispatcher, _extract_artifact
+from src.governance.task_handoff import TaskHandoff
 
 # Optional imports
 try:
@@ -314,14 +315,34 @@ class ReviewManager:
         if status == "done":
             if _has("quality_review"):
                 task["output"] = output
-                self._dispatch_quality_review(task_id, task, task_cwd, project_name)
+                handoff = TaskHandoff(
+                    from_dept=dept_key,
+                    to_dept="quality",
+                    handoff_type="quality_review",
+                    task_id=task_id,
+                    output=output,
+                    artifact=_extract_artifact(task),
+                    reason=f"{dept_key} task #{task_id} completed, dispatching quality review",
+                )
+                self.db.add_agent_event(task_id, "task_handoff", handoff.to_dict())
+                self._dispatch_quality_review(task_id, task, task_cwd, project_name, handoff=handoff)
             elif dept_key == "quality":
                 eval_result = parse_eval_output(output)
                 log.info(f"ReviewManager: EVAL task #{task_id}: passed={eval_result.passed} "
                          f"critical={eval_result.critical_count} high={eval_result.high_count}")
                 if eval_result.should_rework:
+                    handoff = TaskHandoff(
+                        from_dept="quality",
+                        to_dept="engineering",
+                        handoff_type="rework",
+                        task_id=task_id,
+                        output=output,
+                        reason=f"Quality review #{task_id} failed, rework needed",
+                        rework_count=spec.get("rework_count", 0),
+                    )
+                    self.db.add_agent_event(task_id, "task_handoff", handoff.to_dict())
                     self._dispatch_rework(task_id, task, task_cwd, project_name, output,
-                                          eval_result=eval_result)
+                                          eval_result=eval_result, handoff=handoff)
 
     def _visual_verify(self, task_id: int, task_cwd: str, spec: dict) -> str:
         """可选视觉验证：检查约定路径是否有截图，有则用 vision 模型验证。"""
@@ -356,13 +377,13 @@ class ReviewManager:
             log.warning(f"ReviewManager: visual verify failed: {e}")
             return ""
 
-    def _dispatch_quality_review(self, parent_id: int, parent_task: dict, task_cwd: str, project_name: str):
+    def _dispatch_quality_review(self, parent_id: int, parent_task: dict, task_cwd: str, project_name: str, handoff=None):
         """Delegate to ReviewDispatcher."""
-        self._dispatcher.dispatch_quality_review(parent_id, parent_task, task_cwd, project_name)
+        self._dispatcher.dispatch_quality_review(parent_id, parent_task, task_cwd, project_name, handoff=handoff)
 
     def _dispatch_rework(self, review_task_id: int, review_task: dict,
                          task_cwd: str, project_name: str, review_output: str,
-                         eval_result=None):
+                         eval_result=None, handoff=None):
         """Delegate to ReviewDispatcher."""
         self._dispatcher.dispatch_rework(review_task_id, review_task, task_cwd, project_name,
-                                         review_output, eval_result=eval_result)
+                                         review_output, eval_result=eval_result, handoff=handoff)
