@@ -11,6 +11,7 @@ from src.governance.policy.novelty_policy import check_novelty, get_recent_failu
 from src.governance.policy.deterministic_resolver import get_deterministic_fallback
 from src.governance.safety.agent_semaphore import AgentSemaphore
 from src.gateway.complexity import classify_complexity, should_skip_scrutiny
+from src.governance.department_fsm import fsm as dept_fsm
 
 try:
     from src.governance.pipeline.scout import ScoutMission, create_scout_spec, build_scout_prompt
@@ -34,7 +35,7 @@ def _needs_fact_expression_split(spec: dict) -> bool:
     department = spec.get("department", "")
 
     # Already specialized — don't re-split
-    if department in ("quality", "protocol"):
+    if department and dept_fsm.is_terminal(department, "approved"):
         return False
 
     return intent in _SPLIT_INTENTS
@@ -114,7 +115,7 @@ class TaskDispatcher:
         # Phase 1: Fact Layer — route to quality dept
         fact_spec = {
             **spec,
-            "department": "quality",
+            "department": dept_fsm.get_next_department(original_department, "fact_layer") or "quality",
             "phase": "fact_layer",
             "original_department": original_department,
             "extra_instructions": (
@@ -135,7 +136,7 @@ class TaskDispatcher:
         # Phase 2: Expression Layer — route to protocol dept
         expression_spec = {
             **spec,
-            "department": "protocol",
+            "department": dept_fsm.get_next_department("quality", "expression_layer") or "protocol",
             "phase": "expression_layer",
             "original_department": original_department,
             "fact_layer_task_id": fact_task_id,
