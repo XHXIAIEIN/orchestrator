@@ -17,6 +17,7 @@ from claude_agent_sdk import (
 from src.governance.context.prompts import find_git_bash
 from src.core.component_spec import build_component
 from src.governance.pipeline.phase_rollback import PipelineCheckpointer, RollbackDecision
+from src.governance.execution_response import ExecutionResponse
 
 # Event types — still needed for structured logging
 try:
@@ -114,8 +115,8 @@ class AgentSessionRunner:
 
     async def run(self, task_id: int, prompt: str, dept_prompt: str,
                   allowed_tools: list, task_cwd: str,
-                  max_turns: int = MAX_AGENT_TURNS) -> str:
-        """Run the Agent SDK session and stream events. Returns result text."""
+                  max_turns: int = MAX_AGENT_TURNS) -> ExecutionResponse:
+        """Run the Agent SDK session and stream events. Returns ExecutionResponse."""
         # Agent SDK 环境准备
         agent_env = {}
         if os.environ.get("CLAUDECODE"):
@@ -127,6 +128,11 @@ class AgentSessionRunner:
 
         result_text = ""
         turn = 0
+        total_cost_usd = 0.0
+        total_duration_ms = 0
+        num_turns = 0
+        stop_reason_final = ""
+        is_error_final = False
 
         # ── Resolve components via ComponentSpec ──
         detector = build_component(self._component_specs.get("stuck_detector"))
@@ -347,19 +353,45 @@ class AgentSessionRunner:
 
             elif isinstance(message, ResultMessage):
                 result_text = message.result or ""
+                num_turns = message.num_turns or 0
+                total_duration_ms = message.duration_ms or 0
+                total_cost_usd = message.total_cost_usd or 0.0
+                stop_reason_final = message.stop_reason or ""
+                is_error_final = message.is_error or False
                 result_data = (AgentResultEvent(
                     task_id=task_id, source=EventSource.AGENT,
                     status="failed" if message.is_error else "done",
-                    num_turns=message.num_turns or 0,
-                    duration_ms=message.duration_ms or 0,
-                    cost_usd=message.total_cost_usd or 0.0,
+                    num_turns=num_turns,
+                    duration_ms=total_duration_ms,
+                    cost_usd=total_cost_usd,
                 ).to_dict() if AgentTurnEvent else {
-                    "num_turns": message.num_turns,
-                    "duration_ms": message.duration_ms,
-                    "cost_usd": message.total_cost_usd,
-                    "stop_reason": message.stop_reason,
-                    "is_error": message.is_error,
+                    "num_turns": num_turns,
+                    "duration_ms": total_duration_ms,
+                    "cost_usd": total_cost_usd,
+                    "stop_reason": stop_reason_final,
+                    "is_error": is_error_final,
                 })
                 self._log_event(task_id, "agent_result", result_data)
 
-        return result_text
+        # ── Determine final status from result ──
+        if result_text.startswith("[STUCK:"):
+            final_status = "stuck"
+        elif result_text.startswith("[DOOM LOOP:"):
+            final_status = "doom_loop"
+        elif result_text.startswith("[SUPERVISOR:"):
+            final_status = "terminated"
+        elif is_error_final:
+            final_status = "failed"
+        else:
+            final_status = "done"
+
+        return ExecutionResponse(
+            status=final_status,
+            output=result_text,
+            turns_taken=num_turns or turn,
+            cost_usd=total_cost_usd,
+            duration_ms=total_duration_ms,
+            stop_reason=stop_reason_final,
+            is_error=is_error_final or final_status != "done",
+            tool_calls_count=tool_count,
+        )

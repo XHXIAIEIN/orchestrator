@@ -47,6 +47,7 @@ from src.gateway.complexity import classify_complexity, should_skip_scrutiny, ge
 
 from src.governance.executor_prompt import build_execution_prompt
 from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
+from src.governance.execution_response import ExecutionResponse
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
 
@@ -136,8 +137,8 @@ class ExecutionStrategy(ABC):
     async def execute(self, runner: "AgentSessionRunner", task_id: int,
                       prompt: str, dept_prompt: str, allowed_tools: list,
                       task_cwd: str, max_turns: int,
-                      timeout: float | None = None) -> str:
-        """Execute a task and return the result text.
+                      timeout: float | None = None) -> ExecutionResponse:
+        """Execute a task and return structured ExecutionResponse.
 
         Args:
             timeout: Per-task timeout override. Strategies may ignore or enforce it.
@@ -163,12 +164,12 @@ class DebugStrategy(ExecutionStrategy):
     async def execute(self, runner: "AgentSessionRunner", task_id: int,
                       prompt: str, dept_prompt: str, allowed_tools: list,
                       task_cwd: str, max_turns: int,
-                      timeout: float | None = None) -> str:
+                      timeout: float | None = None) -> ExecutionResponse:
         result = await runner.run(task_id, prompt, dept_prompt, allowed_tools,
                                   task_cwd, max_turns=max_turns)
         self._last_state = {
             "task_id": task_id,
-            "result": result,
+            "result": result.output,
             "events": getattr(runner, "_events", []),
         }
         return result
@@ -195,7 +196,7 @@ class ProductionStrategy(ExecutionStrategy):
     async def execute(self, runner: "AgentSessionRunner", task_id: int,
                       prompt: str, dept_prompt: str, allowed_tools: list,
                       task_cwd: str, max_turns: int,
-                      timeout: float | None = None) -> str:
+                      timeout: float | None = None) -> ExecutionResponse:
         effective_timeout = timeout or self._default_timeout
         try:
             result = await asyncio.wait_for(
@@ -205,9 +206,17 @@ class ProductionStrategy(ExecutionStrategy):
             )
             return result
         except asyncio.TimeoutError:
-            return f"[WATCHDOG: execution timed out after {effective_timeout}s]"
+            return ExecutionResponse(
+                status="timeout",
+                output=f"[WATCHDOG: execution timed out after {effective_timeout}s]",
+                is_error=True,
+            )
         except Exception as e:
-            return f"[ERROR: {e}]"
+            return ExecutionResponse(
+                status="failed",
+                output=f"[ERROR: {e}]",
+                is_error=True,
+            )
 
     def get_mode(self) -> str:
         return "production"
@@ -335,8 +344,8 @@ class TaskExecutor:
     async def _run_agent_session(self, task_id: int, prompt: str, dept_prompt: str,
                                   allowed_tools: list, task_cwd: str,
                                   max_turns: int = MAX_AGENT_TURNS,
-                                  timeout: float | None = None) -> str:
-        """Run the Agent SDK session via the active ExecutionStrategy. Returns result text."""
+                                  timeout: float | None = None) -> ExecutionResponse:
+        """Run the Agent SDK session via the active ExecutionStrategy. Returns ExecutionResponse."""
         return await self._strategy.execute(
             self._session_runner, task_id, prompt, dept_prompt,
             allowed_tools, task_cwd, max_turns, timeout=timeout,
@@ -560,9 +569,11 @@ class TaskExecutor:
                         task_id, prompt, dept_prompt, allowed_tools, task_cwd,
                         max_turns=task_max_turns, timeout=task_timeout,
                     )
-                output = anyio.run(_agent_coro)
-                output = output[:2000] if output else "(no output)"
-                status = "done" if output and output != "(no output)" else "failed"
+                response = anyio.run(_agent_coro)
+                output = response.output[:2000] if response.output else "(no output)"
+                status = "done" if response.status == "done" else "failed"
+                if hasattr(response, 'to_dict'):
+                    self._log_agent_event(task_id, "execution_response", response.to_dict())
             except CostLimitExceededError as e:
                 output = f"cost limit exceeded: {e}"
                 log.warning(f"TaskExecutor: task #{task_id} attempt #{attempt}: {e}")
