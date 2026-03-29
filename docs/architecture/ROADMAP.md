@@ -33,12 +33,12 @@
 | 16 | ExecutionStrategy (debug/production) | O7 | Agent Lightning (R8) | ✅ | `governance/executor.py` |
 | 17 | Shared Memory IPC (zero-copy frames) | P12 | Carbonyl (R9) | ✅ | `desktop_use/screen.py` |
 
-## Sprint 3: Strategic Reserve（长期建设）
+## Sprint 3: Strategic Reserve — ✅ ALL COMPLETE (orchestrator items; cvui items remain)
 
 | # | Pattern | ID | Source | Status | Target |
 |---|---------|-----|--------|--------|--------|
 | 18 | Three-Layer Memory (Semantic+Episode+Scratch) | I11 | OpenAkita (R4) | ✅ | `governance/context/memory_tier.py` |
-| 19 | APO Automatic Prompt Optimization | I6 | Agent Lightning (R8) | 🔲 | `governance/policy_advisor.py` |
+| 19 | APO Automatic Prompt Optimization | I6 | Agent Lightning (R8) | ✅ | `governance/apo.py` |
 | 20 | LLM Proxy Transparent Layer | O8 | Agent Lightning (R8) | ✅ | `core/llm_proxy.py` |
 | 21 | VLM Zone Stage (semantic first-cut) | V1 | Gemini+OmniParser (R7) | 🔲 | cvui |
 | 22 | CNN ClassifyStage | V2 | UIED (R7) | 🔲 | cvui |
@@ -52,9 +52,9 @@
 | 30 | Format Converter (to_coco/yolo) | V4 | labelU (R7) | 🔲 | cvui |
 | 31 | LoDPI Adaptive Downscaling | P11 | Carbonyl (R9) | 🔲 | cvui |
 | 32 | Sliding Window Auto-Degradation | I12 | OpenAkita (R4) | ✅ | `core/llm_router.py` |
-| 33 | A/B Testing Framework | I14 | Firecrawl (R5) | 🔲 | new module |
-| 34 | Text Tool Call Recovery (13+ formats) | D10 | OpenFang (R6) | 🔲 | `core/llm_router.py` |
-| 35 | Deep Research Multi-Round Loop | D8 | Firecrawl (R5) | 🔲 | new module |
+| 33 | A/B Testing Framework | I14 | Firecrawl (R5) | ✅ | `core/ab_testing.py` |
+| 34 | Text Tool Call Recovery (6 formats) | D10 | OpenFang (R6) | ✅ | `core/tool_call_recovery.py` |
+| 35 | Deep Research Multi-Round Loop | D8 | Firecrawl (R5) | ✅ | `core/deep_research.py` |
 
 ## Plan Files — ALL IMPLEMENTED
 
@@ -100,13 +100,9 @@ All 12 plan files under `docs/superpowers/plans/` have been fully implemented:
 
 ## Remaining Work
 
-**Orchestrator 本体：**
-- 🔲 APO Automatic Prompt Optimization (#19)
-- 🔲 A/B Testing Framework (#33)
-- 🔲 Text Tool Call Recovery (#34)
-- 🔲 Deep Research Multi-Round Loop (#35)
+**Orchestrator 本体：** Sprint 1-3 全部 35 项已完成 ✅
 
-**cvui 包（独立仓库）：**
+**cvui 包（独立仓库 `D:\Users\Administrator\Documents\GitHub\cvui`）：**
 - 🔲 V1: VLM Zone Stage
 - 🔲 V2: CNN ClassifyStage
 - 🔲 V4: Format Converter (COCO/YOLO)

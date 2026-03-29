@@ -244,12 +244,11 @@ These patterns appeared across multiple rounds and are consolidated above:
 |----|---------|-------------|
 | V1 | VLM Zone Stage (cvui) | Medium |
 
-### P1 — Near Term
+### P1 — Near Term (all cvui)
 
 | ID | Pattern | Est. Effort |
 |----|---------|-------------|
 | P11 | LoDPI Adaptive Downscaling (cvui) | Low |
-| I6 | APO Automatic Prompt Optimization | High |
 | V2 | CNN ClassifyStage (cvui) | Medium |
 | V4 | Format Converter to_coco/yolo (cvui) | Low |
 | V7 | Image Tiling (cvui) | Medium |
