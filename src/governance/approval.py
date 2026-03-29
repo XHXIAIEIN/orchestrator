@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from src.governance.trust_ladder import TrustLadder
+
 log = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 300  # 5 minutes
@@ -53,6 +55,7 @@ class ApprovalGateway:
         self._lock = threading.Lock()
         self._yolo = False  # /yolo mode: auto-approve everything
         self._yolo_by: Optional[str] = None
+        self._trust_ladder = TrustLadder()
 
     def set_yolo(self, enabled: bool, source: str = "unknown"):
         """Toggle YOLO mode — auto-approve all requests without asking."""
@@ -92,6 +95,12 @@ class ApprovalGateway:
             log.info(f"YOLO: auto-approved {task_id}")
             return "approve"
 
+        # Trust Ladder: auto-approve previously trusted operations
+        operation_key = f"auth_level_{authority_level}"
+        if self._trust_ladder.auto_approve_if_trusted(operation_key, description):
+            log.info(f"trust_ladder: auto-approved {task_id} (previously trusted)")
+            return "approve"
+
         req = ApprovalRequest(
             task_id=task_id,
             description=description,
@@ -118,6 +127,11 @@ class ApprovalGateway:
         finally:
             with self._lock:
                 self._pending.pop(task_id, None)
+
+        # Record trust on approval
+        if req.decision == "approve":
+            operation_key = f"auth_level_{authority_level}"
+            self._trust_ladder.record_approval(operation_key, description)
 
         decision = req.decision or "timeout"
         log.info(f"approval for {task_id}: {decision} (by {req.decided_by})")
