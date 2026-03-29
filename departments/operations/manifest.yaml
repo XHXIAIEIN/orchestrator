@@ -20,6 +20,12 @@ tags:
   - service
   - restart
 
+# ── Dimension Mapping (偷自 Clawvard skill-dimension 模式) ──
+dimensions:
+  primary: operations
+  secondary: [execution]
+  boost: "+8"
+
 intents:
   ops_repair:
     description: "采集器/服务修复"

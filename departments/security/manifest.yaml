@@ -19,6 +19,12 @@ tags:
   - threat
   - leak
 
+# ── Dimension Mapping (偷自 Clawvard skill-dimension 模式) ──
+dimensions:
+  primary: security
+  secondary: [quality]
+  boost: "+8"
+
 intents:
   security_scan:
     description: "安全扫描、依赖审计"

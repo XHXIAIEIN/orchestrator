@@ -17,6 +17,12 @@ tags:
   - coverage
   - verify
 
+# ── Dimension Mapping (偷自 Clawvard skill-dimension 模式) ──
+dimensions:
+  primary: quality
+  secondary: [execution, security]
+  boost: "+10"
+
 intents:
   quality_review:
     description: "Code review、测试执行"

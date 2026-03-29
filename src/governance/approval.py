@@ -16,6 +16,8 @@ Usage in executor:
         ... proceed with elevated authority ...
 """
 import asyncio
+import hashlib
+import json
 import logging
 import threading
 from dataclasses import dataclass
@@ -28,6 +30,9 @@ log = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 300  # 5 minutes
 
+# Module-level hash chain state — tracks last approval step hash
+_last_approval_hash: str = ""
+
 
 @dataclass
 class ApprovalRequest:
@@ -38,6 +43,21 @@ class ApprovalRequest:
     decision: Optional[str] = None  # "approve" / "deny" / "timeout"
     decided_by: Optional[str] = None  # "claw" / "telegram" / "wechat" / "api"
     decided_at: Optional[str] = None
+    step_hash: str = ""       # SHA-256(prev_step_hash + canonical request)
+    prev_step_hash: str = ""  # Previous step's hash, empty = chain start
+
+
+def _hash_approval_step(request: "ApprovalRequest", prev_hash: str = "") -> str:
+    """Compute step hash for approval chain integrity."""
+    entry = {
+        "task_id": request.task_id,
+        "description": request.description,
+        "authority_level": request.authority_level,
+        "requested_at": request.requested_at,
+    }
+    canonical = json.dumps(entry, sort_keys=True, ensure_ascii=False)
+    payload = f"{prev_hash}:{canonical}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class ApprovalGateway:
@@ -101,12 +121,16 @@ class ApprovalGateway:
             log.info(f"trust_ladder: auto-approved {task_id} (previously trusted)")
             return "approve"
 
+        global _last_approval_hash
+        prev_hash = _last_approval_hash
         req = ApprovalRequest(
             task_id=task_id,
             description=description,
             authority_level=authority_level,
             requested_at=datetime.now(timezone.utc).isoformat(),
+            prev_step_hash=prev_hash,
         )
+        req.step_hash = _hash_approval_step(req, prev_hash)
 
         event = asyncio.Event()
         with self._lock:
@@ -134,6 +158,7 @@ class ApprovalGateway:
             self._trust_ladder.record_approval(operation_key, description)
 
         decision = req.decision or "timeout"
+        _last_approval_hash = req.step_hash
         log.info(f"approval for {task_id}: {decision} (by {req.decided_by})")
         return decision
 

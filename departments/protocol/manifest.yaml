@@ -18,6 +18,12 @@ tags:
   - abandoned
   - stale
 
+# ── Dimension Mapping (偷自 Clawvard skill-dimension 模式) ──
+dimensions:
+  primary: attention
+  secondary: [quality]
+  boost: "+6"
+
 intents:
   audit_attention:
     description: "注意力审计、TODO 扫描"

@@ -18,6 +18,12 @@ tags:
   - stats
   - evaluation
 
+# ── Dimension Mapping (偷自 Clawvard skill-dimension 模式) ──
+dimensions:
+  primary: evaluation
+  secondary: [attention]
+  boost: "+7"
+
 intents:
   perf_report:
     description: "绩效报告、趋势分析"

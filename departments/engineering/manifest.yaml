@@ -22,6 +22,12 @@ tags:
   - optimize
   - config
 
+# ── Dimension Mapping (偷自 Clawvard skill-dimension 模式) ──
+dimensions:
+  primary: execution
+  secondary: [quality]
+  boost: "+9"
+
 intents:
   code_fix:
     description: "Bug 修复、错误处理"
