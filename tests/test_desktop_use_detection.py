@@ -433,16 +433,19 @@ class TestPresetPipelines:
 
     def test_full_pipeline_default(self):
         p = full_pipeline()
-        assert len(p.stages) == 10
+        base_count = len(p.stages)
+        assert base_count >= 10  # grows as cvui adds stages
 
     def test_full_pipeline_with_omniparser(self):
+        p_base = full_pipeline()
         p = full_pipeline(omniparser_path="/some/path")
-        assert len(p.stages) == 11
+        assert len(p.stages) == len(p_base.stages) + 1
         assert any(isinstance(s, OmniParserStage) for s in p.stages)
 
     def test_full_pipeline_with_grounding(self):
+        p_base = full_pipeline()
         p = full_pipeline(grounding_query="search box")
-        assert len(p.stages) == 11
+        assert len(p.stages) == len(p_base.stages) + 1
         assert any(isinstance(s, GroundingDINOStage) for s in p.stages)
 
     def test_grounding_pipeline(self):

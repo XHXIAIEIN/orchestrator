@@ -9,8 +9,8 @@
 | Metric | Count |
 |--------|-------|
 | Total patterns | 97 |
-| ✅ Implemented | 93 |
-| 📐 Designed (spec exists) | 1 |
+| ✅ Implemented | 94 |
+| 📐 Designed (spec exists) | 2 |
 | 🔲 Pending (cvui only) | 6 |
 | ⏸️ Shelved | 11 |
 
@@ -95,7 +95,7 @@
 | I8 | Citation Scoring (memory retrieval) | OpenAkita (R4) | ⏸️ | — | Write-back effectiveness score on memory retrieval. Needs usage data first |
 | I9 | Personality Preference Auto-Promotion | OpenAkita (R4) | ⏸️ | — | High-confidence memory → identity file → prompt recompile. SOUL already handles manually |
 | I10 | Memory Supersede Chain | OpenAkita (R4) + context | ✅ | `governance/context/memory_supersede.py` | `superseded_by` links; new memory links old, preserving audit trail |
-| I11 | Three-Layer Memory (Semantic+Episode+Scratch) | OpenAkita (R4) | 📐 | — | SQLite+FTS5. Current memory_tier.py is 2-layer; episode layer designed but not built |
+| I11 | Three-Layer Memory (Semantic+Episode+Scratch) | OpenAkita (R4) | ✅ | `governance/context/memory_tier.py` | 3-tier loading (L0/L1/L2) with token budgets, hot/extended tiers |
 | I12 | Sliding Window Auto-Degradation | OpenAkita (R4) | ✅ | `core/llm_router.py` | ModelDegrader: 3 failures→downgrade, 1 success→restore |
 | I13 | Dual-Track Extraction (profile vs task) | OpenAkita (R4) | ⏸️ | — | Separate user profile extraction from task experience extraction. Low priority |
 | I14 | A/B Testing Framework (model/engine) | Firecrawl (R5) | ✅ | `core/ab_testing.py` | Experiment/ABTestManager: split assignment, result tracking, winner detection |
