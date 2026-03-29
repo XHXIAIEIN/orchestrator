@@ -60,3 +60,8 @@ preflight:
     required: true
   - check: skill_exists
     required: true
+
+# ── Blast Radius (偷自 evolver GEP constraint) ──
+blast_radius:
+  max_files_per_run: 8
+  forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]

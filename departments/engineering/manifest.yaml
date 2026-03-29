@@ -83,3 +83,8 @@ preflight:
     target: "100"
     required: false
     message: "Need at least 100MB free for code changes"
+
+# ── Blast Radius (偷自 evolver GEP constraint) ──
+blast_radius:
+  max_files_per_run: 15
+  forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]
