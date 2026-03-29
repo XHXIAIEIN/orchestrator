@@ -18,6 +18,7 @@ from src.governance.context.prompts import find_git_bash
 from src.core.component_spec import build_component
 from src.governance.pipeline.phase_rollback import PipelineCheckpointer, RollbackDecision
 from src.governance.execution_response import ExecutionResponse
+from src.governance.freeze_breaker import FreezeBreaker
 
 # Event types — still needed for structured logging
 try:
@@ -141,6 +142,7 @@ class AgentSessionRunner:
         budget = build_component(self._component_specs.get("context_budget"))
         check_doom_loop = build_component(self._component_specs.get("doom_loop_checker"))
         checkpointer = PipelineCheckpointer(task_id=task_id)
+        freeze_breaker = FreezeBreaker(idle_threshold=5)
         tool_count = 0
         async for message in query(
             prompt=prompt,
@@ -339,6 +341,21 @@ class AgentSessionRunner:
                             elif intervention.level >= InterventionLevel.NUDGE:
                                 log.info(f"Supervisor NUDGE: task #{task_id} — {intervention.message}")
 
+                # ── Auto-Freeze: idle spin detection (stolen from OpenAkita) ──
+                freeze_breaker.record_turn(
+                    tool_calls=len(tool_calls),
+                    text_len=sum(len(tp) for tp in text_parts),
+                )
+                if freeze_breaker.should_freeze():
+                    log.warning(f"FreezeBreaker: task #{task_id} frozen — {freeze_breaker.reason}")
+                    self._log_event(task_id, "freeze_breaker", {
+                        "reason": freeze_breaker.reason,
+                        "turn": turn,
+                        **freeze_breaker.get_status(),
+                    })
+                    result_text = f"[FROZEN: {freeze_breaker.reason}] Agent idle-spinning after {turn} turns"
+                    break
+
             elif isinstance(message, TaskProgressMessage):
                 self._log_event(task_id, "agent_progress", {
                     "description": message.description[:200],
@@ -380,6 +397,8 @@ class AgentSessionRunner:
             final_status = "doom_loop"
         elif result_text.startswith("[SUPERVISOR:"):
             final_status = "terminated"
+        elif result_text.startswith("[FROZEN:"):
+            final_status = "frozen"
         elif is_error_final:
             final_status = "failed"
         else:
