@@ -8,6 +8,8 @@ import hashlib
 import logging
 import mimetypes
 import os
+import re
+import subprocess
 import urllib.request
 from dataclasses import dataclass
 from enum import IntEnum
@@ -95,6 +97,128 @@ def _ext_from_mime(mime: str) -> str:
         if mime.startswith(prefix):
             return ext
     return ".bin"
+
+
+# ── Document text extraction (stolen from MarkItDown patterns) ──────────
+
+# Pattern C: lazy dependency detection — None = untested, True/False = cached
+_markitdown_available: bool | None = None
+
+# MIME types we can extract text from
+_EXTRACTABLE_MIMES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",   # docx
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation", # pptx
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",         # xlsx
+    "application/vnd.ms-excel",                                                   # xls
+    "application/epub+zip",
+    "text/html",
+    "text/csv",
+}
+
+# Also match by extension when MIME is generic "application/octet-stream"
+_EXTRACTABLE_EXTS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".epub", ".html", ".htm", ".csv"}
+
+EXTRACT_TIMEOUT = 30  # seconds
+EXTRACT_MAX_CHARS = 200_000  # ~50K tokens, safe for context budgets
+
+
+def _check_markitdown() -> bool:
+    """Lazy check: is uvx markitdown available?"""
+    global _markitdown_available
+    if _markitdown_available is not None:
+        return _markitdown_available
+    try:
+        subprocess.run(
+            ["uvx", "markitdown", "--help"],
+            capture_output=True, timeout=15,
+        )
+        _markitdown_available = True
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        _markitdown_available = False
+        log.warning("markitdown not available (uvx markitdown --help failed), "
+                    "document text extraction disabled")
+    return _markitdown_available
+
+
+def _is_extractable(path: str, mime: str) -> bool:
+    """Check if this file type is worth attempting extraction."""
+    if mime and any(mime.startswith(m) for m in _EXTRACTABLE_MIMES):
+        return True
+    ext = Path(path).suffix.lower()
+    return ext in _EXTRACTABLE_EXTS
+
+
+def _postprocess_markdown(text: str) -> str:
+    """Clean markitdown output for LLM consumption."""
+    # 1. Compress 3+ consecutive blank lines → 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # 2. Strip trailing whitespace per line
+    text = "\n".join(line.rstrip() for line in text.split("\n"))
+
+    # 3. Remove repeated headers/footers (same line appearing 5+ times)
+    lines = text.split("\n")
+    if len(lines) > 30:
+        from collections import Counter
+        counts = Counter(line for line in lines if len(line.strip()) > 3)
+        repeats = {line for line, c in counts.items()
+                   if c >= 5 and not line.startswith("|") and line.strip() != "---"}
+        if repeats:
+            seen = set()
+            filtered = []
+            for line in lines:
+                if line in repeats:
+                    if line not in seen:
+                        seen.add(line)
+                        filtered.append(line)
+                    # else: skip duplicate
+                else:
+                    filtered.append(line)
+            text = "\n".join(filtered)
+
+    # 4. Truncate if over budget
+    if len(text) > EXTRACT_MAX_CHARS:
+        text = text[:EXTRACT_MAX_CHARS] + f"\n\n[... truncated, original ~{len(text)} chars]"
+
+    return text.strip()
+
+
+def extract_document_text(path: str, mime: str = "") -> str:
+    """Extract text from a document file using markitdown.
+
+    Returns extracted markdown text, or empty string on failure.
+    Never raises — failures are logged and gracefully degraded.
+    """
+    if not _is_extractable(path, mime):
+        return ""
+    if not Path(path).exists():
+        return ""
+    if not _check_markitdown():
+        return ""
+
+    try:
+        result = subprocess.run(
+            ["uvx", "markitdown", path],
+            capture_output=True, text=True,
+            timeout=EXTRACT_TIMEOUT,
+        )
+        if result.returncode != 0:
+            log.warning(f"markitdown failed for {path}: {result.stderr[:200]}")
+            return ""
+
+        raw = result.stdout
+        if not raw or not raw.strip():
+            return ""
+
+        return _postprocess_markdown(raw)
+
+    except subprocess.TimeoutExpired:
+        log.warning(f"markitdown timed out for {path} ({EXTRACT_TIMEOUT}s)")
+        return ""
+    except Exception as e:
+        log.warning(f"document extraction failed for {path}: {e}")
+        return ""
 
 
 def _ext_from_url(url: str) -> str:

@@ -77,13 +77,17 @@ def do_chat(chat_id: str, text: str, original_text: str,
 
         db_path = _DEFAULT_DB
         db_content = original_text if original_text else text
-        # Collect media paths for DB storage
+        # Collect media paths + extracted document text for DB/context
         _media_paths = []
+        _doc_texts = []  # (filename, text) pairs from markitdown extraction
         if media:
             from src.channels.media import MediaType
             for att in media:
                 if att.local_path:
                     _media_paths.append(att.local_path)
+                # Collect extracted document text (set by handler via markitdown)
+                if att.media_type == MediaType.FILE and att.text:
+                    _doc_texts.append((att.file_name or "document", att.text))
             if not db_content:
                 n_img = sum(1 for a in media if a.media_type == MediaType.IMAGE)
                 n_other = len(media) - n_img
@@ -95,6 +99,22 @@ def do_chat(chat_id: str, text: str, original_text: str,
                      chat_client=channel_source, media_paths=_media_paths or None)
 
         messages = build_context(db_path, chat_id)
+
+        # ── Inject extracted document text into context ──
+        if _doc_texts:
+            doc_parts = []
+            for fname, dtxt in _doc_texts:
+                doc_parts.append(f"📄 {fname}:\n```\n{dtxt[:100000]}\n```")
+            doc_content = "\n\n".join(doc_parts)
+            # Append to last user message so Claude sees the document content
+            if messages and messages[-1]["role"] == "user":
+                last = messages[-1]
+                if isinstance(last["content"], str):
+                    last["content"] += "\n\n" + doc_content
+                elif isinstance(last["content"], list):
+                    last["content"].append({"type": "text", "text": doc_content})
+            else:
+                messages.append({"role": "user", "content": doc_content})
 
         # ── Intent classification → model routing ──
         has_images = bool(_media_paths and any(

@@ -7,7 +7,9 @@ import urllib.request
 
 from src.channels import config as ch_cfg
 from src.channels import chat as chat_engine
-from src.channels.media import MediaAttachment, MediaType, download_url
+from src.channels.media import (
+    MediaAttachment, MediaType, download_url, extract_document_text,
+)
 
 log = logging.getLogger(__name__)
 
@@ -131,10 +133,17 @@ class TelegramHandler:
             if not url:
                 return None
             local_path = download_url(url, "inbound")
-            return MediaAttachment(
+            att = MediaAttachment(
                 media_type=media_type, local_path=local_path,
                 mime_type=mime, duration_ms=duration_ms,
             )
+            # Auto-extract text from documents (parallel to voice transcription)
+            if media_type == MediaType.FILE and not att.text:
+                extracted = extract_document_text(local_path, mime)
+                if extracted:
+                    att.text = extracted
+                    log.info(f"telegram: extracted {len(extracted)} chars from document")
+            return att
         except Exception as e:
             log.warning(f"telegram: file download failed: {e}")
             return None
@@ -149,7 +158,11 @@ class TelegramHandler:
             elif a.media_type == MediaType.VOICE:
                 descs.append(f"[用户发送了一条语音{f': {a.text}' if a.text else ''}]")
             elif a.media_type == MediaType.FILE:
-                descs.append(f"[用户发送了文件: {a.file_name or '未知'}]")
+                label = a.file_name or '未知'
+                if a.text:
+                    descs.append(f"[用户发送了文件: {label}，已提取内容]")
+                else:
+                    descs.append(f"[用户发送了文件: {label}]")
             elif a.media_type == MediaType.VIDEO:
                 descs.append("[用户发送了一段视频]")
         return " ".join(descs) if descs else "[用户发送了媒体消息]"

@@ -47,14 +47,16 @@ def build_context(db_path: str, chat_id: str) -> list[dict]:
                     from pathlib import Path
                     pp = Path(p)
                     if pp.exists() and pp.stat().st_size < 5 * 1024 * 1024:  # <5MB
-                        b64 = b64mod.b64encode(pp.read_bytes()).decode()
-                        mime = "image/jpeg"
-                        if p.endswith(".png"): mime = "image/png"
-                        elif p.endswith(".webp"): mime = "image/webp"
-                        content_parts.append({
-                            "type": "image",
-                            "source": {"type": "base64", "media_type": mime, "data": b64},
-                        })
+                        suffix = pp.suffix.lower()
+                        if suffix in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+                            b64 = b64mod.b64encode(pp.read_bytes()).decode()
+                            mime = "image/jpeg"
+                            if suffix == ".png": mime = "image/png"
+                            elif suffix == ".webp": mime = "image/webp"
+                            content_parts.append({
+                                "type": "image",
+                                "source": {"type": "base64", "media_type": mime, "data": b64},
+                            })
                 except Exception:
                     pass
             content_parts.append({"type": "text", "text": m["content"]})
