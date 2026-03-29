@@ -1,7 +1,7 @@
 # tests/gateway/test_intent_rules.py
 """Tests for intent rule engine — pattern-based intent resolution without LLM."""
 import pytest
-from src.gateway.intent_rules import try_rule_match
+from src.gateway.intent_rules import try_rule_match, get_stats, reset_stats
 
 
 class TestRuleMatching:
@@ -81,3 +81,35 @@ class TestRuleMatching:
         result = try_rule_match("修复登录页面的样式问题")
         assert result is not None
         assert result.priority == "medium"
+
+
+class TestRuleStats:
+    """Rule engine should track hit/miss for tuning."""
+
+    def setup_method(self):
+        reset_stats()
+
+    def test_hit_increments(self):
+        try_rule_match("修复 bug")
+        stats = get_stats()
+        assert stats["hits"] == 1
+        assert stats["misses"] == 0
+
+    def test_miss_increments(self):
+        try_rule_match("帮我看看这个")
+        stats = get_stats()
+        assert stats["hits"] == 0
+        assert stats["misses"] == 1
+
+    def test_ambiguous_counted_as_miss(self):
+        try_rule_match("修复安全漏洞并部署")
+        stats = get_stats()
+        assert stats["hits"] == 0
+        assert stats["ambiguous"] == 1
+
+    def test_hit_rate_calculation(self):
+        try_rule_match("修复 bug")
+        try_rule_match("跑测试")
+        try_rule_match("帮我看看")
+        stats = get_stats()
+        assert stats["hit_rate"] == pytest.approx(2 / 3, abs=0.01)

@@ -65,7 +65,7 @@ _DEPARTMENT_RULES: dict[str, list[tuple[re.Pattern, str, str]]] = {
 }
 
 
-def try_rule_match(text: str) -> Optional[TaskIntent]:
+def try_rule_match(text: str):
     """Try to resolve intent from rules. Returns None if ambiguous or no match.
 
     Conflict detection: if keywords match multiple departments, return None
@@ -73,6 +73,7 @@ def try_rule_match(text: str) -> Optional[TaskIntent]:
     """
     text = text.strip()
     if not text:
+        _stats["misses"] += 1
         return None
 
     matched_departments: list[tuple[str, str, str]] = []  # (dept, intent, mode)
@@ -85,10 +86,12 @@ def try_rule_match(text: str) -> Optional[TaskIntent]:
 
     # No match → fall through to LLM
     if len(matched_departments) == 0:
+        _stats["misses"] += 1
         return None
 
     # Multiple departments matched → ambiguous, let LLM decide
     if len(matched_departments) > 1:
+        _stats["ambiguous"] += 1
         depts = [d[0] for d in matched_departments]
         log.debug("intent_rules: ambiguous match across %s, falling through to LLM", depts)
         return None
@@ -96,6 +99,7 @@ def try_rule_match(text: str) -> Optional[TaskIntent]:
     dept, intent, mode = matched_departments[0]
     priority = _detect_priority(text)
 
+    _stats["hits"] += 1
     log.info("intent_rules: rule match → %s/%s (mode=%s, priority=%s)", dept, intent, mode, priority)
 
     from src.gateway.intent import TaskIntent
@@ -109,3 +113,25 @@ def try_rule_match(text: str) -> Optional[TaskIntent]:
         expected="",
         needs_clarification=False,
     )
+
+
+# ── Stats tracking ──
+
+_stats = {"hits": 0, "misses": 0, "ambiguous": 0}
+
+
+def get_stats() -> dict:
+    """Return rule engine hit/miss stats."""
+    total = _stats["hits"] + _stats["misses"] + _stats["ambiguous"]
+    return {
+        **_stats,
+        "total": total,
+        "hit_rate": _stats["hits"] / total if total > 0 else 0.0,
+    }
+
+
+def reset_stats():
+    """Reset stats counters (for testing)."""
+    _stats["hits"] = 0
+    _stats["misses"] = 0
+    _stats["ambiguous"] = 0
