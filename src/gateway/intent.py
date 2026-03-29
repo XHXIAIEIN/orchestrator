@@ -103,6 +103,18 @@ class TaskIntent:
         }
 
 
+# ── Model Fallback Chain (stolen from OpenFang) ──
+_INTENT_FALLBACK_MODELS = None  # lazy init
+
+def _get_fallback_models() -> list[str]:
+    """Build ordered list of models for intent parsing fallback."""
+    global _INTENT_FALLBACK_MODELS
+    if _INTENT_FALLBACK_MODELS is None:
+        from src.core.llm_models import MODEL_HAIKU, MODEL_SONNET
+        _INTENT_FALLBACK_MODELS = [MODEL_HAIKU, MODEL_SONNET]
+    return _INTENT_FALLBACK_MODELS
+
+
 class IntentGateway:
     """Orchestrator 的前台。理解用户说什么，翻译成 Governor 的语言。"""
 
@@ -120,11 +132,30 @@ class IntentGateway:
         return self._validate(raw)
 
     def _call_llm(self, prompt: str) -> dict:
-        """调用 LLM 解析意图。用最便宜的模型。"""
-        router = get_router()
-        response = router.generate(prompt, task_type="scrutiny", max_tokens=512)
+        """Call LLM to parse intent, with model fallback chain."""
+        from src.gateway.model_fallback import ModelFallbackChain
+        from src.core.llm_backends import claude_generate
 
-        # 提取 JSON（用正则避免多 code block 截断）
+        chain = ModelFallbackChain(
+            models=_get_fallback_models(),
+            min_response_len=20,  # valid JSON is at least ~20 chars
+        )
+
+        def _call(prompt: str, model: str) -> str:
+            return claude_generate(prompt, model, timeout=30, max_tokens=512)
+
+        try:
+            response = chain.call(prompt, _call)
+        except RuntimeError:
+            log.warning("intent: all fallback models failed")
+            return {
+                "action": "", "department": "", "cognitive_mode": "react",
+                "priority": "medium", "problem": "", "expected": "",
+                "needs_clarification": True,
+                "clarification_question": "LLM 服务暂时不可用，请稍后再试。",
+            }
+
+        # Extract JSON
         import re
         text = response.strip()
         m = re.search(r'```(?:json)?\s*(.*?)```', text, re.DOTALL)
