@@ -63,6 +63,16 @@ nav {
   color: var(--text-mid); font-style: italic; max-width: 680px; margin-top: 24px;
   opacity: 0; animation: fadeIn .6s ease .15s forwards;
 }
+.roast::first-letter {
+  font-family: var(--serif); font-size: 3.2em; font-weight: 700;
+  float: left; line-height: .8; padding: 4px 10px 0 0;
+  color: var(--accent); font-style: normal;
+}
+.roast-history-text::first-letter {
+  font-family: var(--serif); font-size: 2.4em; font-weight: 700;
+  float: left; line-height: .8; padding: 2px 8px 0 0;
+  color: var(--accent); font-style: normal;
+}
 .roast-footer { margin-top: 18px; display: flex; align-items: center; gap: 12px; }
 .roast-sig { font-size: .6rem; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text-dim); }
 .voice-btn {
@@ -435,6 +445,68 @@ section:last-of-type { border-bottom: none; }
 .btn-go { border:none; background:var(--accent); color:#fff; }
 .btn-go:hover { opacity:.9; }
 
+/* ── Magazine Dark Theme (stolen from Pretext Editorial Engine) ── */
+[data-theme="magazine"] {
+  --bg: #0f0f14; --surface: #18181f; --border: #2a2a32;
+  --text: #e8e4dc; --text-mid: #b8a070; --text-dim: #6b5a3d;
+  --accent: #c4a35a; --green: #5ea05e; --red: #c0392b; --amber: #d4a040;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.3); --shadow-md: 0 4px 12px rgba(0,0,0,.4); --shadow-lg: 0 10px 32px rgba(0,0,0,.5);
+}
+[data-theme="magazine"] body { background: radial-gradient(ellipse at 50% 30%, #0f0f14 0%, #0a0a0c 100%) !important; }
+[data-theme="magazine"] ::selection { background: #c4a35a33; }
+[data-theme="magazine"] nav { background: rgba(15,15,20,.92); }
+[data-theme="magazine"] .nav-link:hover { background: #22222a; color: var(--text); }
+[data-theme="magazine"] .nav-link.active { background: var(--accent); color: #0f0f14; }
+[data-theme="magazine"] .tbl-row:hover { background: #1e1e26; }
+[data-theme="magazine"] .task-row:hover { background: #1e1e26; }
+[data-theme="magazine"] .hm-0 { background: #1e1e26; }
+[data-theme="magazine"] .ev-search input,
+[data-theme="magazine"] .ev-search select { background: var(--surface); border-color: var(--border); color: var(--text); }
+[data-theme="magazine"] .ev-src { background: #22222a; color: var(--text-dim); }
+[data-theme="magazine"] .log-ERROR { background: #1a1215; }
+[data-theme="magazine"] .log-WARNING { background: #1a1815; }
+[data-theme="magazine"] .cat-btn.active { background: var(--accent); color: #0f0f14; border-color: var(--accent); }
+[data-theme="magazine"] .task-detail { background: #1e1e26; }
+[data-theme="magazine"] .modal { background: var(--surface); border-color: var(--border); }
+[data-theme="magazine"] .debt-proj-row:hover { background: #1e1e26; }
+[data-theme="magazine"] .roast { color: var(--text); }
+[data-theme="magazine"] .roast::first-letter { color: var(--accent); }
+[data-theme="magazine"] .hero-title { color: #fff; }
+[data-theme="magazine"] .pull-quote { border-left-color: var(--accent); }
+/* fine-grained overrides for badge colors in dark */
+[data-theme="magazine"] .t-done { background: #1a2e1a; }
+[data-theme="magazine"] .t-failed { background: #2e1a1a; }
+[data-theme="magazine"] .t-running { background: #1a1a2e; color: #6b8adb; }
+[data-theme="magazine"] .t-pending { background: #22222a; }
+[data-theme="magazine"] .t-awaiting { background: #2e2a1a; }
+[data-theme="magazine"] .rec-high { background: #2e1a1a; }
+[data-theme="magazine"] .rec-medium { background: #1a2e1a; }
+[data-theme="magazine"] .rec-low { background: #22222a; }
+[data-theme="magazine"] .debt-proj-sev.high { background: #2e1a1a; }
+[data-theme="magazine"] .debt-proj-sev.med { background: #2e2a1a; }
+[data-theme="magazine"] .debt-proj-sev.low { background: #22222a; }
+/* separator lines */
+[data-theme="magazine"] .gov-entry,
+[data-theme="magazine"] .dept-grid-cell,
+[data-theme="magazine"] .cat-row,
+[data-theme="magazine"] .ev-row,
+[data-theme="magazine"] .policy-history-item,
+[data-theme="magazine"] .roast-history-item { border-bottom-color: #22222a; }
+[data-theme="magazine"] .tbl-row,
+[data-theme="magazine"] .task-row,
+[data-theme="magazine"] .log-line,
+[data-theme="magazine"] .gov-task-item,
+[data-theme="magazine"] .debt-item { border-bottom-color: #22222a; }
+/* theme toggle */
+.theme-toggle {
+  font-family: var(--mono); font-size: .6rem; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: transparent; color: var(--text-dim); cursor: pointer; transition: all .15s;
+  letter-spacing: .5px;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--text-mid); }
+[data-theme="magazine"] .theme-toggle { color: var(--accent); border-color: var(--accent); }
+
 /* ── Responsive ── */
 @media (max-width: 860px) {
   .gov-grid { grid-template-columns: 1fr; gap: 12px; }
@@ -466,6 +538,7 @@ section:last-of-type { border-bottom: none; }
     </div>
   </div>
   <div class="nav-right">
+    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">杂志</button>
     <span id="h-collect">--:--</span>
     <span id="h-analyze">--:--</span>
     <span><span class="status-dot" id="h-dot"></span><span id="h-ws">...</span></span>
@@ -615,6 +688,15 @@ section:last-of-type { border-bottom: none; }
 </div>
 
 <script>
+/* ── Theme toggle (Pretext magazine dark) ── */
+function toggleTheme(){
+  const html=document.documentElement;
+  const cur=html.getAttribute('data-theme');
+  if(cur==='magazine'){html.removeAttribute('data-theme');localStorage.removeItem('orch-theme');$('theme-toggle').textContent='杂志'}
+  else{html.setAttribute('data-theme','magazine');localStorage.setItem('orch-theme','magazine');$('theme-toggle').textContent='日光'}
+}
+(function(){const t=localStorage.getItem('orch-theme');if(t){document.documentElement.setAttribute('data-theme',t);document.addEventListener('DOMContentLoaded',()=>{const b=document.getElementById('theme-toggle');if(b)b.textContent='日光'})}})();
+
 const $=s=>document.getElementById(s);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function relTime(ts){if(!ts)return'--';const d=Date.now()-new Date(ts).getTime();if(d<0)return'now';const s=Math.floor(d/1000);if(s<60)return s+'s ago';const m=Math.floor(s/60);if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago'}
