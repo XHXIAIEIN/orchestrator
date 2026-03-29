@@ -62,6 +62,33 @@ class TestIntentGateway:
             )
             assert result.department == "security"
 
+class TestRuleFirstFlow:
+    """IntentGateway.parse() should try rules before calling LLM."""
+
+    @patch.object(IntentGateway, '_call_llm')
+    def test_clear_intent_skips_llm(self, mock_llm):
+        """When rule engine matches with high confidence, LLM is never called."""
+        gw = IntentGateway()
+        result = gw.parse("修复登录页面的 CSS bug")
+        assert result.department == "engineering"
+        assert result.intent == "code_fix"
+        mock_llm.assert_not_called()
+
+    @patch.object(IntentGateway, '_call_llm')
+    def test_ambiguous_intent_falls_through_to_llm(self, mock_llm):
+        """When rule engine returns None, LLM is called as usual."""
+        mock_llm.return_value = {
+            "action": "investigate", "intent": "code_fix",
+            "department": "engineering", "cognitive_mode": "react",
+            "priority": "medium", "problem": "unclear",
+            "expected": "fix", "needs_clarification": False,
+        }
+        gw = IntentGateway()
+        result = gw.parse("帮我看看这个东西")
+        mock_llm.assert_called_once()
+
+
+class TestGovernorSpec:
     def test_to_governor_spec(self):
         """TaskIntent 应能转换为 Governor 的 spec 格式。"""
         intent = TaskIntent(

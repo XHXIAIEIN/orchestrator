@@ -10,6 +10,7 @@ from dataclasses import dataclass, asdict
 from typing import Optional
 
 from src.core.llm_router import get_router
+from src.gateway.intent_rules import try_rule_match
 
 log = logging.getLogger(__name__)
 
@@ -106,10 +107,15 @@ class IntentGateway:
     """Orchestrator 的前台。理解用户说什么，翻译成 Governor 的语言。"""
 
     def parse(self, user_input: str, context: dict = None) -> TaskIntent:
-        """解析用户自然语言指令。"""
+        """Parse user command. Tries rule engine first, falls back to LLM."""
+        # Fast path: rule-based matching (no LLM cost)
+        rule_result = try_rule_match(user_input)
+        if rule_result is not None:
+            return rule_result
+
+        # Slow path: LLM-based parsing
         ctx_str = json.dumps(context or {}, ensure_ascii=False, indent=2)
         prompt = _get_intent_prompt().format(user_input=user_input, context=ctx_str)
-
         raw = self._call_llm(prompt)
         return self._validate(raw)
 

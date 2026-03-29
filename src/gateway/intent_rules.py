@@ -9,8 +9,6 @@ import re
 import logging
 from typing import Optional
 
-from src.gateway.intent import TaskIntent
-
 log = logging.getLogger(__name__)
 
 # ── Priority keywords ──
@@ -100,6 +98,7 @@ def try_rule_match(text: str) -> Optional[TaskIntent]:
 
     log.info("intent_rules: rule match → %s/%s (mode=%s, priority=%s)", dept, intent, mode, priority)
 
+    from src.gateway.intent import TaskIntent
     return TaskIntent(
         action=text,
         intent=intent,
