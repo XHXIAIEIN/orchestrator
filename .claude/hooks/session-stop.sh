@@ -122,6 +122,36 @@ try:
 except Exception:
     pass  # non-critical, fail silently
 " 2>/dev/null
+
+    # ── Phase 3: Subconscious memory audit (stolen from letta-ai/claude-subconscious) ──
+    python3 -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR')
+try:
+    from SOUL.tools.subconscious import audit, should_curate, curate, AUDIT_LOG_PATH
+    import json
+
+    # Always run fast audit
+    findings = audit()
+
+    issues = (
+        len(findings.get('duplicates', []))
+        + len(findings.get('orphan_files', []))
+        + len(findings.get('orphan_links', []))
+        + len(findings.get('empty_files', []))
+    )
+
+    # Log audit results
+    with open(str(AUDIT_LOG_PATH), 'a', encoding='utf-8') as f:
+        f.write(json.dumps(findings, ensure_ascii=False) + '\n')
+
+    # Curate every 5 sessions or if 3+ issues found
+    if should_curate(every_n=5) or issues >= 3:
+        curate()
+
+except Exception:
+    pass  # non-critical
+" 2>/dev/null
 ) &
 
 # Return immediately — background process handles the rest
