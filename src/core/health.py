@@ -6,6 +6,7 @@ Self Health Check — Orchestrator 的自我感知。
 import logging
 import os
 import subprocess
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -33,6 +34,7 @@ class HealthCheck:
             "departments": self._check_departments(),
             "browser": self._check_browser(),
             "channels": self._check_channels(),
+            "event_loop": self._check_event_loop(),
             "issues": [],
         }
         report["issues"] = self.issues
@@ -275,3 +277,42 @@ class HealthCheck:
             pass
 
         return result
+
+    def _check_event_loop(self) -> dict:
+        """Measure event loop / thread callback latency (stolen from Parlant healthz).
+
+        Schedules a callback and measures how long it takes to fire.
+        Healthy < 50ms, Degraded < 200ms, Unhealthy >= 200ms.
+        """
+        import threading
+
+        event = threading.Event()
+        latency_ms = 0.0
+
+        def _cb():
+            nonlocal latency_ms
+            latency_ms = (time.time() - t0) * 1000
+            event.set()
+
+        t0 = time.time()
+        timer = threading.Timer(0, _cb)
+        timer.start()
+        event.wait(timeout=1.0)
+
+        if not event.is_set():
+            latency_ms = 1000.0
+
+        status = "healthy" if latency_ms < 50 else ("degraded" if latency_ms < 200 else "unhealthy")
+
+        if status == "unhealthy":
+            self.issues.append({
+                "level": "high", "component": "event_loop",
+                "summary": f"Event loop latency {latency_ms:.0f}ms (unhealthy)",
+            })
+        elif status == "degraded":
+            self.issues.append({
+                "level": "medium", "component": "event_loop",
+                "summary": f"Event loop latency {latency_ms:.0f}ms (degraded)",
+            })
+
+        return {"latency_ms": round(latency_ms, 1), "status": status}
