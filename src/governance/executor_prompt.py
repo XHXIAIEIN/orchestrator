@@ -82,6 +82,10 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     if mode_prompt:
         prompt += "\n\n" + mode_prompt
     prompt += "\n\n" + base_prompt
+    spec = task.get('spec', {})
+    extra = spec.get('extra_instructions', '')
+    if extra:
+        prompt += '\n\n## Extra Instructions\n' + extra
     if runs_context:
         prompt += "\n\n" + runs_context
 

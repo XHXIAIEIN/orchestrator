@@ -132,14 +132,18 @@ def load_division(department: str, division: str, include_exam: bool = False) ->
 
 
 def find_git_bash() -> str | None:
-    """Find git-bash path for Windows Agent SDK compatibility."""
-    bash = shutil.which("bash")
-    if bash:
-        return bash
+    """Find git-bash path for Windows Agent SDK compatibility.
+
+    Agent SDK requires Git/bin/bash.exe (not usr/bin/bash.EXE).
+    Check explicit paths first before falling back to shutil.which.
+    """
     for candidate in [
         Path("D:/Program Files/Git/bin/bash.exe"),
         Path("C:/Program Files/Git/bin/bash.exe"),
     ]:
         if candidate.exists():
             return str(candidate)
+    bash = shutil.which("bash")
+    if bash:
+        return bash
     return None

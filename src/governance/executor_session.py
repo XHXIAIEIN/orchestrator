@@ -119,9 +119,11 @@ class AgentSessionRunner:
                   max_turns: int = MAX_AGENT_TURNS) -> ExecutionResponse:
         """Run the Agent SDK session and stream events. Returns ExecutionResponse."""
         # Agent SDK 环境准备
+        # CRITICAL: unset CLAUDECODE at process level to prevent
+        # "cannot launch inside another session" error when dispatching
+        # from an interactive Claude Code session.
+        _saved_claudecode = os.environ.pop("CLAUDECODE", None)
         agent_env = {}
-        if os.environ.get("CLAUDECODE"):
-            agent_env["CLAUDECODE"] = ""
         if os.name == "nt" and not os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"):
             bash_path = find_git_bash()
             if bash_path:
@@ -161,15 +163,17 @@ class AgentSessionRunner:
                 tool_calls = []
                 text_parts = []
                 for block in (message.content or []):
-                    block_type = getattr(block, 'type', None)
-                    if block_type == 'thinking':
+                    # Agent SDK uses typed blocks (ThinkingBlock, ToolUseBlock, TextBlock)
+                    # — match by class name, not a 'type' string attribute.
+                    cls_name = type(block).__name__
+                    if cls_name == 'ThinkingBlock':
                         thinking.append(getattr(block, 'thinking', '')[:300])
-                    elif block_type == 'tool_use':
+                    elif cls_name == 'ToolUseBlock':
                         tool_calls.append({
                             'tool': getattr(block, 'name', ''),
                             'input_preview': str(getattr(block, 'input', {}))[:200],
                         })
-                    elif block_type == 'text':
+                    elif cls_name == 'TextBlock':
                         text_parts.append(getattr(block, 'text', '')[:300])
 
                 # ── Hallucinated Action Detection ──
@@ -403,6 +407,10 @@ class AgentSessionRunner:
             final_status = "failed"
         else:
             final_status = "done"
+
+        # Restore CLAUDECODE env var if we removed it
+        if _saved_claudecode is not None:
+            os.environ["CLAUDECODE"] = _saved_claudecode
 
         return ExecutionResponse(
             status=final_status,
