@@ -1,55 +1,39 @@
 """
-Agent 自我评测闭环 — 把 Clawvard 考试结果灌进 learnings 管线。
+Agent 自我评测闭环 — 把 Clawvard 考试结果灌进 learnings DB。
 
 数据流:
-  Clawvard 分数 → 识别弱项 → 写入 .learnings/ERRORS.md (Pattern-Key)
-                            → 写入 .learnings/LEARNINGS.md (改进策略)
+  Clawvard 分数 → fitness rules 评估 → Gate/Tier 语义判定
+                → DB learnings 表 (error entry_type)
+                → DB learnings 表 (learning entry_type)
   出现 ≥3 次 → promoter 自动烧进 boot.md → 下次对话行为改变
 
-这是 Orchestrator 对着自己用自诊断系统的关键一环。
+Entrix patterns (Round 15):
+  - Markdown-as-Code: rules in docs/fitness/*.md
+  - Gate: HARD/SOFT/ADVISORY three-level semantics
+  - Tier: FAST/NORMAL/DEEP progressive execution
+  - Evidence Gap: code changed without tests → auto-escalate
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from src.governance.audit.fitness import (
+    FitnessRule,
+    FitnessVerdict,
+    Gate,
+    Tier,
+    evaluate_rules,
+    load_fitness_rules,
+)
 from src.governance.audit.learnings import append_error, append_learning
 from src.governance.audit.promoter import scan_and_promote
 
-# 维度 → 弱项模式描述 + 行为矫正规则
-DIMENSION_RULES: dict[str, dict] = {
-    "execution": {
-        "pattern_key": "agent-exec-ceiling",
-        "error_summary": "Agent execution score capped at 80 — code output lacks edge-case coverage and tests",
-        "learning_summary": "After writing code, STOP and add boundary tests before submitting — do not rely on momentum",
-        "detail": "Clawvard execution dimension consistently scores 80/100. Root cause: code implementations are functional but miss edge cases, error paths, and test coverage. The agent writes in one continuous flow without pausing to verify completeness.",
-        "threshold": 85,
-    },
-    "reflection": {
-        "pattern_key": "agent-performative-reflection",
-        "error_summary": "Agent reflection declining — acknowledges problems but does not modify behavior (performative reflection)",
-        "learning_summary": "When expressing uncertainty, WIDEN the interval and COMMIT to the wider range — saying 'might be too narrow' without changing is worse than not reflecting",
-        "detail": "Clawvard reflection dimension dropped 100→90→65 across 3 exams. The agent recognizes overconfidence but does not actually adjust confidence intervals. This 'performative reflection' scores worse than no reflection because the evaluator detects knowledge-action gap.",
-        "threshold": 85,
-    },
-    "understanding": {
-        "pattern_key": "agent-understanding-variance",
-        "error_summary": "Agent understanding score unstable (90-95) — open-ended analysis quality varies",
-        "learning_summary": "For analysis tasks, structure response as: constraints first, then tradeoffs, then recommendation — prevents rambling",
-        "detail": "Understanding dimension fluctuates between 90-95. Open-ended questions (competitive analysis, metric interpretation) get variable depth depending on answer length and structure.",
-        "threshold": 90,
-    },
-    "tooling": {
-        "pattern_key": "agent-tooling-variance",
-        "error_summary": "Agent tooling score unstable (80-95) — tool selection reasoning sometimes shallow",
-        "learning_summary": "When recommending tools, explicitly state WHY alternatives are worse — not just why the pick is good",
-        "detail": "Tooling dimension swings between 80-95 across exams. The agent sometimes gives correct tool recommendations without sufficiently explaining tradeoffs of alternatives.",
-        "threshold": 90,
-    },
-}
+log = logging.getLogger(__name__)
 
-# 不需要矫正的维度（稳定高分）
-STABLE_DIMENSIONS = {"retrieval", "reasoning", "eq", "memory"}
+# Default fitness directory
+_DEFAULT_FITNESS_DIR = "docs/fitness"
 
 
 @dataclass
@@ -65,84 +49,123 @@ class SelfEvalOutcome:
     errors_recorded: list[str]
     learnings_recorded: list[str]
     promoted: list[str]
+    verdict: FitnessVerdict | None = None
 
 
 def ingest_exam(
     result: ExamResult,
-    learnings_dir: str = ".learnings",
+    db,
     boot_path: str = ".claude/boot.md",
+    fitness_dir: str = _DEFAULT_FITNESS_DIR,
+    run_tier: Tier = Tier.NORMAL,
+    changed_files: list[str] | None = None,
+    test_files_changed: list[str] | None = None,
 ) -> SelfEvalOutcome:
     """
-    把一次 Clawvard 考试结果灌进 learnings 管线。
+    把一次 Clawvard 考试结果灌进 learnings DB。
 
-    1. 低于阈值的维度 → 写 ERRORS.md (Pattern-Key 计数 +1)
-    2. 对应改进策略 → 写 LEARNINGS.md
-    3. 达到晋升阈值 → 自动写 boot.md
+    1. 加载 fitness rules (docs/fitness/*.md)
+    2. 按 Gate/Tier 语义评估每个维度
+    3. HARD/SOFT fail → DB error + learning entries
+    4. ADVISORY fail → 仅日志，不记录
+    5. 达到晋升阈值 → 自动写 boot.md
     """
-    errors_path = str(Path(learnings_dir) / "ERRORS.md")
-    learnings_path = str(Path(learnings_dir) / "LEARNINGS.md")
+    rules = load_fitness_rules(fitness_dir)
+    verdict = evaluate_rules(
+        rules,
+        result.dimensions,
+        run_tier=run_tier,
+        changed_files=changed_files,
+        test_files_changed=test_files_changed,
+    )
 
     errors_recorded = []
     learnings_recorded = []
 
-    for dim, score in result.dimensions.items():
-        if dim in STABLE_DIMENSIONS:
+    for rv in verdict.results:
+        if rv.status in ("pass", "waived"):
             continue
 
-        rule = DIMENSION_RULES.get(dim)
+        rule = rules.get(rv.dimension)
         if not rule:
             continue
 
-        if score < rule["threshold"]:
-            # 记录错误模式
+        # ADVISORY gate: log only, no DB writes
+        if rule.gate == Gate.ADVISORY:
+            if rv.status == "fail":
+                log.info("fitness advisory [%s]: %s (score=%s)", rv.dimension, rv.message, rv.score)
+            continue
+
+        # HARD or SOFT gate: record errors and learnings
+        if rv.status in ("fail", "warn"):
             append_error(
-                pattern_key=rule["pattern_key"],
-                summary=rule["error_summary"],
-                detail=f"exam={result.exam_id} score={score}/100. {rule['detail']}",
+                pattern_key=rule.pattern_key,
+                summary=rule.error_summary or rv.message,
+                detail=f"exam={result.exam_id} score={rv.score}/100 gate={rule.gate.value}. {rule.detail}",
                 area="agent-self",
-                file_path=errors_path,
+                db=db,
             )
-            errors_recorded.append(f"{dim}={score}")
+            errors_recorded.append(f"{rv.dimension}={rv.score}")
 
-            # 记录改进策略
-            append_learning(
-                pattern_key=f"{rule['pattern_key']}-fix",
-                summary=rule["learning_summary"],
-                detail=f"Derived from {dim} score {score}/100 in {result.exam_id}",
+            if rule.learning_summary:
+                append_learning(
+                    pattern_key=f"{rule.pattern_key}-fix",
+                    summary=rule.learning_summary,
+                    detail=f"Derived from {rv.dimension} score {rv.score}/100 in {result.exam_id}",
+                    area="agent-self",
+                    db=db,
+                )
+                learnings_recorded.append(rv.dimension)
+
+    # Evidence gap logging
+    if verdict.evidence_gaps:
+        log.warning("fitness: evidence gaps detected — %s", verdict.evidence_gaps)
+        for gap_file in verdict.evidence_gaps[:5]:
+            append_error(
+                pattern_key="evidence-gap",
+                summary=f"Source changed without test evidence: {gap_file}",
+                detail=f"File {gap_file} modified but no corresponding test file changed",
                 area="agent-self",
-                file_path=learnings_path,
+                db=db,
             )
-            learnings_recorded.append(dim)
 
-    # 检查是否有达到晋升阈值的 pattern
-    promoted_errors = scan_and_promote(errors_path, boot_path, threshold=3)
-    promoted_learnings = scan_and_promote(learnings_path, boot_path, threshold=3)
+    # Check promotions
+    promoted = scan_and_promote(db, boot_path, threshold=3)
 
     return SelfEvalOutcome(
         errors_recorded=errors_recorded,
         learnings_recorded=learnings_recorded,
-        promoted=promoted_errors + promoted_learnings,
+        promoted=promoted,
+        verdict=verdict,
     )
 
 
 def ingest_all_exams(
     results: list[ExamResult],
-    learnings_dir: str = ".learnings",
+    db,
     boot_path: str = ".claude/boot.md",
+    fitness_dir: str = _DEFAULT_FITNESS_DIR,
+    run_tier: Tier = Tier.NORMAL,
 ) -> SelfEvalOutcome:
     """灌入多次考试结果，最后统一检查晋升。"""
     all_errors = []
     all_learnings = []
     all_promoted = []
+    last_verdict = None
 
     for r in results:
-        outcome = ingest_exam(r, learnings_dir, boot_path)
+        outcome = ingest_exam(
+            r, db=db, boot_path=boot_path,
+            fitness_dir=fitness_dir, run_tier=run_tier,
+        )
         all_errors.extend(outcome.errors_recorded)
         all_learnings.extend(outcome.learnings_recorded)
         all_promoted.extend(outcome.promoted)
+        last_verdict = outcome.verdict
 
     return SelfEvalOutcome(
         errors_recorded=all_errors,
         learnings_recorded=all_learnings,
         promoted=all_promoted,
+        verdict=last_verdict,
     )
