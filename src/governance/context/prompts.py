@@ -105,6 +105,32 @@ def load_department(name: str) -> str | None:
     return None
 
 
+def load_division(department: str, division: str, include_exam: bool = False) -> str | None:
+    """Load division-level prompt from departments/{dept}/{division}/prompt.md.
+
+    Optionally appends exam.md if include_exam=True (exam mode only).
+    Returns None if no prompt.md exists.
+    """
+    div_dir = _REPO_ROOT / "departments" / department / division
+    prompt_path = div_dir / "prompt.md"
+    parts = []
+    try:
+        if prompt_path.exists():
+            parts.append(prompt_path.read_text(encoding="utf-8").strip())
+    except Exception as e:
+        log.warning(f"prompts: failed to load division prompt {prompt_path}: {e}")
+
+    if include_exam:
+        exam_path = div_dir / "exam.md"
+        try:
+            if exam_path.exists():
+                parts.append(exam_path.read_text(encoding="utf-8").strip())
+        except Exception as e:
+            log.warning(f"prompts: failed to load exam prompt {exam_path}: {e}")
+
+    return "\n\n".join(parts) if parts else None
+
+
 def find_git_bash() -> str | None:
     """Find git-bash path for Windows Agent SDK compatibility."""
     bash = shutil.which("bash")
