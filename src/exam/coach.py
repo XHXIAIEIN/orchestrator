@@ -138,5 +138,26 @@ class ExamCoach:
             review = self.review(question, answer)
             if review.issues:
                 log.info("Coach review [%s]: %s", question["id"], review.issues)
+
+            # HARD gate: if answer will be truncated, ask agent to compress
+            if not review.passed:
+                hard_issues = [f.message for f in review.findings if f.gate.value == "hard"]
+                log.warning("Coach: HARD gate triggered for %s — requesting revision: %s", question["id"], hard_issues)
+                revision_prompt = (
+                    f"{prompt}\n\n"
+                    f"## REVISION REQUIRED\n"
+                    f"Your previous answer had critical issues:\n"
+                    + "\n".join(f"- {issue}" for issue in hard_issues) +
+                    f"\n\nPrevious answer ({len(answer)} chars):\n{answer[:500]}...\n\n"
+                    f"Rewrite the answer to fix these issues. "
+                    f"If too long, compress aggressively — a shorter complete answer beats a truncated one."
+                )
+                answer = answer_fn(revision_prompt, question)
+                review2 = self.review(question, answer)
+                if review2.issues:
+                    log.info("Coach re-review [%s]: %s", question["id"], review2.issues)
+                if not review2.passed:
+                    log.warning("Coach: %s still failing after revision (%d chars), submitting anyway", question["id"], len(answer))
+
             answers.append({"question_id": question["id"], "answer": answer})
         return self._format_answers(answers)

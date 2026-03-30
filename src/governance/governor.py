@@ -81,6 +81,20 @@ class Governor:
         self.executor.execute_task_async(task_id)
         return self.db.get_task(task_id)
 
+    # ── Group Orchestration (Round 16 LobeHub: Supervisor-Executor) ──
+
+    def run_group(self, task: dict, max_rounds: int = 5) -> str:
+        """Run a complex multi-department task via GroupOrchestrationSupervisor.
+
+        Use this instead of run_batch() when a task needs iterative
+        cross-department collaboration (e.g. engineering builds → quality reviews → engineering fixes).
+
+        Returns aggregated output from all rounds.
+        """
+        from src.governance.group_orchestration import GroupOrchestrationSupervisor
+        supervisor = GroupOrchestrationSupervisor(max_rounds=max_rounds)
+        return supervisor.run(task)
+
     def dispatch_chain(self, tasks: list[dict]) -> list[int]:
         """Dispatch a sequence of tasks as a dependency chain.
 

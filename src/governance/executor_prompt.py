@@ -9,6 +9,14 @@ from src.governance.context.prompts import (
 )
 from src.governance.context.context_assembler import assemble_context
 
+# Context Engine (Round 16 LobeHub upgrade — provider/processor pipeline)
+try:
+    from src.governance.context.engine import ContextEngine, TaskContext
+    _context_engine = ContextEngine.default()
+except ImportError:
+    _context_engine = None
+    TaskContext = None
+
 # Optional imports
 try:
     from src.governance.audit.run_logger import format_runs_for_context, load_recent_runs
@@ -89,9 +97,15 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     if runs_context:
         prompt += "\n\n" + runs_context
 
-    # 动态上下文组装
+    # 动态上下文组装 — 优先用 Context Engine pipeline，fallback 到旧版
     try:
-        dynamic_ctx = assemble_context(dept_key, task)
+        if _context_engine and TaskContext:
+            ctx = TaskContext.from_task(task, department=dept_key)
+            ctx.cwd = task_cwd
+            ctx.project_name = project_name
+            dynamic_ctx = _context_engine.assemble(ctx, budget_tokens=2000)
+        else:
+            dynamic_ctx = assemble_context(dept_key, task)
         if dynamic_ctx:
             prompt += "\n\n" + dynamic_ctx
     except Exception as e:

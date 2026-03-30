@@ -280,6 +280,13 @@ try:
 except ImportError:
     get_approval_gateway = None
 
+# InterventionChecker — three-layer tool safety (Round 16 LobeHub)
+try:
+    from src.governance.safety.intervention_checker import InterventionChecker
+    _intervention_checker = InterventionChecker.from_yaml("config/intervention_rules.yaml")
+except (ImportError, FileNotFoundError):
+    _intervention_checker = None
+
 log = logging.getLogger(__name__)
 
 CLAUDE_TIMEOUT = 300
@@ -449,6 +456,20 @@ class TaskExecutor:
 
         # ── Immutable Constraints: tool check ──
         allowed_tools = [t for t in allowed_tools if enforce_tool_constraint(t)[0]]
+
+        # ── InterventionChecker: three-layer tool pre-screening (Round 16 LobeHub) ──
+        if _intervention_checker:
+            screened_tools = []
+            for tool in allowed_tools:
+                result = _intervention_checker.check(tool, {})
+                if result.allowed:
+                    screened_tools.append(tool)
+                elif result.policy.value == "never":
+                    log.warning(f"TaskExecutor: task #{task_id} tool '{tool}' blocked by InterventionChecker: {result.reason}")
+                else:
+                    screened_tools.append(tool)  # REQUIRED/CUSTOM: allow but log
+                    log.info(f"TaskExecutor: task #{task_id} tool '{tool}' flagged ({result.policy.value}): {result.reason}")
+            allowed_tools = screened_tools
 
         log.info(f"TaskExecutor: task #{task_id} policy={route.profile.value} "
                  f"model={effective_model} timeout={task_timeout}s max_turns={task_max_turns}")

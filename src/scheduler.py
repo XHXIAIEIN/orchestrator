@@ -50,6 +50,35 @@ def start():
     s.add_job(lambda: run_job("policy_suggestions", policy_suggestions, db), "cron", hour=7, timezone="Asia/Shanghai", id="policy_suggestions")
     s.add_job(lambda: run_job("weekly_audit", weekly_audit, db), "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")
 
+    # ── Agent Cron: 部门级定时任务 (Round 16 LobeHub) ──
+    try:
+        from src.governance.agent_cron import AgentCronScheduler
+        agent_cron = AgentCronScheduler()
+        agent_cron.load_from_blueprints()
+
+        def _run_agent_cron_check():
+            due_jobs = agent_cron.check_due()
+            for job in due_jobs:
+                log.info(f"AgentCron: dispatching {job.department}/{job.name}")
+                try:
+                    from src.governance.governor import Governor
+                    gov = Governor(db=db)
+                    gov._dispatch_task(
+                        spec={"department": job.department, **job.payload},
+                        action=job.payload.get("action", job.name),
+                        reason=f"agent_cron: {job.name}",
+                        priority="medium",
+                        source="agent_cron",
+                    )
+                    agent_cron.mark_executed(job.department, job.name)
+                except Exception as e:
+                    log.warning(f"AgentCron: failed to dispatch {job.department}/{job.name}: {e}")
+
+        s.add_job(_run_agent_cron_check, "interval", minutes=1, id="agent_cron_check")
+        log.info(f"AgentCron: loaded {len(agent_cron.list_jobs())} department cron jobs")
+    except Exception as e:
+        log.debug(f"AgentCron init skipped: {e}")
+
     # 启动 Channel 层（Telegram polling 等）+ 注册入站命令 handler
     try:
         from src.channels.registry import get_channel_registry

@@ -620,6 +620,81 @@ app.get('/api/experiences', (req, res) => {
   } catch { res.json([]); }
 });
 
+// ── White-Box Memory: structured memory CRUD (Round 16 LobeHub P1) ──
+
+const MEMORY_DB_PATH = path.join(__dirname, '..', 'data', 'memory.db');
+
+function getMemoryDb() {
+  try {
+    if (!fs.existsSync(MEMORY_DB_PATH)) return null;
+    return new Database(MEMORY_DB_PATH, { readonly: false });
+  } catch { return null; }
+}
+
+const MEMORY_DIMENSIONS = ['activity', 'identity', 'context_mem', 'preference', 'experience', 'persona'];
+
+app.get('/api/memory', (req, res) => {
+  const mdb = getMemoryDb();
+  if (!mdb) return res.json({ error: 'memory.db not found', dimensions: {} });
+  try {
+    const result = {};
+    for (const dim of MEMORY_DIMENSIONS) {
+      try {
+        const count = mdb.prepare(`SELECT COUNT(*) as cnt FROM ${dim}`).get();
+        result[dim] = { count: count?.cnt || 0 };
+      } catch { result[dim] = { count: 0 }; }
+    }
+    mdb.close();
+    res.json({ dimensions: result });
+  } catch (e) { mdb.close(); res.json({ error: e.message }); }
+});
+
+app.get('/api/memory/:dimension', (req, res) => {
+  const dim = req.params.dimension;
+  if (!MEMORY_DIMENSIONS.includes(dim)) return res.status(400).json({ error: 'invalid dimension' });
+  const mdb = getMemoryDb();
+  if (!mdb) return res.json([]);
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
+    const q = req.query.q || '';
+    let sql = `SELECT * FROM ${dim}`;
+    const params = [];
+    if (q) {
+      // Search across all text columns
+      const cols = Object.keys(mdb.prepare(`SELECT * FROM ${dim} LIMIT 1`).get() || {});
+      const textCols = cols.filter(c => !['id', 'confidence', 'created_at', 'updated_at'].includes(c));
+      if (textCols.length) {
+        sql += ' WHERE ' + textCols.map(c => `${c} LIKE ?`).join(' OR ');
+        textCols.forEach(() => params.push(`%${q}%`));
+      }
+    }
+    sql += ' ORDER BY updated_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+    const rows = mdb.prepare(sql).all(...params);
+    mdb.close();
+    res.json(rows);
+  } catch (e) { mdb.close(); res.json({ error: e.message }); }
+});
+
+app.delete('/api/memory/:dimension/:id', (req, res) => {
+  const { dimension, id } = req.params;
+  const { reason } = req.body || {};
+  if (!MEMORY_DIMENSIONS.includes(dimension)) return res.status(400).json({ error: 'invalid dimension' });
+  if (!reason) return res.status(400).json({ error: 'reason required for deletion' });
+  const mdb = getMemoryDb();
+  if (!mdb) return res.status(500).json({ error: 'memory.db not found' });
+  try {
+    const result = mdb.prepare(`DELETE FROM ${dimension} WHERE id = ?`).run(parseInt(id));
+    mdb.close();
+    if (result.changes > 0) {
+      res.json({ deleted: true, dimension, id: parseInt(id), reason });
+    } else {
+      res.status(404).json({ error: 'entry not found' });
+    }
+  } catch (e) { mdb.close(); res.status(500).json({ error: e.message }); }
+});
+
 // ── Agent Events: real-time observability ──
 
 app.get('/api/agent-events/:taskId', (req, res) => {
