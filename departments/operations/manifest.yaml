@@ -82,3 +82,20 @@ preflight:
 blast_radius:
   max_files_per_run: 8
   forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]
+
+# ── Divisions (二十四司) ──
+divisions:
+  operate:
+    name_zh: 运维
+    description: "Container ops, deployment, CLI toolchain"
+    exam_dimension: tooling
+  budget:
+    name_zh: 预算
+    description: "Token budget, cost optimization"
+  collect:
+    name_zh: 采集
+    description: "Data collection, information retrieval"
+    exam_dimension: retrieval
+  store:
+    name_zh: 存储
+    description: "DB management, backup"

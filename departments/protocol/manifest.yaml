@@ -66,3 +66,20 @@ preflight:
 blast_radius:
   max_files_per_run: 5
   forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]
+
+# ── Divisions (二十四司) ──
+divisions:
+  interpret:
+    name_zh: 解读
+    description: "Spec/requirement parsing, implicit need detection"
+    exam_dimension: understanding
+  calibrate:
+    name_zh: 校准
+    description: "SOUL maintenance, voice calibration, persona"
+  communicate:
+    name_zh: 沟通
+    description: "External interaction, tone management, diplomacy"
+    exam_dimension: eq
+  polish:
+    name_zh: 润色
+    description: "Content quality, formatting standards"

@@ -65,3 +65,18 @@ preflight:
 blast_radius:
   max_files_per_run: 8
   forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]
+
+# ── Divisions (二十四司) ──
+divisions:
+  scan:
+    name_zh: 扫描
+    description: "Vulnerability scanning, injection detection"
+  monitor:
+    name_zh: 监控
+    description: "Threat intelligence, supply chain audit"
+  guard:
+    name_zh: 守卫
+    description: "Permission control, secret scanning"
+  recover:
+    name_zh: 恢复
+    description: "Backup verification, disaster recovery"

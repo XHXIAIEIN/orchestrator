@@ -62,3 +62,19 @@ preflight:
 blast_radius:
   max_files_per_run: 5
   forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]
+
+# ── Divisions (二十四司) ──
+divisions:
+  review:
+    name_zh: 审查
+    description: "Code review, meta-cognitive self-audit"
+    exam_dimension: reflection
+  detect:
+    name_zh: 检测
+    description: "Regression detection, anomaly discovery"
+  compare:
+    name_zh: 对比
+    description: "Benchmark, A/B testing"
+  gate:
+    name_zh: 准入
+    description: "PR gate, preflight check"

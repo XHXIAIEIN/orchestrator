@@ -66,3 +66,20 @@ preflight:
 blast_radius:
   max_files_per_run: 5
   forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]
+
+# ── Divisions (二十四司) ──
+divisions:
+  analyze:
+    name_zh: 分析
+    description: "Trend reasoning, logic deduction, pattern recognition"
+    exam_dimension: reasoning
+  recall:
+    name_zh: 回溯
+    description: "Experience inheritance, knowledge graph, learnings"
+    exam_dimension: memory
+  evaluate:
+    name_zh: 评估
+    description: "Self-eval, capability scoring"
+  chronicle:
+    name_zh: 记录
+    description: "Milestone tracking, historical review"

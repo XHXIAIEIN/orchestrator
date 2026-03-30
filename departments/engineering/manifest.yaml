@@ -88,3 +88,19 @@ preflight:
 blast_radius:
   max_files_per_run: 15
   forbidden_paths: [".env", "*.key", "*.pem", "data/events.db", "SOUL/private/identity.md"]
+
+# ── Divisions (二十四司) ──
+divisions:
+  implement:
+    name_zh: 实现
+    description: "Core code implementation, feature development"
+    exam_dimension: execution
+  scaffold:
+    name_zh: 搭建
+    description: "Project scaffolding, CI/CD pipeline"
+  integrate:
+    name_zh: 集成
+    description: "Dependency management, package versions"
+  orchestrate:
+    name_zh: 编排
+    description: "Pipeline orchestration, data flow"
