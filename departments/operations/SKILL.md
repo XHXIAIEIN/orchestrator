@@ -42,3 +42,7 @@ NOTES: <unusual findings>
 - **Disk full** → identify largest consumer first, don't blindly clean
 - **Multiple failures** → triage by data-loss risk, fix that one first
 - **Docker rebuild** → check if restart is enough first (it usually is)
+
+## API Interaction Tasks
+
+For tasks with intent=api_interaction: Use Bash to make HTTP requests to external APIs. Write request payloads to .trash/ as JSON files before sending. Return the full API response in your output. Follow the same RESULT/SUMMARY/FILES output format.
