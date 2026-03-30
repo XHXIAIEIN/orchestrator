@@ -732,3 +732,183 @@ class StructuredMemoryStore:
                 continue
             total += len(str(val))
         return total
+
+
+# ── Memory Effort Level (Round 16 LobeHub P2) ─────────────────────────
+
+class MemoryEffortLevel(str, Enum):
+    """记忆系统努力等级。根据场景动态调整，避免永远全力运转。
+
+    LOW    — 日常闲聊/简单问答，最少记忆操作
+    MEDIUM — 有明确 action 但非正式任务，常规记忆
+    HIGH   — 正式任务/考试/dispatch，主动去重和精炼
+    """
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+# ── Effort Level 配置 ──
+
+_EFFORT_CONFIG: dict[MemoryEffortLevel, dict] = {
+    MemoryEffortLevel.LOW: {
+        "search_top_k": 3,
+        "expire_enabled": False,
+        "dedup_enabled": False,
+    },
+    MemoryEffortLevel.MEDIUM: {
+        "search_top_k": 8,
+        "expire_enabled": True,
+        "dedup_enabled": False,
+    },
+    MemoryEffortLevel.HIGH: {
+        "search_top_k": 15,
+        "expire_enabled": True,
+        "dedup_enabled": True,
+    },
+}
+
+# 用于判断 HIGH effort 的关键字段
+_HIGH_EFFORT_SIGNALS = {"department", "spec", "exam", "exam_mode", "dispatch", "dispatch_id"}
+# 用于判断 MEDIUM effort 的关键字段
+_MEDIUM_EFFORT_SIGNALS = {"action", "command", "task", "goal", "intent"}
+
+
+def infer_effort_level(task_context: dict) -> MemoryEffortLevel:
+    """根据任务上下文推断记忆努力等级。
+
+    判断逻辑（优先级从高到低）：
+      HIGH:   有 department/spec/exam_mode/dispatch 来源
+      MEDIUM: 有明确 action/command/task 但不是正式任务
+      LOW:    闲聊、问答、无 spec（默认）
+
+    Args:
+        task_context: 任务上下文字典，可包含 department, spec, action,
+                      exam_mode, dispatch_id, source 等字段。
+
+    Returns:
+        MemoryEffortLevel 枚举值。
+    """
+    if not task_context:
+        return MemoryEffortLevel.LOW
+
+    ctx_keys = set(task_context.keys())
+
+    # HIGH: 正式任务信号
+    for signal in _HIGH_EFFORT_SIGNALS:
+        if signal in ctx_keys and task_context[signal]:
+            return MemoryEffortLevel.HIGH
+
+    # HIGH: source 字段包含 dispatch
+    source = str(task_context.get("source", "")).lower()
+    if "dispatch" in source:
+        return MemoryEffortLevel.HIGH
+
+    # MEDIUM: 有明确动作意图
+    for signal in _MEDIUM_EFFORT_SIGNALS:
+        if signal in ctx_keys and task_context[signal]:
+            return MemoryEffortLevel.MEDIUM
+
+    return MemoryEffortLevel.LOW
+
+
+def apply_effort_level(store: StructuredMemoryStore, level: MemoryEffortLevel) -> dict:
+    """根据努力等级调整记忆系统行为。
+
+    作为外部调节器，不修改 StructuredMemoryStore 的内部状态，
+    而是执行相应的维护操作并返回配置参数供调用方使用。
+
+    行为：
+      LOW:    search top_k=3, 不触发 expire
+      MEDIUM: search top_k=8, 正常 expire
+      HIGH:   search top_k=15, 主动去重（搜索相似条目，合并重复）
+
+    Args:
+        store: StructuredMemoryStore 实例。
+        level: 目标努力等级。
+
+    Returns:
+        dict 包含:
+          - search_top_k: int, 建议的搜索结果数
+          - expired_count: int, 本次过期清理的条目数（LOW 时为 0）
+          - dedup_merged: int, 本次去重合并的条目数（仅 HIGH 时 > 0）
+    """
+    config = _EFFORT_CONFIG[level]
+    result = {
+        "level": level.value,
+        "search_top_k": config["search_top_k"],
+        "expired_count": 0,
+        "dedup_merged": 0,
+    }
+
+    # Expire
+    if config["expire_enabled"]:
+        result["expired_count"] = store.expire()
+
+    # Dedup (HIGH only): 逐维度搜索相似条目，合并重复
+    if config["dedup_enabled"]:
+        result["dedup_merged"] = _dedup_all_dimensions(store)
+
+    log.info(f"memory_effort: applied level={level.value} → {result}")
+    return result
+
+
+def _dedup_all_dimensions(store: StructuredMemoryStore) -> int:
+    """跨所有维度执行去重。
+
+    策略：同一维度内，如果两条记忆的主文本字段完全相同，
+    保留 confidence 更高（或更新）的那条，删除另一条。
+    """
+    total_merged = 0
+    # 每个维度的主文本字段（用于判断重复）
+    primary_field: dict[Dimension, str] = {
+        Dimension.ACTIVITY:   "summary",
+        Dimension.IDENTITY:   "fact",
+        Dimension.CONTEXT:    "project",
+        Dimension.PREFERENCE: "directive",
+        Dimension.EXPERIENCE: "situation",
+        Dimension.PERSONA:    "aspect",
+    }
+
+    for dim in Dimension:
+        pf = primary_field.get(dim)
+        if not pf:
+            continue
+
+        entries = store.get_all(dim, limit=9999)
+        if len(entries) < 2:
+            continue
+
+        # Group by primary field value
+        groups: dict[str, list[dict]] = {}
+        for entry in entries:
+            key = str(entry.get(pf, "")).strip().lower()
+            if key:
+                groups.setdefault(key, []).append(entry)
+
+        # Find duplicates and remove lower-confidence ones
+        ids_to_delete: list[int] = []
+        for key, group in groups.items():
+            if len(group) < 2:
+                continue
+            # Sort: highest confidence first, then newest updated_at
+            group.sort(
+                key=lambda e: (e.get("confidence", 0), e.get("updated_at", "")),
+                reverse=True,
+            )
+            # Keep first, mark rest for deletion
+            for dup in group[1:]:
+                if dup.get("id"):
+                    ids_to_delete.append(dup["id"])
+
+        if ids_to_delete:
+            with store._connect() as conn:
+                placeholders = ",".join("?" for _ in ids_to_delete)
+                conn.execute(
+                    f"DELETE FROM {dim.value} WHERE id IN ({placeholders})",
+                    ids_to_delete,
+                )
+            total_merged += len(ids_to_delete)
+            log.debug(f"memory_effort: dedup {dim.value} removed {len(ids_to_delete)} duplicates")
+
+    return total_merged
