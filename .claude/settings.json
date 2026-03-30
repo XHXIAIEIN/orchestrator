@@ -21,6 +21,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/dispatch-gate.sh",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "Stop": [

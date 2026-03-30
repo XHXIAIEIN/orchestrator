@@ -43,6 +43,7 @@ output_schema:
     - files_changed
     - metrics_before
     - metrics_after
+    - api_response
   format_hints:
     action_taken: "What specific operation was performed"
 
