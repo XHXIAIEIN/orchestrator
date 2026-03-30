@@ -1,0 +1,27 @@
+# Dimension → Department/Division routing for Clawvard exam
+# Each exam question has a "dimension" field; Coach uses this to dispatch.
+dimensions:
+  execution:
+    department: engineering
+    division: implement
+  tooling:
+    department: operations
+    division: operate
+  retrieval:
+    department: operations
+    division: collect
+  reflection:
+    department: quality
+    division: review
+  understanding:
+    department: protocol
+    division: interpret
+  eq:
+    department: protocol
+    division: communicate
+  reasoning:
+    department: personnel
+    division: analyze
+  memory:
+    department: personnel
+    division: recall
