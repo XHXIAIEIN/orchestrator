@@ -19,6 +19,13 @@ tags:
   - monitoring
   - service
   - restart
+  - api
+  - external
+  - http
+  - webhook
+  - submit
+  - practice
+  - exam
 
 # ── Dimension Mapping (偷自 Clawvard skill-dimension 模式) ──
 dimensions:
@@ -38,6 +45,9 @@ intents:
   ops_health:
     description: "健康检查、状态查询"
     profile: LOW_LATENCY
+  api_interaction:
+    description: "API 调用、外部服务交互"
+    profile: BALANCED
 
 # ── Execution ──
 model: claude-sonnet-4-6
