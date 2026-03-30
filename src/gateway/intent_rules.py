@@ -45,6 +45,7 @@ _DEPARTMENT_RULES: dict[str, list[tuple[re.Pattern, str, str]]] = {
         (re.compile(r'检查|health|健康|状态.*(?:采集|collector|服务|service)', re.I), "ops_health", "direct"),
         (re.compile(r'修复.*(?:采集|collector|服务|docker|容器).*(?:挂|坏|失败|停|断)|(?:采集|collector|服务).*(?:挂了|坏了|失败|修)', re.I), "ops_repair", "react"),
         (re.compile(r'重启|restart|docker|容器', re.I), "ops_repair", "react"),
+        (re.compile(r'practice|exam|submit\s*via\s*api|external\s*api|webhook|http\s*request|api\s*call', re.I), "api_interaction", "react"),
     ],
     "quality": [
         (re.compile(r'(?:完整|full).*测试|验收|acceptance', re.I), "quality_regression", "react"),
