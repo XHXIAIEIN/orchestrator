@@ -39,6 +39,7 @@ class DepartmentEntry:
     tools: str  # comma-separated for backward compat
     tags: list[str] = field(default_factory=list)
     model: str = MODEL_SONNET
+    divisions: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass
@@ -90,6 +91,16 @@ def _discover_manifests() -> list[dict]:
 def _build_department(raw: dict) -> DepartmentEntry:
     """Convert raw manifest dict to DepartmentEntry."""
     tools_list = raw.get("policy", {}).get("allowed_tools", [])
+    divisions_raw = raw.get("divisions", {})
+    divisions = {}
+    for div_key, div_cfg in divisions_raw.items():
+        if isinstance(div_cfg, str):
+            div_cfg = {"description": div_cfg}
+        divisions[div_key] = {
+            "name_zh": div_cfg.get("name_zh", div_key),
+            "description": div_cfg.get("description", ""),
+            "exam_dimension": div_cfg.get("exam_dimension"),
+        }
     return DepartmentEntry(
         key=raw["key"],
         name_zh=raw.get("name_zh", raw["key"]),
@@ -99,6 +110,7 @@ def _build_department(raw: dict) -> DepartmentEntry:
         tools=",".join(tools_list) if tools_list else "Read,Glob,Grep",
         tags=raw.get("tags", []),
         model=raw.get("model", "claude-sonnet-4-6"),
+        divisions=divisions,
     )
 
 
@@ -144,6 +156,7 @@ def _build_all():
             "skill_path": dept.skill_path,
             "prompt_prefix": dept.prompt_prefix,
             "tools": dept.tools,
+            "divisions": dept.divisions,
         }
         dept_tags[dept.key] = dept.tags
         descriptions[dept.key] = dept.description
