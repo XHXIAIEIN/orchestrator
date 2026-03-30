@@ -3,18 +3,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
+from src.storage.events_db import EventsDB
 from src.governance.audit.learnings import append_error
-from src.governance.audit.promoter import (
-    promote_to_boot, scan_and_promote, mark_as_promoted,
-)
+from src.governance.audit.promoter import promote_to_boot, scan_and_promote
+
+
+def _make_db(tmp_path):
+    return EventsDB(str(tmp_path / "test.db"))
 
 
 def _setup_errors_with_repeats(tmp_path, pattern_key, count):
-    errors_md = tmp_path / "ERRORS.md"
-    errors_md.write_text("# Errors\n\n<!-- entries below this line are auto-managed -->\n")
+    db = _make_db(tmp_path)
     for i in range(count):
-        append_error(pattern_key, f"Error #{i+1}", "Same issue repeating", "engineering", str(errors_md))
-    return str(errors_md)
+        append_error(pattern_key, f"Error #{i+1}", "Same issue repeating", "engineering", db=db)
+    return db
 
 
 def test_promote_to_boot(tmp_path):
@@ -37,11 +39,11 @@ def test_promote_to_boot(tmp_path):
 
 
 def test_scan_and_promote(tmp_path):
-    errors_md = _setup_errors_with_repeats(tmp_path, "repeated-timeout", 4)
+    db = _setup_errors_with_repeats(tmp_path, "repeated-timeout", 4)
     boot_md = tmp_path / "boot.md"
     boot_md.write_text("# Boot\n\n## Learnings\n\n- Old learning [misc]\n")
     promoted = scan_and_promote(
-        learnings_path=errors_md,
+        db=db,
         boot_path=str(boot_md),
         threshold=3,
     )
@@ -50,19 +52,12 @@ def test_scan_and_promote(tmp_path):
     assert "repeated-timeout" in boot_md.read_text() or "Error #" in boot_md.read_text()
 
 
-def test_mark_as_promoted(tmp_path):
-    errors_md = _setup_errors_with_repeats(tmp_path, "mark-test", 3)
-    mark_as_promoted(errors_md, "mark-test")
-    text = Path(errors_md).read_text()
-    assert "Status: promoted" in text
-
-
 def test_no_double_promotion(tmp_path):
-    errors_md = _setup_errors_with_repeats(tmp_path, "already-done", 5)
+    db = _setup_errors_with_repeats(tmp_path, "already-done", 5)
     boot_md = tmp_path / "boot.md"
     boot_md.write_text("# Boot\n\n## Learnings\n\n")
-    scan_and_promote(errors_md, str(boot_md), threshold=3)
+    scan_and_promote(db, str(boot_md), threshold=3)
     first_text = boot_md.read_text()
-    promoted = scan_and_promote(errors_md, str(boot_md), threshold=3)
+    promoted = scan_and_promote(db, str(boot_md), threshold=3)
     assert len(promoted) == 0
     assert boot_md.read_text() == first_text

@@ -20,6 +20,8 @@ _GLOBAL_LEARNINGS: list[str] = [
     "Breadth-first output: skeleton covering ALL requirements first, then fill detail — never depth-first on one part",
     "For long-form answers, append a requirements coverage table at the end",
     "For multiple choice: pick ONE answer, commit to it. Never write 'A or B'",
+    "Code answers MUST stay under 2500 chars — API truncates long payloads silently (LRN-011, prac-8e03f361)",
+    "MC format: use 'Answer: X' not bare letter on first line — parser may misread (LRN-012, prac-8e03f361)",
 ]
 
 # ---------------------------------------------------------------------------

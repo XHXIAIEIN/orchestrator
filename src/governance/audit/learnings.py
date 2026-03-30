@@ -1,145 +1,110 @@
 """
-三分类错误日志 — 偷自 self-improving-agent 的 .learnings/ 模式。
+三分类 learnings — DB 是唯一数据源。
 
-三个文件分类存储：LEARNINGS（知识）、ERRORS（错误）、FEATURES（缺口）。
-每条带 Pattern-Key 做去重和出现次数追踪，满阈值触发晋升。
+所有读写走 EventsDB.add_learning()，不再有 markdown 文件。
+entry_type: 'error' | 'learning' | 'feature'
 """
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-
-MARKER = "<!-- entries below this line are auto-managed -->"
-
-_counters: dict[str, int] = {}
+from dataclasses import dataclass
 
 
 @dataclass
 class LearningEntry:
-    entry_id: str
+    entry_id: int
     pattern_key: str
     summary: str
     detail: str
     area: str
     occurrences: int = 1
-    status: str = "active"
-    first_seen: str = ""
-    last_seen: str = ""
+    status: str = "pending"
+    entry_type: str = "learning"
 
 
-def _next_id(prefix: str) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    key = f"{prefix}-{today}"
-    _counters[key] = _counters.get(key, 0) + 1
-    return f"{prefix}-{today}-{_counters[key]:03d}"
+def _infer_related_keys(pattern_key: str) -> list[str]:
+    """Infer cross-references from naming conventions.
+
+    e.g. 'agent-output-budget-fix' → relates to 'agent-output-budget'
+    """
+    related = []
+    if pattern_key.endswith("-fix"):
+        related.append(pattern_key[:-4])
+    elif pattern_key.endswith("-systematic"):
+        base = pattern_key.replace("-systematic", "")
+        related.append(base)
+        related.append(base + "-random")
+    return related
 
 
-def _parse_entries(text: str) -> list[dict]:
-    entries = []
-    current = None
-    for line in text.split("\n"):
-        m = re.match(r"^## ((?:ERR|LRN|FTR)-\d{8}-\d{3}) — (.+)$", line)
-        if m:
-            if current:
-                entries.append(current)
-            current = {"id": m.group(1), "summary": m.group(2), "lines": []}
-            continue
-        if current is not None:
-            current["lines"].append(line)
-            pk = re.match(r"^- Pattern-Key: (.+)$", line)
-            if pk:
-                current["pattern_key"] = pk.group(1)
-            occ = re.match(r"^- Occurrences: (\d+)$", line)
-            if occ:
-                current["occurrences"] = int(occ.group(1))
-            st = re.match(r"^- Status: (.+)$", line)
-            if st:
-                current["status"] = st.group(1)
-    if current:
-        entries.append(current)
-    return entries
-
-
-def _format_entry(e: LearningEntry) -> str:
-    return (
-        f"\n## {e.entry_id} — {e.summary}\n"
-        f"- Pattern-Key: {e.pattern_key}\n"
-        f"- Area: {e.area}\n"
-        f"- Occurrences: {e.occurrences}\n"
-        f"- Status: {e.status}\n"
-        f"- First-seen: {e.first_seen}\n"
-        f"- Last-seen: {e.last_seen}\n"
-        f"- Detail: {e.detail}\n"
+def append_error(pattern_key, summary, detail, area, db):
+    """Record an error pattern to DB."""
+    row_id = db.add_learning(
+        pattern_key=pattern_key,
+        rule=summary,
+        detail=detail,
+        area=area,
+        entry_type="error",
+        source_type="error",
+        related_keys=_infer_related_keys(pattern_key),
     )
-
-
-def _append_to_file(prefix, pattern_key, summary, detail, area, file_path):
-    path = Path(file_path)
-    text = path.read_text(encoding="utf-8")
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-
-    entries = _parse_entries(text)
-    for existing in entries:
-        if existing.get("pattern_key") == pattern_key:
-            old_occ = existing.get("occurrences", 1)
-            new_occ = old_occ + 1
-            text = text.replace(f"- Occurrences: {old_occ}", f"- Occurrences: {new_occ}", 1)
-            text = re.sub(r"(- Last-seen: ).+", f"\\g<1>{now}", text, count=1)
-            path.write_text(text, encoding="utf-8")
-            return LearningEntry(
-                entry_id=existing["id"], pattern_key=pattern_key,
-                summary=summary, detail=detail, area=area,
-                occurrences=new_occ, status=existing.get("status", "active"),
-                first_seen="", last_seen=now,
-            )
-
-    entry = LearningEntry(
-        entry_id=_next_id(prefix), pattern_key=pattern_key,
+    return LearningEntry(
+        entry_id=row_id, pattern_key=pattern_key,
         summary=summary, detail=detail, area=area,
-        occurrences=1, status="active", first_seen=now, last_seen=now,
+        entry_type="error",
     )
-    formatted = _format_entry(entry)
-    if MARKER in text:
-        text = text.replace(MARKER, MARKER + formatted)
-    else:
-        text += formatted
-    path.write_text(text, encoding="utf-8")
-    return entry
 
 
-def append_error(pattern_key, summary, detail, area, file_path):
-    return _append_to_file("ERR", pattern_key, summary, detail, area, file_path)
+def append_learning(pattern_key, summary, detail, area, db):
+    """Record a learning/fix strategy to DB."""
+    row_id = db.add_learning(
+        pattern_key=pattern_key,
+        rule=summary,
+        detail=detail,
+        area=area,
+        entry_type="learning",
+        source_type="lesson",
+        related_keys=_infer_related_keys(pattern_key),
+    )
+    return LearningEntry(
+        entry_id=row_id, pattern_key=pattern_key,
+        summary=summary, detail=detail, area=area,
+        entry_type="learning",
+    )
 
-def append_learning(pattern_key, summary, detail, area, file_path):
-    return _append_to_file("LRN", pattern_key, summary, detail, area, file_path)
 
-def append_feature(pattern_key, summary, detail, area, file_path):
-    return _append_to_file("FTR", pattern_key, summary, detail, area, file_path)
+def append_feature(pattern_key, summary, detail, area, db):
+    """Record a feature gap to DB."""
+    row_id = db.add_learning(
+        pattern_key=pattern_key,
+        rule=summary,
+        detail=detail,
+        area=area,
+        entry_type="feature",
+        source_type="feature",
+        related_keys=_infer_related_keys(pattern_key),
+    )
+    return LearningEntry(
+        entry_id=row_id, pattern_key=pattern_key,
+        summary=summary, detail=detail, area=area,
+        entry_type="feature",
+    )
 
-def get_pattern_occurrences(file_path, pattern_key):
-    text = Path(file_path).read_text(encoding="utf-8")
-    entries = _parse_entries(text)
-    for e in entries:
-        if e.get("pattern_key") == pattern_key:
-            return e.get("occurrences", 1)
-    return 0
 
-def get_promotable_entries(file_path, threshold=3):
-    text = Path(file_path).read_text(encoding="utf-8")
-    entries = _parse_entries(text)
-    result = []
-    for e in entries:
-        occ = e.get("occurrences", 1)
-        status = e.get("status", "active")
-        if occ >= threshold and status == "active":
-            result.append(LearningEntry(
-                entry_id=e["id"], pattern_key=e.get("pattern_key", ""),
-                summary=e.get("summary", ""), detail="", area="",
-                occurrences=occ, status=status,
-            ))
-    return result
+def get_promotable_entries(db, threshold=3):
+    """Get entries ready for promotion from DB."""
+    rows = db.get_promotable_learnings(threshold)
+    return [
+        LearningEntry(
+            entry_id=r["id"], pattern_key=r["pattern_key"],
+            summary=r["rule"], detail=r.get("detail", ""),
+            area=r.get("area", "general"),
+            occurrences=r["recurrence"],
+            entry_type=r.get("entry_type", "learning"),
+        )
+        for r in rows
+    ]
+
 
 def check_blast_radius(file_count, max_files):
     return file_count <= max_files

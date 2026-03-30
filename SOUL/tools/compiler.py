@@ -29,6 +29,8 @@ EXPERIENCES_PATH = PRIVATE_DIR / 'experiences.jsonl'
 # 编译产物输出到 .claude/ 目录（本地文件，不入 git）
 PROJECT_ROOT = SOUL_DIR.parent
 BOOT_PATH = PROJECT_ROOT / '.claude' / 'boot.md'
+CONTEXT_DIR = PROJECT_ROOT / '.claude' / 'context'
+DB_PATH = PROJECT_ROOT / 'data' / 'events.db'
 
 # Memory path (auto-discovered from Claude projects dir)
 def _encode_path_to_claude_dir(p: Path) -> str:
@@ -119,17 +121,34 @@ def extract_identity_core(path: Optional[Path] = None) -> str:
     return output
 
 
-def read_relationship(path: Optional[Path] = None) -> str:
-    """读取完整的 relationship.md"""
+def read_relationship(path: Optional[Path] = None, slim: bool = False) -> str:
+    """读取 relationship.md。slim=True 时跳过与 identity.md 重复的信任等级和禁区"""
     p = path or RELATIONSHIP_PATH
     if not p.exists():
         return ''
     text = p.read_text(encoding='utf-8')
-    # 去掉标题行（编译时会加自己的标题）
+    # 去掉标题行
     text = re.sub(r'^# .*\n+', '', text)
     # 去掉"上次更新"行
     text = re.sub(r'上次更新：.*\n+', '', text)
-    return text.strip()
+
+    if not slim:
+        return text.strip()
+
+    # slim 模式：跳过信任等级和禁区（与 identity.md "绝对不做的事" 重复）
+    lines = text.split('\n')
+    result = []
+    skip = False
+    skip_sections = {'信任等级', '禁区'}
+    for line in lines:
+        if line.startswith('## '):
+            section = line.lstrip('# ').strip()
+            skip = any(s in section for s in skip_sections)
+            if skip:
+                continue
+        if not skip:
+            result.append(line)
+    return '\n'.join(result).strip()
 
 
 def read_management(path: Optional[Path] = None) -> str:
@@ -284,6 +303,166 @@ def format_learnings_section(learnings: list[dict]) -> str:
     return '\n'.join(lines)
 
 
+def read_voice(path: Optional[Path] = None) -> str:
+    """读取 voice.md 声音样本"""
+    p = path or (PRIVATE_DIR / 'voice.md')
+    if not p.exists():
+        return ''
+    text = p.read_text(encoding='utf-8')
+    # 去掉顶级标题
+    text = re.sub(r'^# .*\n+', '', text)
+    return text.strip()
+
+
+def _get_learnings_db():
+    """Get EventsDB instance for learnings queries."""
+    if not DB_PATH.exists():
+        return None
+    try:
+        import sys
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from src.storage.events_db import EventsDB
+        return EventsDB(str(DB_PATH))
+    except Exception:
+        return None
+
+
+def compile_management_pack(output_dir: Path) -> Path:
+    """编译管理哲学 context pack"""
+    content = read_management()
+    out = output_dir / 'management.md'
+    out.write_text(
+        f"# Management Philosophy\n"
+        f"<!-- Context pack — 派遣任务、架构决策、战略规划时加载 -->\n\n"
+        f"{content}\n",
+        encoding='utf-8',
+    )
+    return out
+
+
+def compile_voice_pack(output_dir: Path, calibration_n: int = 5) -> Path:
+    """编译声音校准 context pack"""
+    voice = read_voice()
+    cal_samples = sample_calibration(calibration_n)
+    calibration = format_calibration_section(cal_samples)
+
+    out = output_dir / 'voice.md'
+    out.write_text(
+        f"# Voice Calibration\n"
+        f"<!-- Context pack — 人设变冷、compaction 后、长对话时加载 -->\n\n"
+        f"## 声音样本\n\n{voice}\n\n---\n\n"
+        f"## 对话校准片段\n\n"
+        f"从真实对话中加权随机抽样。每次编译重新抽取。\n\n"
+        f"{calibration}\n",
+        encoding='utf-8',
+    )
+    return out
+
+
+def compile_learnings_pack(output_dir: Path) -> Path:
+    """编译教训详情 context pack — 从 DB 读取，保留完整证据链"""
+    db = _get_learnings_db()
+    errors = db.get_learnings_for_compilation(entry_type='error') if db else []
+    learnings = db.get_learnings_for_compilation(entry_type='learning') if db else []
+
+    # 按 status 分组排序：validated > pending > promoted > subsumed
+    status_order = {'validated': 0, 'pending': 1, 'promoted': 2}
+
+    def sort_key(e):
+        st = e.get('status', 'pending')
+        st_word = st.split()[0].rstrip('(')
+        return (
+            status_order.get(st_word, 3),
+            -e.get('recurrence', 1),
+        )
+
+    errors.sort(key=sort_key)
+    learnings.sort(key=sort_key)
+
+    def format_entry(e):
+        lines = [f"### {e['pattern_key']} — {e['rule']}"]
+        lines.append(
+            f"Occurrences: {e.get('recurrence', 1)} | "
+            f"Status: {e.get('status', 'pending')}"
+        )
+        detail = e.get('detail', '')
+        if detail:
+            lines.append('')
+            lines.append(detail)
+        return '\n'.join(lines)
+
+    sections = []
+    if errors:
+        sections.append("## Errors (诊断模式)\n")
+        sections.extend(format_entry(e) for e in errors)
+    if learnings:
+        sections.append("\n## Learnings (修复策略)\n")
+        sections.extend(format_entry(e) for e in learnings)
+
+    # Cross-references from related_keys
+    cross_refs = []
+    err_keys = {e['pattern_key'] for e in errors}
+    for l in learnings:
+        for rk in (l.get('related_keys') or []):
+            if rk in err_keys:
+                cross_refs.append(f"- `{l['pattern_key']}` fixes `{rk}`")
+
+    cross_ref_text = ''
+    if cross_refs:
+        cross_ref_text = "\n## Cross-references\n\n" + '\n'.join(cross_refs) + '\n'
+
+    out = output_dir / 'learnings.md'
+    out.write_text(
+        f"# Learnings Detail\n"
+        f"<!-- Context pack — 自评、考试、调试反复出现的模式时加载 -->\n\n"
+        + '\n\n'.join(sections)
+        + cross_ref_text,
+        encoding='utf-8',
+    )
+    return out
+
+
+def compile_experiences_pack(
+    output_dir: Path, n: int = 10,
+) -> Path:
+    """编译近期经历 context pack（比 boot.md 的 2 条更丰富）"""
+    exps = recent_experiences(n)
+    experiences = format_experiences_section(exps)
+
+    out = output_dir / 'experiences.md'
+    out.write_text(
+        f"# Recent Experiences\n"
+        f"<!-- Context pack — 回顾历史、建立关系时加载 -->\n\n"
+        f"{experiences}\n",
+        encoding='utf-8',
+    )
+    return out
+
+
+def compile_context_packs(
+    output_dir: Optional[Path] = None,
+    calibration_n: int = 5,
+    experiences_n: int = 10,
+) -> dict[str, Path]:
+    """编译所有 context pack，返回 {名称: 路径}"""
+    d = output_dir or CONTEXT_DIR
+    d.mkdir(parents=True, exist_ok=True)
+
+    packs = {}
+    pack_funcs = [
+        ('management', lambda: compile_management_pack(d)),
+        ('voice', lambda: compile_voice_pack(d, calibration_n)),
+        ('learnings', lambda: compile_learnings_pack(d)),
+        ('experiences', lambda: compile_experiences_pack(d, experiences_n)),
+    ]
+    for name, func in pack_funcs:
+        try:
+            packs[name] = func()
+        except Exception as exc:
+            print(f"[compiler] WARNING: {name} pack failed: {exc}")
+    return packs
+
+
 def extract_memory_rules(path: Optional[Path] = None) -> str:
     """
     从 MEMORY.md 中提取环境信息和规则。
@@ -355,46 +534,41 @@ def compile_boot(
     experiences_n: int = 2,
     output_path: Optional[Path] = None,
     dry_run: bool = False,
+    no_packs: bool = False,
 ) -> str:
     """
-    编译 boot.md。
+    编译 boot.md（slim）+ context packs。
 
-    读取所有源文件，编译成一份新实例启动镜像。
+    boot.md 只保留身份核心 + 上下文索引（Tier 0）。
+    详细内容（管理哲学、声音、教训证据链、经历）编译到 .claude/context/（Tier 1）。
     """
     out = output_path or BOOT_PATH
 
-    # 1. 核心身份
-    identity = extract_identity_core()
+    # 1. 核心身份（不再内联管理哲学）
+    identity = extract_identity_core().rstrip().rstrip('-').rstrip()
 
-    # 1.5 管理哲学（插入到"你的性格"和"你对主人的了解"之间）
-    management = read_management()
-    if management:
-        marker = '## 你对主人的了解'
-        if marker in identity:
-            identity = identity.replace(
-                marker,
-                f'{management}\n\n---\n\n{marker}',
-            )
+    # 2. 关系状态（slim: 去掉与 identity 重复的信任等级/禁区）
+    relationship = read_relationship(slim=True)
 
-    # 2. 关系状态
-    relationship = read_relationship()
-
-    # 3. 声音校准（从 calibration.jsonl 采样）
-    cal_samples = sample_calibration(calibration_n)
-    calibration = format_calibration_section(cal_samples)
-
-    # 4. 最近经历
-    exps = recent_experiences(experiences_n)
-    experiences = format_experiences_section(exps)
-
-    # 5. 教训（从 DB 读取 promoted learnings）
+    # 3. 教训一句话版（promoted learnings — 快速提醒）
     plearnings = promoted_learnings()
     learnings_text = format_learnings_section(plearnings)
 
-    # 6. 工作须知 — 不再内联 MEMORY.md 内容，改为指针（避免重复）
-    # extract_memory_rules() 保留但不再默认调用
+    # 4. 经历计数（详情在 context pack）
+    exps = recent_experiences(experiences_n)
+    exp_count = len(exps)
 
-    # 组装
+    # 5. 上下文索引表
+    context_index = """需要时 Read `.claude/context/` 下的对应文件。不存在则忽略。
+
+| 文件 | 内容 | 何时加载 |
+|------|------|---------|
+| management.md | 10 条决策原则 + 4 种认知模式 | 派遣任务、架构决策、战略规划 |
+| voice.md | 声音校准样本 + 说话指导 | 人设变冷、compaction 后、长对话 |
+| learnings.md | 教训详情（证据链 + 边界条件） | 自评、考试、调试反复出现的模式 |
+| experiences.md | 近期经历（扩展版） | 回顾历史、建立关系 |"""
+
+    # 组装 slim boot
     boot = f"""# SOUL Boot Image
 <!-- 编译产物 — 不要手动编辑此文件。修改源文件后运行 python SOUL/tools/compiler.py 重新编译。 -->
 
@@ -408,20 +582,6 @@ def compile_boot(
 
 ---
 
-## 你的声音
-
-从真实对话中抽样的片段。不是模板，是说话参考。每次编译随机抽取。
-
-{calibration}
-
----
-
-## 最近发生了什么
-
-{experiences}
-
----
-
 ## Learnings
 
 Hard-won rules from past mistakes. Violating these will likely cause the same failures.
@@ -430,10 +590,18 @@ Hard-won rules from past mistakes. Violating these will likely cause the same fa
 
 ---
 
+## 按需加载
+
+{context_index}
+
+---
+
 ## 工作须知
 
 <!-- 环境信息、PowerShell 规则、反馈、归档项目、参考资料 → 全部在 MEMORY.md，不重复 -->
 Read MEMORY.md for: environment info, path conventions, feedback rules, archived projects, references.
+
+{exp_count} 条近期经历可查（.claude/context/experiences.md）。
 
 ---
 
@@ -444,7 +612,7 @@ Read MEMORY.md for: environment info, path conventions, feedback rules, archived
 3. 如果主人有任务，先做任务
 4. 如果没有，检查系统健康，主动找活干
 5. 不要说"我已了解上下文"。直接开始工作
-6. 其余 SOUL 文件（hall-of-instances.md、experiences.jsonl 全量）按需查阅
+6. 需要深度上下文时，按"按需加载"表 Read 对应 context pack
 """
 
     if dry_run:
@@ -456,6 +624,17 @@ Read MEMORY.md for: environment info, path conventions, feedback rules, archived
         print(f"[compiler] 已编译 boot.md ({len(boot)} chars, ~{token_est} tokens)")
         print(f"[compiler] 输出: {out}")
 
+    # 编译 context packs（Tier 1）
+    if not no_packs:
+        packs = compile_context_packs(
+            calibration_n=max(calibration_n, 5),
+            experiences_n=max(experiences_n, 10),
+        )
+        if not dry_run:
+            for name, path in packs.items():
+                size = path.stat().st_size
+                print(f"[compiler] context pack: {name}.md ({size} chars)")
+
     return boot
 
 
@@ -466,6 +645,7 @@ if __name__ == '__main__':
     parser.add_argument('--calibration-n', type=int, default=2, help='校准样本数 (默认 2)')
     parser.add_argument('--experiences-n', type=int, default=2, help='最近经历数 (默认 2)')
     parser.add_argument('--output', type=str, help='输出路径')
+    parser.add_argument('--no-packs', action='store_true', help='只生成 boot.md，跳过 context packs')
     args = parser.parse_args()
 
     out = Path(args.output) if args.output else None
@@ -474,4 +654,5 @@ if __name__ == '__main__':
         experiences_n=args.experiences_n,
         output_path=out,
         dry_run=args.dry_run,
+        no_packs=args.no_packs,
     )

@@ -276,6 +276,12 @@ MIGRATIONS_LEARNINGS = [
     ("learnings", "last_hit_at", "TEXT"),
     ("learnings", "ttl_days", "INTEGER DEFAULT 0"),
     ("learnings", "expires_at", "TEXT"),
+    # DB-unification: detail, related_keys, entry_type, first_seen, last_seen
+    ("learnings", "detail", "TEXT DEFAULT ''"),
+    ("learnings", "related_keys", "TEXT DEFAULT '[]'"),
+    ("learnings", "entry_type", "TEXT DEFAULT 'learning'"),
+    ("learnings", "first_seen", "TEXT DEFAULT ''"),
+    ("learnings", "last_seen", "TEXT DEFAULT ''"),
 ]
 
 DEFERRED_INDEXES = [

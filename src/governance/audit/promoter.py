@@ -1,20 +1,21 @@
 """
-Pattern-Key 自动晋升 — 偷自 self-improving-agent 的 promotion 机制。
+Pattern-Key 自动晋升 — DB-only 版本。
 
 同一 Pattern-Key 出现 ≥ threshold 次 → 自动追加到 boot.md Learnings 区块。
-晋升后标记为 promoted 防止重复。
+晋升后 DB status 标记为 promoted。
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-from src.governance.audit.learnings import get_promotable_entries, _parse_entries
+from src.governance.audit.learnings import get_promotable_entries
 
 LEARNINGS_SECTION = "## Learnings"
 
 
 def promote_to_boot(boot_path, pattern_key, summary, area):
+    """Append a one-liner to boot.md's Learnings section."""
     path = Path(boot_path)
     text = path.read_text(encoding="utf-8")
 
@@ -39,22 +40,9 @@ def promote_to_boot(boot_path, pattern_key, summary, area):
     path.write_text(text, encoding="utf-8")
 
 
-def mark_as_promoted(learnings_path, pattern_key):
-    path = Path(learnings_path)
-    text = path.read_text(encoding="utf-8")
-    lines = text.split("\n")
-    found_key = False
-    for i, line in enumerate(lines):
-        if f"- Pattern-Key: {pattern_key}" in line:
-            found_key = True
-        if found_key and "- Status: active" in line:
-            lines[i] = "- Status: promoted"
-            break
-    path.write_text("\n".join(lines), encoding="utf-8")
-
-
-def scan_and_promote(learnings_path, boot_path, threshold=3):
-    promotable = get_promotable_entries(learnings_path, threshold)
+def scan_and_promote(db, boot_path, threshold=3):
+    """Scan DB for promotable entries and inject into boot.md."""
+    promotable = get_promotable_entries(db, threshold)
     promoted = []
     for entry in promotable:
         promote_to_boot(
@@ -63,6 +51,6 @@ def scan_and_promote(learnings_path, boot_path, threshold=3):
             summary=entry.summary,
             area=entry.area or "general",
         )
-        mark_as_promoted(learnings_path, entry.pattern_key)
+        db.promote_learning(entry.entry_id)
         promoted.append(entry.pattern_key)
     return promoted

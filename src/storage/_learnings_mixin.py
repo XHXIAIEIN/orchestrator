@@ -1,4 +1,4 @@
-"""Learnings-related methods for EventsDB."""
+"""Learnings-related methods for EventsDB — DB is the single source of truth."""
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -14,40 +14,42 @@ class LearningsMixin:
         rule: str,
         *,
         area: str = "general",
+        detail: str = "",
         context: str = "",
         source_type: str = "error",
+        entry_type: str = "learning",
+        related_keys: list[str] | None = None,
         department: str = None,
         task_id: int = None,
         ttl_days: int = 0,
     ) -> int:
-        """Record a learning. If pattern_key exists, bump recurrence instead.
-
-        Args:
-            ttl_days: Time-to-live in days. 0 = permanent. >0 = auto-expires.
-                      Temporary facts (config values, perf numbers) should use TTL.
-        """
+        """Record a learning. If pattern_key exists, bump recurrence and append detail."""
         now = datetime.now(timezone.utc).isoformat()
+        related_json = json.dumps(related_keys or [])
 
-        # Compute expiry if TTL set
         expires_at = None
         if ttl_days > 0:
             expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat()
 
         with self._connect() as conn:
             existing = conn.execute(
-                "SELECT id, recurrence, status FROM learnings WHERE pattern_key = ?",
+                "SELECT id, recurrence, status, detail FROM learnings WHERE pattern_key = ?",
                 (pattern_key,),
             ).fetchone()
             if existing:
                 new_count = existing["recurrence"] + 1
+                # Append new detail evidence separated by ---
+                old_detail = existing["detail"] or ""
+                merged_detail = (old_detail + "\n---\n" + detail).strip("- \n") if detail and old_detail else (detail or old_detail)
                 conn.execute(
-                    "UPDATE learnings SET recurrence = ?, context = CASE WHEN ? != '' THEN ? ELSE context END WHERE id = ?",
-                    (new_count, context, context, existing["id"]),
+                    "UPDATE learnings SET recurrence = ?, detail = ?, last_seen = ?, "
+                    "context = CASE WHEN ? != '' THEN ? ELSE context END "
+                    "WHERE id = ?",
+                    (new_count, merged_detail, now, context, context, existing["id"]),
                 )
                 return existing["id"]
 
-            # Contradiction check: find active learnings with similar pattern_key prefix
-            # that might conflict (same area, same department, different rule)
+            # Contradiction check
             prefix = pattern_key.split(":")[0] if ":" in pattern_key else pattern_key
             conflicts = conn.execute(
                 "SELECT id, pattern_key, rule FROM learnings "
@@ -56,18 +58,19 @@ class LearningsMixin:
                 (f"{prefix}:%", area, rule),
             ).fetchall()
             if conflicts:
-                # Log contradiction but don't block — newer fact wins
                 for c in conflicts:
                     log.info(
                         f"learnings: potential contradiction — new '{pattern_key}' vs existing '{c['pattern_key']}'"
                     )
 
             cursor = conn.execute(
-                "INSERT INTO learnings (pattern_key, area, rule, context, source_type, "
-                "status, recurrence, department, task_id, created_at, ttl_days, expires_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?)",
-                (pattern_key, area, rule, context, source_type, department, task_id,
-                 now, ttl_days, expires_at),
+                "INSERT INTO learnings (pattern_key, area, rule, detail, context, source_type, "
+                "entry_type, related_keys, status, recurrence, department, task_id, "
+                "created_at, first_seen, last_seen, ttl_days, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?)",
+                (pattern_key, area, rule, detail, context, source_type,
+                 entry_type, related_json, department, task_id,
+                 now, now, now, ttl_days, expires_at),
             )
             return cursor.lastrowid
 
@@ -89,7 +92,9 @@ class LearningsMixin:
                 (now, learning_id),
             )
 
-    def get_learnings(self, status: str = None, area: str = None, department: str = None, limit: int = 50) -> list:
+    def get_learnings(self, status: str = None, area: str = None,
+                      department: str = None, entry_type: str = None,
+                      limit: int = 50) -> list:
         """Query learnings with optional filters."""
         clauses, params = [], []
         if status:
@@ -101,11 +106,16 @@ class LearningsMixin:
         if department:
             clauses.append("department = ?")
             params.append(department)
+        if entry_type:
+            clauses.append("entry_type = ?")
+            params.append(entry_type)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(
-                f"SELECT id, pattern_key, area, rule, context, source_type, status, recurrence, department, task_id, created_at, promoted_at "
+                f"SELECT id, pattern_key, area, rule, detail, context, source_type, "
+                f"entry_type, related_keys, status, recurrence, department, task_id, "
+                f"created_at, first_seen, last_seen, promoted_at "
                 f"FROM learnings {where} ORDER BY recurrence DESC, created_at DESC LIMIT ?",
                 params,
             ).fetchall()
@@ -115,13 +125,68 @@ class LearningsMixin:
         """Get all promoted learnings for boot.md compilation."""
         return self.get_learnings(status="promoted", limit=30)
 
+    def get_learnings_for_compilation(self, entry_type: str = None,
+                                       status: str = None) -> list[dict]:
+        """Full learnings with detail and related_keys — for compiler context packs."""
+        clauses, params = [], []
+        if entry_type:
+            clauses.append("entry_type = ?")
+            params.append(entry_type)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        else:
+            # Exclude retired by default
+            clauses.append("status != 'retired'")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT id, pattern_key, area, rule, detail, related_keys, "
+                f"entry_type, status, recurrence, first_seen, last_seen "
+                f"FROM learnings {where} ORDER BY recurrence DESC, created_at DESC",
+                params,
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            # Parse related_keys JSON
+            try:
+                d["related_keys"] = json.loads(d.get("related_keys") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                d["related_keys"] = []
+            result.append(d)
+        return result
+
+    def get_learnings_summary(self) -> dict:
+        """Quick overview: counts by entry_type + top 5 by recurrence."""
+        with self._connect() as conn:
+            counts = conn.execute(
+                "SELECT entry_type, COUNT(*) as cnt FROM learnings "
+                "WHERE status != 'retired' GROUP BY entry_type"
+            ).fetchall()
+            top5 = conn.execute(
+                "SELECT pattern_key, rule, recurrence, entry_type FROM learnings "
+                "WHERE status != 'retired' ORDER BY recurrence DESC LIMIT 5"
+            ).fetchall()
+        return {
+            "counts": {r["entry_type"]: r["cnt"] for r in counts},
+            "top5": [dict(r) for r in top5],
+        }
+
+    def get_promotable_learnings(self, threshold: int = 3) -> list[dict]:
+        """Get learnings ready for promotion (recurrence >= threshold, still pending)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, pattern_key, rule, detail, area, entry_type, recurrence "
+                "FROM learnings WHERE recurrence >= ? AND status = 'pending' "
+                "ORDER BY recurrence DESC",
+                (threshold,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_learnings_for_dispatch(self, department: str = None, area: str = None,
                                     record_hits: bool = True) -> list:
-        """Get active+promoted learnings relevant to a dispatch context.
-
-        If record_hits=True, bumps hit_count and last_hit_at for matched learnings
-        (supports usage-based experience culling).
-        """
+        """Get active+promoted learnings relevant to a dispatch context."""
         clauses = ["status IN ('pending', 'promoted')"]
         params = []
         if department:

@@ -5,6 +5,7 @@ SOUL/private/
 .claude/skills/persona/
 .claude/worktrees/
 .claude/boot.md
+.claude/context/
 .superpowers/
 data/
 !data/knowledge/
