@@ -249,12 +249,89 @@ class EventBus:
         }
 
 
+# ── EventStream transport (stolen from ChatDev 2.0, Round 13) ──
+# In-memory bounded deque with cursor-based polling, useful for dashboard
+# real-time updates. Complements the SQLite-backed EventBus — EventBus
+# handles persistence + reactive rules; EventStream handles fast polling.
+try:
+    from src.core.event_stream import EventStream, StreamEvent
+
+    class EventBusWithStream(EventBus):
+        """EventBus enhanced with an in-memory EventStream for cursor polling.
+
+        All existing EventBus behavior is preserved. Additionally, every
+        published event is mirrored to an EventStream for fast cursor-based
+        polling (e.g. dashboard SSE endpoints).
+        """
+
+        def __init__(self, db_path: str = None, stream_max_events: int = 2000):
+            super().__init__(db_path=db_path)
+            self._stream = EventStream(max_events=stream_max_events)
+
+        def publish(self, event: Event) -> bool:
+            """Publish to both SQLite bus and in-memory stream."""
+            result = super().publish(event)
+            # Mirror to EventStream regardless of coalesce result — the stream
+            # is for real-time consumers who want every event.
+            try:
+                self._stream.append(StreamEvent(
+                    event_type=event.event_type,
+                    data=event.payload,
+                ))
+            except Exception:
+                pass  # Never break publish due to stream failure
+            return result
+
+        def poll_stream(self, after: int = 0, limit: int = 100,
+                        event_types: set[str] | None = None) -> tuple[list[dict], int]:
+            """Cursor-based polling for dashboard/SSE consumers.
+
+            Returns (events_as_dicts, new_cursor).
+            """
+            events, cursor = self._stream.get_after(after, limit, event_types)
+            return [e.to_dict() for e in events], cursor
+
+        def wait_stream(self, after: int = 0, timeout: float = 30.0,
+                        event_types: set[str] | None = None,
+                        limit: int = 100) -> tuple[list[dict], int, bool]:
+            """Blocking poll — waits for new events or timeout.
+
+            Returns (events_as_dicts, new_cursor, timed_out).
+            """
+            events, cursor, timed_out = self._stream.wait_for_events(
+                after, timeout, event_types, limit
+            )
+            return [e.to_dict() for e in events], cursor, timed_out
+
+        def stream_stats(self) -> dict:
+            """Get EventStream statistics."""
+            return self._stream.stats()
+
+        def get_stats(self) -> dict:
+            """Extended stats including stream info."""
+            base = super().get_stats()
+            base["stream"] = self._stream.stats()
+            return base
+
+except ImportError:
+    EventBusWithStream = None
+
+
 # ── 全局单例 ──
 _bus: Optional[EventBus] = None
 
 
-def get_event_bus() -> EventBus:
+def get_event_bus(use_stream: bool = True) -> EventBus:
+    """Get the global event bus singleton.
+
+    Args:
+        use_stream: If True and EventStream is available, returns an
+                    EventBusWithStream instance with cursor polling support.
+    """
     global _bus
     if _bus is None:
-        _bus = EventBus()
+        if use_stream and EventBusWithStream is not None:
+            _bus = EventBusWithStream()
+        else:
+            _bus = EventBus()
     return _bus
