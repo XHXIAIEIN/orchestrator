@@ -71,10 +71,18 @@ RETRYABLE_CONDITIONS = {"timeout", "stuck", "unresponsive", "cost_limit", "rate_
 
 @dataclass
 class RolloutConfig:
-    """Per-task retry policy. Can be set in blueprint.yaml under `rollout:` key."""
+    """Per-task retry policy. Can be set in blueprint.yaml under `rollout:` key.
+
+    Round 21 (hermes-agent): added batch_mode + max_turns_override for
+    iteration budget refunding. Batch tasks (test suites, bulk processing)
+    get more agent turns without consuming retry quota.
+    """
     max_attempts: int = 2
     retry_conditions: set[str] = field(default_factory=lambda: {"timeout", "stuck"})
     backoff_seconds: float = 5.0
+    # Round 21: batch mode — grant more turns for tool-heavy tasks
+    batch_mode: bool = False
+    max_turns_override: int | None = None  # overrides MAX_AGENT_TURNS when set
 
     @classmethod
     def from_dict(cls, d: dict) -> "RolloutConfig":
@@ -85,6 +93,8 @@ class RolloutConfig:
             max_attempts=rc.get("max_attempts", 2),
             retry_conditions=set(rc.get("retry_conditions", ["timeout", "stuck"])),
             backoff_seconds=rc.get("backoff_seconds", 5.0),
+            batch_mode=rc.get("batch_mode", False),
+            max_turns_override=rc.get("max_turns_override"),
         )
 
 
@@ -622,6 +632,15 @@ class TaskExecutor:
                     log.info(f"TaskExecutor: task #{task_id} tool '{tool}' flagged ({result.policy.value}): {result.reason}")
             allowed_tools = screened_tools
 
+        # Round 21 (hermes-agent): batch mode grants more turns for tool-heavy tasks
+        if rollout_cfg.batch_mode and rollout_cfg.max_turns_override:
+            task_max_turns = rollout_cfg.max_turns_override
+            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns overridden to {task_max_turns}")
+        elif rollout_cfg.batch_mode:
+            # Default batch boost: 2x normal turns
+            task_max_turns = task_max_turns * 2
+            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns doubled to {task_max_turns}")
+
         log.info(f"TaskExecutor: task #{task_id} policy={route.profile.value} "
                  f"model={effective_model} timeout={task_timeout}s max_turns={task_max_turns}")
 
@@ -815,6 +834,19 @@ class TaskExecutor:
                 if response.output:
                     compressed = compress_output(response.output)
                     output = compressed.content
+                    # Round 21 (hermes-agent): scan agent output for poisoned content
+                    try:
+                        from src.governance.safety.injection_scanner import scan_agent_output, has_high_severity
+                        _threats = scan_agent_output(f"task-{task_id}", output)
+                        if has_high_severity(_threats):
+                            log.warning(
+                                "TaskExecutor: task #%s output flagged by injection scanner: %s",
+                                task_id, _threats[0].pattern_name,
+                            )
+                            # Don't block — log and tag for review
+                            output = f"[⚠ output flagged: {_threats[0].pattern_name}]\n{output}"
+                    except Exception as _scan_err:
+                        log.debug("TaskExecutor: injection scan skipped: %s", _scan_err)
                     # Store output for chain continuity
                     if session_id:
                         ctx_writer.write_chain_output(task_id, output)
