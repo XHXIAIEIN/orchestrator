@@ -29,6 +29,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
 
+from src.governance.safety.injection_scanner import scan_agent_output, has_high_severity
+
 log = logging.getLogger(__name__)
 
 
@@ -535,6 +537,15 @@ class ElderCouncil:
                     timeout=int(timeout / 2),
                     max_tokens=self.max_tokens,
                 )
+                # Round 21 (hermes-agent): scan elder output for poisoned content
+                threats = scan_agent_output(f"elder-{elder_key}", text)
+                if has_high_severity(threats):
+                    log.warning("council: elder %s output flagged: %s", elder_key, threats[0].pattern_name)
+                    return ElderOpinion(
+                        elder_key=elder_key, label=label,
+                        text=f"[Output blocked: {threats[0].pattern_name}]",
+                        stance="caution", confidence=0.0,
+                    )
                 stance, confidence, severity = _parse_stance(text)
                 return ElderOpinion(
                     elder_key=elder_key, label=label,
@@ -637,6 +648,12 @@ class ElderCouncil:
                 timeout=int(timeout),
                 max_tokens=self.max_tokens * 2,
             )
+            # Round 21 (hermes-agent): scan chairman output for poisoned content
+            threats = scan_agent_output("chairman", text)
+            if has_high_severity(threats):
+                log.warning("council: chairman output flagged: %s", threats[0].pattern_name)
+                synthesis, decision, confidence = self._majority_fallback(opinions)
+                return synthesis, decision, confidence, {"fix_now": [], "fix_soon": [], "follow_up": []}
             decision, confidence, action_items = _parse_decision(text)
             return text, decision, confidence, action_items
         except Exception as e:
