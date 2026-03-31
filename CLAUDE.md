@@ -38,6 +38,7 @@ For multi-step tasks, state a brief plan with verification:
 ### Git Safety
 - **Stage first, push later**: `commit` and `push` are two separate steps. Don't auto-push.
 - Prefer working on a local branch rather than committing directly to main/master.
+- **Steal work requires `[STEAL]` tag + dedicated branch**: When dispatching agents for steal/偷师 tasks, the agent prompt MUST include `[STEAL]` at the start. The dispatch-gate hook will block `[STEAL]` work unless the current branch matches `steal/*` or `round/*`. Create a branch first: `git checkout -b steal/<topic>`.
 - **Rollback is a no-go zone**: When stuck on a bug, diagnose with `git diff` and targeted fixes — these preserve all uncommitted work. Rollback commands (`git reset --hard`, `git checkout -- .`, `git restore .`, `git clean -f`) are only allowed when the owner explicitly says "roll back" or "reset". If a rollback is requested, backup first (`git stash` or `git diff > backup.patch`), report backup location, then execute.
 
 ### Deletion = Move to .trash/, Not Delete
