@@ -67,15 +67,45 @@ def _extract_json_with_hash(text: str) -> dict | None:
     return None
 
 
+MAX_BATCH_RETRIES = 2
+
+
 def dispatch_batch(db, practice_id, hash_val, task_order, current_index, questions,
                    chain_from: int | None = None):
-    """Dispatch a single batch through Governor and return (scores, new_hash, next_batch, task_id)."""
+    """Dispatch a single batch through Governor and return (scores, new_hash, next_batch, task_id).
+
+    On failure (stuck/failed/no hash), retries up to MAX_BATCH_RETRIES times
+    with the same hash + questions before giving up.
+    """
+    for attempt in range(1, MAX_BATCH_RETRIES + 1):
+        scores, new_hash, next_batch, task_id = _dispatch_batch_once(
+            db, practice_id, hash_val, task_order, current_index, questions,
+            chain_from=chain_from,
+        )
+
+        # Success: hash advanced and we got a nextBatch (or practice is complete)
+        if new_hash != hash_val:
+            return scores, new_hash, next_batch, task_id
+
+        # If scores came back but hash didn't change, API may have rejected — retry
+        if attempt < MAX_BATCH_RETRIES:
+            dim = questions[0].get("dimension", "?")
+            print(f"  RETRY {attempt}/{MAX_BATCH_RETRIES}: {dim} batch failed (hash unchanged), retrying...")
+            time.sleep(3)
+
+    # Exhausted retries
+    return scores, new_hash, next_batch, task_id
+
+
+def _dispatch_batch_once(db, practice_id, hash_val, task_order, current_index, questions,
+                         chain_from: int | None = None):
+    """Single attempt to dispatch and execute a batch."""
     from scripts.dispatch import dispatch_raw
 
-    # Build question descriptions
+    # Build question descriptions — full prompt, no truncation
     q_descs = []
     for i, q in enumerate(questions):
-        q_descs.append(f"Q{i+1} ({q['id']} - {q['name']}): {q['prompt'][:500]}")
+        q_descs.append(f"Q{i+1} ({q['id']} - {q['name']}): {q['prompt']}")
 
     task_order_str = json.dumps(task_order)
     prompt = f"""Answer these {len(questions)} Clawvard practice questions and submit via API.
