@@ -5,11 +5,12 @@ from src.storage.events_db import EventsDB
 from src.jobs import run_job
 from src.jobs.collectors import run_collectors
 from src.jobs.analysis import run_analysis
-from src.jobs.maintenance import debt_scan, debt_resolve, voice_refresh, memory_hygiene
+from src.jobs.maintenance import debt_scan, debt_resolve, voice_refresh, memory_hygiene, experience_cull, hotness_sweep
 from src.jobs.periodic import (
     profile_periodic, profile_daily,
     performance_report, skill_evolution,
     policy_suggestions, weekly_audit,
+    skill_vetting,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -46,9 +47,12 @@ def start():
     s.add_job(lambda: run_job("performance_report", performance_report, db), "cron", hour=8, timezone="Asia/Shanghai", id="performance_report")
     s.add_job(lambda: run_job("voice_refresh", voice_refresh, db), "interval", days=7, id="voice_refresh")
     s.add_job(lambda: run_job("memory_hygiene", memory_hygiene, db), "cron", day_of_week="sun", hour=6, timezone="Asia/Shanghai", id="memory_hygiene")
+    s.add_job(lambda: run_job("experience_cull", experience_cull, db), "cron", hour=3, timezone="Asia/Shanghai", id="experience_cull")
     s.add_job(lambda: run_job("skill_evolution", skill_evolution, db), "cron", day_of_week="mon", hour=9, timezone="Asia/Shanghai", id="skill_evolution")
     s.add_job(lambda: run_job("policy_suggestions", policy_suggestions, db), "cron", hour=7, timezone="Asia/Shanghai", id="policy_suggestions")
     s.add_job(lambda: run_job("weekly_audit", weekly_audit, db), "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")
+    s.add_job(lambda: run_job("skill_vetting", skill_vetting, db), "cron", day_of_week="sat", hour=9, timezone="Asia/Shanghai", id="skill_vetting")
+    s.add_job(lambda: run_job("hotness_sweep", hotness_sweep, db), "cron", hour=5, timezone="Asia/Shanghai", id="hotness_sweep")
 
     # ── Agent Cron: 部门级定时任务 (Round 16 LobeHub) ──
     try:

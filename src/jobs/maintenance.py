@@ -1,4 +1,4 @@
-"""Maintenance jobs — debt scan/resolve, voice pool refresh, memory hygiene."""
+"""Maintenance jobs — debt scan/resolve, voice pool refresh, memory hygiene, experience cull, hotness sweep."""
 import logging
 from pathlib import Path
 
@@ -7,6 +7,18 @@ from src.governance.learning.debt_scanner import DebtScanner
 from src.governance.learning.debt_resolver import resolve_debts, check_resolved_debts
 from src.voice.voice_picker import refresh_voice_pool
 from src.governance.context.memory_supersede import apply_half_life
+
+try:
+    from src.governance.learning.experience_cull import run_cull
+except ImportError:
+    run_cull = None
+
+# ── Hotness scoring (stolen from OpenViking) ──
+try:
+    from src.storage.hotness import HotnessScorer
+    _HOTNESS_AVAILABLE = True
+except ImportError:
+    _HOTNESS_AVAILABLE = False
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +75,25 @@ def memory_hygiene(db: EventsDB):
         log.error(f"Memory hygiene failed: {e}")
 
 
+def experience_cull(db: EventsDB):
+    """Retire stale/unused learnings that exceed TTL or hit thresholds."""
+    if not run_cull:
+        return
+    try:
+        report = run_cull(db)
+        if report.retired or report.promoted:
+            db.write_log(
+                f"Experience cull: retired {len(report.retired)}, promoted {len(report.promoted)}, "
+                f"at-risk {len(report.at_risk)}, active {report.total_active}",
+                "INFO", "experience_cull",
+            )
+        else:
+            log.debug(f"Experience cull: no changes ({report.total_active} active)")
+    except Exception as e:
+        log.error(f"Experience cull failed: {e}")
+        db.write_log(f"Experience cull failed: {e}", "ERROR", "experience_cull")
+
+
 def voice_refresh(db: EventsDB):
     try:
         db.write_log("开始刷新声音池", "INFO", "voice_picker")
@@ -71,3 +102,25 @@ def voice_refresh(db: EventsDB):
     except Exception as e:
         log.error(f"Voice refresh failed: {e}")
         db.write_log(f"声音池刷新失败: {e}", "ERROR", "voice_picker")
+
+
+def hotness_sweep(db: EventsDB):
+    """Score learnings by hotness and archive cold ones. Runs periodically."""
+    if not _HOTNESS_AVAILABLE:
+        log.debug("hotness_sweep: skipped (hotness module not available)")
+        return
+    try:
+        scorer = HotnessScorer(db)
+        stats = scorer.get_tier_stats()
+        archived = scorer.archive_cold(min_age_days=7)
+
+        summary = (
+            f"Hotness sweep: {stats['hot']} hot, {stats['warm']} warm, "
+            f"{stats['cold']} cold, {archived} archived"
+        )
+        if archived or stats.get("cold", 0) > 0:
+            db.write_log(summary, "INFO", "hotness_scorer")
+        log.info(summary)
+    except Exception as e:
+        log.error(f"Hotness sweep failed: {e}")
+        db.write_log(f"Hotness sweep failed: {e}", "ERROR", "hotness_scorer")

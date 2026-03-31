@@ -22,6 +22,13 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+# ── Hotness-based tier classification (stolen from OpenViking) ──
+try:
+    from src.storage.hotness import score_hotness, classify_tier as _hotness_classify
+    _HOTNESS_AVAILABLE = True
+except ImportError:
+    _HOTNESS_AVAILABLE = False
+
 # Token 预算（字符数估算，1 token ≈ 4 chars）
 HOT_BUDGET_CHARS = 8000    # ~2000 tokens
 EXTENDED_MAX_CHARS = 4000  # 单次注入上限 ~1000 tokens
@@ -260,6 +267,28 @@ def format_extended_for_prompt(entries: list[MemoryEntry]) -> str:
         lines.append(content)
 
     return "\n".join(lines)
+
+
+def classify_learning_tier(hit_count: int, last_hit_at: str | None,
+                           created_at: str | None = None) -> str:
+    """Classify a learning into hot/warm/cold using hotness scoring.
+
+    Falls back to simple hit_count heuristic if hotness module is unavailable.
+    Used by memory_tier to decide which learnings get loaded as hot memory
+    vs. extended memory.
+    """
+    if _HOTNESS_AVAILABLE:
+        try:
+            score = score_hotness(hit_count, last_hit_at, created_at)
+            return _hotness_classify(score)
+        except Exception:
+            pass
+    # Fallback: simple heuristic
+    if hit_count >= 5:
+        return "hot"
+    elif hit_count >= 1:
+        return "warm"
+    return "cold"
 
 
 def _find_memory_dir() -> Optional[Path]:

@@ -6,8 +6,18 @@ entry_type: 'error' | 'learning' | 'feature'
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
+
+log = logging.getLogger(__name__)
+
+# ── Dedup integration (stolen from OpenViking) ──
+try:
+    from src.storage.dedup import check_duplicate as _check_duplicate
+    _DEDUP_AVAILABLE = True
+except ImportError:
+    _DEDUP_AVAILABLE = False
 
 
 @dataclass
@@ -37,8 +47,43 @@ def _infer_related_keys(pattern_key: str) -> list[str]:
     return related
 
 
+def _dedup_check(pattern_key: str, summary: str, area: str, db) -> tuple[bool, str | None]:
+    """Run dedup check if available. Returns (should_store, reason).
+
+    If dedup says "skip" but the match is the same pattern_key, allow through
+    — add_learning handles recurrence bumping for same-key entries.
+    On any failure, defaults to allowing storage.
+    """
+    if not _DEDUP_AVAILABLE:
+        return True, None
+    try:
+        existing = db.get_learnings(area=area, limit=200)
+        decision = _check_duplicate(summary, area, existing)
+        if decision.action == "skip":
+            # If the duplicate is the same pattern_key, let add_learning
+            # handle it (recurrence bump). Only block truly different entries.
+            if decision.existing_id is not None:
+                matched = next((e for e in existing if e.get("id") == decision.existing_id), None)
+                if matched and matched.get("pattern_key") == pattern_key:
+                    return True, None  # same key = recurrence, not duplicate
+            log.info(f"dedup: skipping '{pattern_key}' in '{area}' — {decision.reason}")
+            return False, decision.reason
+        if decision.action == "merge":
+            log.info(f"dedup: merge candidate for '{pattern_key}' in '{area}' — {decision.reason}")
+            # Let add_learning handle the merge via pattern_key match;
+            # just log the fuzzy match for visibility
+        return True, None
+    except Exception as e:
+        log.warning(f"dedup check failed (non-fatal): {e}")
+        return True, None
+
+
 def append_error(pattern_key, summary, detail, area, db):
     """Record an error pattern to DB."""
+    should_store, reason = _dedup_check(pattern_key, summary, area, db)
+    if not should_store:
+        return None
+
     row_id = db.add_learning(
         pattern_key=pattern_key,
         rule=summary,
@@ -57,6 +102,10 @@ def append_error(pattern_key, summary, detail, area, db):
 
 def append_learning(pattern_key, summary, detail, area, db):
     """Record a learning/fix strategy to DB."""
+    should_store, reason = _dedup_check(pattern_key, summary, area, db)
+    if not should_store:
+        return None
+
     row_id = db.add_learning(
         pattern_key=pattern_key,
         rule=summary,
@@ -75,6 +124,10 @@ def append_learning(pattern_key, summary, detail, area, db):
 
 def append_feature(pattern_key, summary, detail, area, db):
     """Record a feature gap to DB."""
+    should_store, reason = _dedup_check(pattern_key, summary, area, db)
+    if not should_store:
+        return None
+
     row_id = db.add_learning(
         pattern_key=pattern_key,
         rule=summary,
