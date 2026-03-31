@@ -26,6 +26,14 @@ from typing import Callable, Optional
 
 from src.governance.trust_ladder import TrustLadder
 
+# Smart Approvals — command-level trust learning (Hermes)
+try:
+    from src.governance.smart_approvals import SmartApprovals
+    _smart_approvals = SmartApprovals()
+except ImportError:
+    SmartApprovals = None
+    _smart_approvals = None
+
 log = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 300  # 5 minutes
@@ -121,6 +129,11 @@ class ApprovalGateway:
             log.info(f"trust_ladder: auto-approved {task_id} (previously trusted)")
             return "approve"
 
+        # Smart Approvals: command-level trust learning (Hermes)
+        if _smart_approvals and _smart_approvals.should_auto_approve(description):
+            log.info(f"smart_approvals: auto-approved {task_id} (learned trust)")
+            return "approve"
+
         global _last_approval_hash
         prev_hash = _last_approval_hash
         req = ApprovalRequest(
@@ -185,6 +198,13 @@ class ApprovalGateway:
 
         # Notify all channels of the outcome
         self._notify_outcome(req)
+
+        # Smart Approvals: record decision for learning (Hermes)
+        if _smart_approvals and req.description:
+            try:
+                _smart_approvals.record(req.description, decision)
+            except Exception:
+                pass
 
         # Wake session callback — update session status on approve/deny
         try:

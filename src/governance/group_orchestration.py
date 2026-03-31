@@ -14,9 +14,21 @@ it detects a task requires cross-department collaboration.
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
+# ── FutureGate (stolen from ChatDev 2.0, Round 13) ──
+# Coordination primitive for multi-department batch dispatches.
+# Each department gets a gate; the orchestrator waits for all gates
+# to be provided (or time out) before proceeding to evaluation.
+try:
+    from src.core.future_gate import FutureGate, GateTimeout, GateCancelled
+except ImportError:
+    FutureGate = None
+    GateTimeout = None
+    GateCancelled = None
 
 log = logging.getLogger(__name__)
 
@@ -145,12 +157,89 @@ class GroupOrchestrationSupervisor:
         self,
         max_rounds: int = 5,
         departments: Optional[list[str]] = None,
+        signal_bus=None,
+        gate_timeout: float = 300.0,
     ):
         self.max_rounds = max_rounds
         self.departments = departments or [
             "engineering", "operations", "security", "quality", "protocol", "personnel",
         ]
         self._round_results: list[RoundResult] = []
+        self._signal_bus = signal_bus
+        self._gate_timeout = gate_timeout
+        # FutureGate for coordinating multi-department batch dispatches
+        self._gate = FutureGate() if FutureGate else None
+        self._init_signal_bus()
+
+    def _init_signal_bus(self):
+        """Initialize the cross-department signal bus for inter-round communication."""
+        if self._signal_bus is not None:
+            return
+        try:
+            from src.governance.signals.cross_dept import SignalBus
+            self._signal_bus = SignalBus()
+        except (ImportError, Exception) as e:
+            log.debug(f"GroupOrchestration: signal bus init failed: {e}")
+            self._signal_bus = None
+
+    def _emit_cross_dept_signals(self, round_result: RoundResult, task: dict):
+        """Emit cross-department signals based on round results.
+
+        Scans outputs for collaboration patterns and sends structured signals
+        through the SignalBus instead of relying solely on text pattern matching.
+        """
+        if not self._signal_bus:
+            return
+
+        try:
+            from src.governance.signals.cross_dept import (
+                Signal, SignalType, SignalPriority,
+            )
+        except ImportError:
+            return
+
+        for dept, dr in round_result.department_results.items():
+            output = dr.get("output", "")
+            status = dr.get("status", "")
+            task_id = dr.get("task_id") or 0
+
+            if not output:
+                continue
+
+            # Emit signals for detected collaboration needs
+            collab_needs = _detect_collaboration_needs(output)
+            for target_dept in collab_needs:
+                if target_dept == dept:
+                    continue
+                try:
+                    signal = Signal(
+                        signal_type=SignalType.ESCALATION,
+                        priority=SignalPriority.HIGH,
+                        source_dept=dept,
+                        target_dept=target_dept,
+                        title=f"Collaboration needed from round {round_result.round_num}",
+                        description=output[:300],
+                        related_task_id=task_id,
+                    )
+                    self._signal_bus.send(signal)
+                except Exception as e:
+                    log.debug(f"GroupOrchestration: signal emit failed: {e}")
+
+            # Emit failure signals
+            if status == "failed" and _detect_failure(output):
+                try:
+                    signal = Signal(
+                        signal_type=SignalType.ESCALATION,
+                        priority=SignalPriority.CRITICAL,
+                        source_dept=dept,
+                        target_dept="",  # will be auto-routed
+                        title=f"Department {dept} failed in round {round_result.round_num}",
+                        description=output[:300],
+                        related_task_id=task_id,
+                    )
+                    self._signal_bus.send(signal)
+                except Exception as e:
+                    log.debug(f"GroupOrchestration: failure signal emit failed: {e}")
 
     # ── Core Loop ───────────────────────────────────────────────
 
@@ -200,6 +289,12 @@ class GroupOrchestrationSupervisor:
             # Execute this round
             round_result = self._execute_round(round_num, current_decision, task)
             self._round_results.append(round_result)
+
+            # Emit cross-department signals based on round output
+            try:
+                self._emit_cross_dept_signals(round_result, task)
+            except Exception as e:
+                log.debug(f"GroupOrchestration: signal emission failed: {e}")
 
             # Evaluate and decide next step
             next_decision = self.evaluate(task, self._round_results)
@@ -349,9 +444,15 @@ class GroupOrchestrationSupervisor:
 
         This is the integration seam — it imports Governor lazily to avoid
         circular imports and delegates actual task creation/execution.
+
+        Enhanced with FutureGate (ChatDev 2.0, Round 13): BATCH mode dispatches
+        departments in parallel using a thread pool and FutureGate for coordination.
+        SINGLE mode preserves the original sequential behavior.
         """
         result = RoundResult(round_num=round_num)
 
+        # Filter valid departments first
+        valid_targets = []
         for dept in decision.targets:
             if dept not in self.departments:
                 log.warning(f"GroupOrchestration: skipping unknown department '{dept}'")
@@ -360,10 +461,66 @@ class GroupOrchestrationSupervisor:
                     "output": f"Unknown department: {dept}",
                     "task_id": None,
                 }
-                continue
+            else:
+                valid_targets.append(dept)
 
-            dept_result = self._dispatch_to_department(dept, decision.instruction, task)
-            result.department_results[dept] = dept_result
+        # ── BATCH with FutureGate: parallel dispatch + coordinated wait ──
+        if (decision.mode == DispatchMode.BATCH and len(valid_targets) > 1
+                and self._gate is not None):
+            gate_ids: dict[str, str] = {}
+            for dept in valid_targets:
+                gate_ids[dept] = self._gate.open(label=f"round{round_num}:{dept}")
+
+            def _dispatch_and_provide(dept: str, gate_id: str):
+                try:
+                    dept_result = self._dispatch_to_department(
+                        dept, decision.instruction, task
+                    )
+                    self._gate.provide(gate_id, dept_result)
+                    return dept, dept_result
+                except Exception as e:
+                    error_result = {
+                        "status": "failed",
+                        "output": f"Gate dispatch error: {e}",
+                        "task_id": None,
+                    }
+                    self._gate.provide(gate_id, error_result)
+                    return dept, error_result
+
+            # Dispatch all departments in parallel
+            with ThreadPoolExecutor(
+                max_workers=min(len(valid_targets), 4),
+                thread_name_prefix="group-orch"
+            ) as pool:
+                futures = {
+                    pool.submit(_dispatch_and_provide, dept, gate_ids[dept]): dept
+                    for dept in valid_targets
+                }
+
+                # Wait for all gates with timeout
+                for dept in valid_targets:
+                    gate_id = gate_ids[dept]
+                    try:
+                        dept_result = self._gate.wait(
+                            gate_id, timeout=self._gate_timeout
+                        )
+                        result.department_results[dept] = dept_result
+                    except (GateTimeout, Exception) as e:
+                        log.warning(
+                            f"GroupOrchestration: gate wait failed for {dept}: {e}"
+                        )
+                        result.department_results[dept] = {
+                            "status": "failed",
+                            "output": f"Gate coordination failed: {e}",
+                            "task_id": None,
+                        }
+        else:
+            # ── Sequential dispatch (original behavior, preserved) ──
+            for dept in valid_targets:
+                dept_result = self._dispatch_to_department(
+                    dept, decision.instruction, task
+                )
+                result.department_results[dept] = dept_result
 
         # Build aggregated output for this round
         outputs = [

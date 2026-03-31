@@ -261,6 +261,122 @@ class TwoStageRAGProvider(BaseProvider):
         return chunks
 
 
+class StructuredMemoryProvider(BaseProvider):
+    """从 StructuredMemoryStore 提供 6 维结构化记忆。
+
+    偷师来源: LobeHub (Round 16, P0 #1) — 6 维记忆系统。
+
+    Hot 记忆 → Priority 15 (始终注入，仅次于 learnings)
+    On-demand 搜索 → Priority 45 (按任务关键词检索 warm/cold 记忆)
+
+    与 memory_tier.py 共存：memory_tier 处理 .md 文件级 extended memory，
+    本 Provider 处理 SQLite 6 维结构化记忆。
+    """
+    name = "structured_memory"
+
+    def __init__(self, store=None, hot_budget_chars: int = 4000):
+        self._store = store
+        self._hot_budget_chars = hot_budget_chars
+
+    def _get_store(self):
+        if self._store is not None:
+            return self._store
+        try:
+            from src.governance.context.structured_memory import StructuredMemoryStore
+            self._store = StructuredMemoryStore()
+            return self._store
+        except Exception as e:
+            log.debug(f"StructuredMemoryProvider: store init failed: {e}")
+            return None
+
+    def provide(self, ctx: TaskContext) -> list[ContextChunk]:
+        store = self._get_store()
+        if not store:
+            return []
+
+        chunks = []
+
+        # ── Hot memories (high confidence, recent) ──
+        try:
+            hot_entries = store.get_hot(budget_chars=self._hot_budget_chars)
+            if hot_entries:
+                lines = self._format_hot_entries(hot_entries)
+                if lines:
+                    chunks.append(ContextChunk(
+                        source=f"{self.name}/hot",
+                        content="[Structured Memory — hot tier]\n" + "\n".join(lines),
+                        priority=15,
+                    ))
+        except Exception as e:
+            log.warning(f"StructuredMemoryProvider: hot memory retrieval failed: {e}")
+
+        # ── On-demand search (warm/cold) based on task keywords ──
+        query = ctx.task_text or ctx.action
+        if query:
+            try:
+                from src.governance.context.structured_memory import Dimension
+                search_results = []
+                for dim in Dimension:
+                    results = store.search(dim, query, top_k=3)
+                    for r in results:
+                        r["_dimension"] = dim.value
+                    search_results.extend(results)
+
+                if search_results:
+                    # Sort by confidence and take top entries
+                    search_results.sort(
+                        key=lambda e: e.get("confidence", 0), reverse=True
+                    )
+                    formatted = self._format_search_results(search_results[:8])
+                    if formatted:
+                        chunks.append(ContextChunk(
+                            source=f"{self.name}/search",
+                            content="[Structured Memory — relevant]\n" + "\n".join(formatted),
+                            priority=45,
+                        ))
+            except Exception as e:
+                log.warning(f"StructuredMemoryProvider: search failed: {e}")
+
+        return chunks
+
+    @staticmethod
+    def _format_hot_entries(entries: list[dict]) -> list[str]:
+        lines = []
+        for e in entries:
+            dim = e.get("dimension", "?")
+            # Pick the most informative text field based on dimension
+            text = (
+                e.get("summary") or e.get("fact") or e.get("directive")
+                or e.get("situation") or e.get("project") or e.get("aspect")
+                or ""
+            )
+            if text:
+                conf = e.get("confidence", 0)
+                lines.append(f"- [{dim}] (conf={conf:.1f}) {text[:200]}")
+        return lines
+
+    @staticmethod
+    def _format_search_results(results: list[dict]) -> list[str]:
+        lines = []
+        for r in results:
+            dim = r.get("_dimension", "?")
+            text = (
+                r.get("summary") or r.get("fact") or r.get("directive")
+                or r.get("situation") or r.get("project") or r.get("aspect")
+                or ""
+            )
+            if text:
+                detail = (
+                    r.get("detail") or r.get("reasoning") or r.get("description")
+                    or r.get("goal") or ""
+                )
+                line = f"- [{dim}] {text[:150]}"
+                if detail:
+                    line += f" — {detail[:100]}"
+                lines.append(line)
+        return lines
+
+
 class HistoryProvider(BaseProvider):
     """从 run_logger 读取最近执行记录。
 

@@ -158,6 +158,46 @@ class TaskDispatcher:
 
         return dispatched
 
+    def needs_group_orchestration(self, spec: dict) -> bool:
+        """Detect if a task requires multi-department group orchestration.
+
+        Triggers when:
+          - spec has 'departments' key (explicit multi-dept)
+          - complexity is HIGH/COMPLEX and task text signals cross-dept work
+          - spec has 'multi_department' flag set explicitly
+
+        Does NOT trigger for:
+          - Tasks already inside a group orchestration round
+          - Single-department tasks with normal complexity
+        """
+        # Already in a group orchestration round — don't recurse
+        if spec.get("orchestration_round"):
+            return False
+
+        # Explicit multi-department spec
+        if spec.get("departments"):
+            depts = spec["departments"]
+            if isinstance(depts, str):
+                depts = [d.strip() for d in depts.split(",")]
+            return len(depts) > 1
+
+        # Explicit flag
+        if spec.get("multi_department"):
+            return True
+
+        # Complexity-based detection
+        complexity_name = spec.get("complexity", "")
+        if complexity_name in ("COMPLEX",):
+            action_text = f"{spec.get('problem', '')} {spec.get('summary', '')} {spec.get('action', '')}".lower()
+            cross_dept_signals = [
+                "跨部门", "cross-department", "multi-department", "多部门",
+                "协作", "collaborate", "联合", "joint",
+                "security review", "安全审查", "质量审查", "quality review",
+            ]
+            return any(sig in action_text for sig in cross_dept_signals)
+
+        return False
+
     def dispatch_task(self, spec: dict, action: str, reason: str,
                       priority: str = "high", source: str = "auto") -> int | None:
         """Atomic dispatch pipeline: create → classify → preflight → scrutinize.

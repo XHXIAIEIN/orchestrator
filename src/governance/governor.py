@@ -75,6 +75,34 @@ class Governor:
 
     def _dispatch_task(self, spec: dict, action: str, reason: str,
                        priority: str = "high", source: str = "auto") -> dict | None:
+        # ── Multi-department detection → route to group orchestration ──
+        try:
+            if self.dispatcher.needs_group_orchestration(spec):
+                import logging
+                logging.getLogger(__name__).info(
+                    f"Governor: multi-dept task detected, routing to group orchestration"
+                )
+                output = self.run_group(
+                    {"action": action, "spec": spec, "reason": reason},
+                    max_rounds=5,
+                )
+                # Create a record task for the group orchestration result
+                task_id = self.db.create_task(
+                    action=action, reason=reason, priority=priority,
+                    spec=spec, source="group_orchestration",
+                )
+                from datetime import datetime, timezone
+                self.db.update_task(
+                    task_id, status="completed", output=output,
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+                return self.db.get_task(task_id)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Governor: group orchestration failed ({e}), falling back to single dispatch"
+            )
+
         task_id = self.dispatcher.dispatch_task(spec, action, reason, priority, source)
         if task_id is None:
             return None
