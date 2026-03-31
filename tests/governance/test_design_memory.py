@@ -1,25 +1,29 @@
 """Tests for Design Memory."""
 import json
+import pytest
 from src.governance.design_memory import DesignMemory, VALID_CATEGORIES
 
 
-def test_record_decision():
-    dm = DesignMemory()
+@pytest.fixture
+def dm(tmp_path):
+    """Create a DesignMemory backed by an isolated temp DB."""
+    return DesignMemory(db_path=str(tmp_path / "memory.db"))
+
+
+def test_record_decision(dm):
     d = dm.record_decision("color", "Use slate-800 for text", reason="Less harsh than black")
     assert d.category == "color"
     assert d.approved is True
     assert d.confidence == 1.0
 
 
-def test_record_anti_pattern():
-    dm = DesignMemory()
+def test_record_anti_pattern(dm):
     d = dm.record_anti_pattern("Never use pure #000000 black", reason="Too harsh")
     assert d.is_anti_pattern
     assert d.category == "anti-pattern"
 
 
-def test_get_by_category():
-    dm = DesignMemory()
+def test_get_by_category(dm):
     dm.record_decision("color", "Use blue-600 for links")
     dm.record_decision("layout", "16px card padding")
     dm.record_decision("color", "Slate-100 for backgrounds")
@@ -27,23 +31,22 @@ def test_get_by_category():
     assert len(colors) == 2
 
 
-def test_approved_only_filter():
-    dm = DesignMemory()
+def test_approved_only_filter(dm):
     dm.record_decision("color", "Blue for links", approved=True)
     dm.record_decision("color", "Red for links", approved=False)
     approved = dm.get_decisions(category="color", approved_only=True)
     assert len(approved) == 1
 
 
-def test_contradict_reduces_confidence():
-    dm = DesignMemory()
+def test_contradict_reduces_confidence(dm):
     d = dm.record_decision("layout", "Use 12px gaps")
     dm.contradict(d.id, "Actually 8px looks better")
-    assert d.confidence == 0.7
+    decisions = dm.get_decisions(category="layout")
+    assert len(decisions) == 1
+    assert decisions[0].confidence == pytest.approx(0.7, abs=0.01)
 
 
-def test_min_confidence_filter():
-    dm = DesignMemory()
+def test_min_confidence_filter(dm):
     d1 = dm.record_decision("color", "High confidence", confidence=0.9)
     d2 = dm.record_decision("color", "Low confidence", confidence=0.2)
     results = dm.get_decisions(min_confidence=0.5)
@@ -51,8 +54,7 @@ def test_min_confidence_filter():
     assert results[0].decision == "High confidence"
 
 
-def test_to_prompt_context():
-    dm = DesignMemory()
+def test_to_prompt_context(dm):
     dm.record_decision("color", "Slate-800 for text")
     dm.record_anti_pattern("No pure black")
     ctx = dm.to_prompt_context(categories=["color", "anti-pattern"])
@@ -61,34 +63,36 @@ def test_to_prompt_context():
     assert "pure black" in ctx
 
 
-def test_to_prompt_context_empty():
-    dm = DesignMemory()
+def test_to_prompt_context_empty(dm):
     ctx = dm.to_prompt_context()
     assert ctx == ""
 
 
 def test_save_and_load(tmp_path):
-    dm = DesignMemory()
+    db1 = str(tmp_path / "dm1.db")
+    dm = DesignMemory(db_path=db1)
     dm.record_decision("color", "Blue links", reason="Brand color")
     dm.record_decision("layout", "16px padding")
 
     path = tmp_path / "design_memory.json"
     dm.save_to_file(path)
 
-    dm2 = DesignMemory()
+    db2 = str(tmp_path / "dm2.db")
+    dm2 = DesignMemory(db_path=db2)
     dm2.load_from_file(path)
     assert len(dm2.get_decisions()) == 2
-    assert dm2.get_decisions()[0].decision == "Blue links"
+    # Order may vary (DB returns by confidence desc), check both exist
+    decisions = {d.decision for d in dm2.get_decisions()}
+    assert "Blue links" in decisions
+    assert "16px padding" in decisions
 
 
-def test_invalid_category_defaults_general():
-    dm = DesignMemory()
+def test_invalid_category_defaults_general(dm):
     d = dm.record_decision("invalid_cat", "Something")
     assert d.category == "general"
 
 
-def test_get_stats():
-    dm = DesignMemory()
+def test_get_stats(dm):
     dm.record_decision("color", "Blue", approved=True)
     dm.record_decision("layout", "Grid", approved=True)
     dm.record_anti_pattern("No shadows")

@@ -225,8 +225,34 @@ def recent_experiences(
     path: Optional[Path] = None,
     db_path: Optional[Path] = None,
 ) -> list[dict]:
-    """Read recent N experiences. Prefers DB, falls back to jsonl file."""
-    # Try DB first
+    """Read recent N experiences.
+
+    Priority: structured_memory.activity → EventsDB → JSONL file.
+    """
+    # Try structured_memory first (6-dimensional store)
+    try:
+        import sys
+        sys.path.insert(0, str(SOUL_DIR.parent))
+        from src.governance.context.structured_memory import (
+            StructuredMemoryStore, Dimension,
+        )
+        store = StructuredMemoryStore()
+        rows = store.get_all(Dimension.ACTIVITY, limit=n)
+        if rows:
+            # Map structured_memory fields → compiler's expected format
+            return [
+                {
+                    'date': r.get('event_date', ''),
+                    'type': r.get('emotion', ''),
+                    'summary': r.get('summary', ''),
+                    'detail': r.get('detail', ''),
+                }
+                for r in rows
+            ]
+    except Exception:
+        pass
+
+    # DEPRECATED: fallback to EventsDB — remove after structured_memory migration verified
     dp = db_path or (SOUL_DIR.parent / 'data' / 'events.db')
     if dp.exists():
         try:
@@ -240,7 +266,7 @@ def recent_experiences(
         except Exception:
             pass
 
-    # Fallback to jsonl
+    # DEPRECATED: fallback to JSONL — remove after structured_memory migration verified
     p = path or EXPERIENCES_PATH
     if not p.exists():
         return []

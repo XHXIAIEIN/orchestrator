@@ -199,6 +199,23 @@ class SessionsMixin:
             )
             exp_id = cur.lastrowid
 
+        # Write to structured_memory (6-dimensional store)
+        try:
+            from src.governance.context.structured_memory import (
+                StructuredMemoryStore, Dimension, ActivityMemory,
+            )
+            store = StructuredMemoryStore()
+            store.add(Dimension.ACTIVITY, ActivityMemory(
+                summary=summary,
+                detail=detail,
+                emotion=etype,
+                event_date=date,
+                tags=[etype] if etype else [],
+            ))
+        except Exception as e:
+            log.warning(f"structured_memory write failed: {e}")
+
+        # DEPRECATED: remove after structured_memory migration verified
         # JSONL backup (append-only)
         if jsonl_path:
             try:

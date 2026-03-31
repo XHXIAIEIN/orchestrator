@@ -65,23 +65,44 @@ VALID_CATEGORIES = {
 
 
 class DesignMemory:
-    """Accumulate and retrieve design preferences."""
+    """Accumulate and retrieve design preferences.
 
-    def __init__(self):
-        self._decisions: list[DesignDecision] = []
-        self._counter = 0
+    Backed by structured_memory.preference (DB source of truth).
+    The in-memory list is gone — all reads/writes go through StructuredMemoryStore.
+    """
+
+    def __init__(self, db_path: str | None = None):
+        from src.governance.context.structured_memory import StructuredMemoryStore
+        self._store = StructuredMemoryStore(db_path) if db_path else StructuredMemoryStore()
 
     def record_decision(self, category: str, decision: str,
                         reason: str = "", approved: bool = True,
                         source: str = "", tags: list[str] = None,
                         confidence: float = 1.0) -> DesignDecision:
-        """Record a design decision."""
+        """Record a design decision to structured_memory.preference."""
+        from src.governance.context.structured_memory import (
+            Dimension, PreferenceMemory,
+        )
         if category not in VALID_CATEGORIES:
             category = "general"
 
-        self._counter += 1
+        tag_list = list(set((tags or []) + [f"design:{category}"]))
+        if not approved:
+            tag_list.append("anti-pattern")
+        if source:
+            tag_list.append(f"source:{source}")
+
+        row_id = self._store.add(Dimension.PREFERENCE, PreferenceMemory(
+            directive=decision,
+            priority=confidence,
+            condition=reason,
+            suggested_action="" if approved else "AVOID",
+            confidence=confidence,
+            tags=tag_list,
+        ))
+
         entry = DesignDecision(
-            id=self._counter,
+            id=row_id,
             category=category,
             decision=decision,
             reason=reason,
@@ -90,7 +111,6 @@ class DesignMemory:
             tags=tags or [],
             confidence=confidence,
         )
-        self._decisions.append(entry)
         action = "approved" if approved else "rejected"
         log.info(f"design_memory: {action} [{category}] {decision[:80]}")
         return entry
@@ -106,11 +126,40 @@ class DesignMemory:
             source=source,
         )
 
+    def _load_decisions(self) -> list[DesignDecision]:
+        """Load all design decisions from structured_memory.preference."""
+        from src.governance.context.structured_memory import Dimension
+        rows = self._store.search(Dimension.PREFERENCE, "design", top_k=500)
+        results = []
+        for r in rows:
+            tags_raw = r.get("tags", "[]")
+            tags = json.loads(tags_raw) if isinstance(tags_raw, str) else tags_raw
+            # Extract category from tags (design:color → color)
+            category = "general"
+            approved = True
+            for t in tags:
+                if isinstance(t, str) and t.startswith("design:"):
+                    category = t[len("design:"):]
+                if t == "anti-pattern":
+                    approved = False
+            results.append(DesignDecision(
+                id=r.get("id", 0),
+                category=category,
+                decision=r.get("directive", ""),
+                reason=r.get("condition", ""),
+                approved=approved,
+                source="",
+                tags=[t for t in tags if not t.startswith("design:") and t != "anti-pattern"],
+                confidence=r.get("confidence", 1.0),
+                created_at=0.0,
+            ))
+        return results
+
     def get_decisions(self, category: str = None,
                       approved_only: bool = False,
                       min_confidence: float = 0.0) -> list[DesignDecision]:
-        """Query decisions with optional filters."""
-        results = self._decisions
+        """Query decisions from structured_memory with optional filters."""
+        results = self._load_decisions()
         if category:
             results = [d for d in results if d.category == category]
         if approved_only:
@@ -121,17 +170,29 @@ class DesignMemory:
 
     def get_anti_patterns(self) -> list[DesignDecision]:
         """Get all things to explicitly avoid."""
-        return [d for d in self._decisions if d.is_anti_pattern]
+        return [d for d in self._load_decisions() if d.is_anti_pattern]
 
     def contradict(self, decision_id: int, reason: str = ""):
-        """Mark a decision as contradicted (reduces confidence)."""
-        for d in self._decisions:
-            if d.id == decision_id:
-                d.confidence = max(0, d.confidence - 0.3)
+        """Mark a decision as contradicted (reduces confidence).
+
+        Updates the preference row in structured_memory directly.
+        """
+        from src.governance.context.structured_memory import Dimension
+        with self._store._connect() as conn:
+            row = conn.execute(
+                "SELECT confidence, condition FROM preference WHERE id=?",
+                (decision_id,),
+            ).fetchone()
+            if row:
+                new_conf = max(0, row["confidence"] - 0.3)
+                new_cond = row["condition"]
                 if reason:
-                    d.reason += f" [contradicted: {reason}]"
-                log.info(f"design_memory: contradicted #{decision_id}, confidence now {d.confidence}")
-                return
+                    new_cond += f" [contradicted: {reason}]"
+                conn.execute(
+                    "UPDATE preference SET confidence=?, condition=? WHERE id=?",
+                    (new_conf, new_cond, decision_id),
+                )
+                log.info(f"design_memory: contradicted #{decision_id}, confidence now {new_conf}")
 
     def to_prompt_context(self, categories: list[str] = None,
                           max_items: int = 30) -> str:
@@ -182,14 +243,18 @@ class DesignMemory:
         return "\n".join(lines)
 
     def save_to_file(self, path: str | Path):
-        """Save design memory to a JSON file."""
+        """Save design memory to a JSON file.
+
+        DEPRECATED: DB is source of truth. Kept for export/backup only.
+        """
+        decisions = self._load_decisions()
         data = [{
             "id": d.id, "category": d.category,
             "decision": d.decision, "reason": d.reason,
             "approved": d.approved, "source": d.source,
             "tags": d.tags, "confidence": d.confidence,
             "created_at": d.created_at,
-        } for d in self._decisions]
+        } for d in decisions]
 
         Path(path).write_text(
             json.dumps(data, ensure_ascii=False, indent=2),
@@ -198,16 +263,17 @@ class DesignMemory:
         log.info(f"design_memory: saved {len(data)} decisions to {path}")
 
     def load_from_file(self, path: str | Path):
-        """Load design memory from a JSON file."""
+        """Load design memory from a JSON file into structured_memory.
+
+        DEPRECATED: Use for one-time migration only.
+        """
         p = Path(path)
         if not p.exists():
             return
 
         data = json.loads(p.read_text(encoding="utf-8"))
         for entry in data:
-            self._counter += 1
-            self._decisions.append(DesignDecision(
-                id=entry.get("id", self._counter),
+            self.record_decision(
                 category=entry.get("category", "general"),
                 decision=entry.get("decision", ""),
                 reason=entry.get("reason", ""),
@@ -215,18 +281,18 @@ class DesignMemory:
                 source=entry.get("source", ""),
                 tags=entry.get("tags", []),
                 confidence=entry.get("confidence", 1.0),
-                created_at=entry.get("created_at", time.time()),
-            ))
+            )
         log.info(f"design_memory: loaded {len(data)} decisions from {path}")
 
     def get_stats(self) -> dict:
-        approved = sum(1 for d in self._decisions if d.approved)
-        anti = len(self.get_anti_patterns())
+        decisions = self._load_decisions()
+        approved = sum(1 for d in decisions if d.approved)
+        anti = sum(1 for d in decisions if d.is_anti_pattern)
         cats = {}
-        for d in self._decisions:
+        for d in decisions:
             cats[d.category] = cats.get(d.category, 0) + 1
         return {
-            "total": len(self._decisions),
+            "total": len(decisions),
             "approved": approved,
             "anti_patterns": anti,
             "by_category": cats,

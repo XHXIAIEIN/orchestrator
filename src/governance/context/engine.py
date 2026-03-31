@@ -5,8 +5,8 @@ Context Engine — Provider/Processor 管道式上下文组装。
   - Provider 并行提供上下文源 → Processor 串行变换 → 按 budget 截断拼接
   - 替代 context_assembler.py 的硬编码拼接，提供可扩展的管道架构
 
-向后兼容: context_assembler.py 不动，本模块是升级路径。
-现有 executor_session.py / executor_prompt.py 暂不改，后续迁移时切换到 ContextEngine.assemble()。
+Status: 唯一上下文组装路径。context_assembler.py 已废弃。
+所有 caller 均已迁移到 ContextEngine.assemble()。
 """
 import logging
 from abc import ABC, abstractmethod
@@ -214,8 +214,8 @@ class ContextEngine:
 class DesignMemoryProvider(BaseProvider):
     """Provider that injects accumulated design preferences into UI-related tasks.
 
-    Wraps governance.design_memory.DesignMemory (gstack). Only activates when
-    the task touches frontend/UI code (detected via department or keywords).
+    Reads from structured_memory.preference (DB-backed via DesignMemory thin API).
+    Only activates when the task touches frontend/UI code.
     """
     name = "design_memory"
 
@@ -224,7 +224,7 @@ class DesignMemoryProvider(BaseProvider):
         try:
             from src.governance.design_memory import DesignMemory
             self._memory = DesignMemory()
-        except ImportError:
+        except (ImportError, Exception):
             pass
 
     def provide(self, ctx: TaskContext) -> list[ContextChunk]:
