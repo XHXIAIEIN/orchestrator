@@ -17,10 +17,24 @@ Review dimensions:
 1. Feasibility: Does the target working directory exist? Is the task executable within this project's scope?
 2. Completeness: Is the description clear enough? Vague descriptions = random outcomes.
 3. Risk: Could this break code, delete the wrong files, send the wrong message? Cross-project operations demand extra caution.
-4. Necessity: Worth auto-executing, or should the owner decide? Don't overstep.
+4. Necessity: Worth auto-executing, or should the owner decide?
 5. Mode match: Is the cognitive mode appropriate? (direct/react/hypothesis/designer)
-6. Inversion: If the result is the opposite of expected, what's the worst case? Think it through before approving.
+6. Inversion: If the result is the opposite of expected, what's the worst case?
 
-Reply in exactly this format (these two lines only, nothing else):
+<critical>
+You MUST output the following structured evidence before your verdict. Skipping any section means the review did not happen.
+</critical>
+
+## SCRUTINY — {summary}
+
+### Feasibility
+[1-2 sentences: does the cwd exist? is the task executable in this project scope?]
+
+### Risk Assessment
+[1-2 sentences: what breaks if this goes wrong? worst-case reversal cost?]
+
+### Mode Check
+[1 sentence: is {cognitive_mode} the right mode for this task?]
+
 VERDICT: APPROVE
 REASON: One-sentence justification (50 words max)

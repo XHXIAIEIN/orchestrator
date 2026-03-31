@@ -4,8 +4,13 @@ Guideline matching and shared knowledge utilities.
 Extracted from context_assembler.py so that Providers can use these
 without depending on the deprecated assembler module.
 """
+import logging
 import re
 from pathlib import Path
+
+from src.governance.safety.injection_scanner import scan_context_file, has_high_severity
+
+log = logging.getLogger(__name__)
 
 
 def extract_trigger_keywords(guideline_content: str) -> list[str]:
@@ -40,6 +45,11 @@ def match_guidelines(department: str, task_description: str) -> list[str]:
     for gfile in sorted(guidelines_dir.glob("*.md")):
         try:
             content = gfile.read_text(encoding="utf-8")
+            # Round 21 (hermes-agent): scan for injection before injecting
+            threats = scan_context_file(str(gfile), content)
+            if has_high_severity(threats):
+                log.warning("Blocked guideline %s: high-severity injection detected", gfile)
+                continue
             keywords = extract_trigger_keywords(content)
             if any(kw in task_lower for kw in keywords):
                 # 提取 ## 规则 section 的内容（不需要触发条件部分）
@@ -88,8 +98,14 @@ def load_shared_knowledge(task_description: str) -> str:
         if fpath.exists() and any(k in task_lower for k in keywords):
             try:
                 content = fpath.read_text(encoding="utf-8").strip()
-                if content:
-                    parts.append(f"【共享知识: {name}】\n{content}")
+                if not content:
+                    continue
+                # Round 21 (hermes-agent): scan for injection before injecting
+                threats = scan_context_file(str(fpath), content)
+                if has_high_severity(threats):
+                    log.warning("Blocked shared knowledge %s: high-severity injection detected", fpath)
+                    continue
+                parts.append(f"【共享知识: {name}】\n{content}")
             except Exception:
                 continue
 

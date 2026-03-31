@@ -72,7 +72,15 @@ def _extract_artifact(task: dict) -> dict:
 
 
 class ReviewDispatcher:
-    """Handles quality review dispatch and rework loop logic."""
+    """Handles quality review dispatch and rework loop logic.
+
+    Context Isolation (Round 26): Reviewers receive ONLY:
+      1. Git SHA range (commit to diff)
+      2. Plan/requirements (original spec)
+      3. One-line summary (what was done)
+    They do NOT receive session history, executor reasoning, or
+    intermediate attempts. See: guidelines/review-context-isolation.md
+    """
 
     MAX_REWORK = MAX_EVAL_ITERATIONS - 1
 
@@ -132,6 +140,14 @@ class ReviewDispatcher:
             observation += f"\n\n{manifest_prompt}"
 
         observation += f"\n\n{review_cfg['instructions']}"
+
+        # Round 26: Anti-sycophancy + context isolation reminder
+        observation += (
+            "\n\nREVIEW PROTOCOL:"
+            "\n- No performative praise. State findings as technical facts."
+            "\n- If you disagree with the approach, push back with evidence."
+            "\n- Judge the artifact against the spec, not the effort behind it."
+        )
 
         review_spec = {
             "department": fsm.get_next_department(parent_dept, "quality_review") or "quality",

@@ -55,6 +55,11 @@ def scan_for_slop(file_path: str, content: str) -> list[SlopFinding]:
         if finding:
             findings.append(finding)
 
+        # 5. 谄媚短语 (Round 26: anti-sycophancy protocol)
+        finding = _check_sycophancy(stripped, file_path, i)
+        if finding:
+            findings.append(finding)
+
     return findings
 
 
@@ -150,6 +155,34 @@ def _check_robot_naming(line: str, file: str, lineno: int) -> SlopFinding | None
                 line=lineno,
                 description=f"机器感命名: {re.search(pattern, line).group()}",
                 suggestion=suggestion,
+            )
+
+    return None
+
+
+def _check_sycophancy(line: str, file: str, lineno: int) -> SlopFinding | None:
+    """检测谄媚短语 (Round 26: anti-sycophancy protocol)."""
+    sycophancy_patterns = [
+        (r"(?i)\byou'?re absolutely right\b", "performative agreement"),
+        (r"(?i)\bgreat point\b", "performative praise"),
+        (r"(?i)\bthanks for catching\b", "gratitude theater"),
+        (r"(?i)\bthat'?s a great suggestion\b", "performative praise"),
+        (r"(?i)\bi completely agree\b", "performative agreement"),
+        (r"(?i)\bgreat catch\b", "performative praise"),
+        (r"(?i)\bgreat job\b", "performative praise"),
+        (r"(?i)\blooks good overall\b", "empty validation"),
+        (r"(?i)\bexcellent observation\b", "performative praise"),
+    ]
+
+    for pattern, subtype in sycophancy_patterns:
+        match = re.search(pattern, line)
+        if match:
+            return SlopFinding(
+                category="sycophancy",
+                file=file,
+                line=lineno,
+                description=f"谄媚短语 ({subtype}): {match.group()[:40]}",
+                suggestion="用技术陈述替代。参见 anti-sycophancy-protocol.md。",
             )
 
     return None

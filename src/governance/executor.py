@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -45,9 +46,12 @@ from src.gateway.routing import resolve_route, get_policy_config
 from src.gateway.complexity import classify_complexity, should_skip_scrutiny, get_recommended_turns
 
 from src.governance.executor_prompt import build_execution_prompt
+from src.governance.context.writer import ContextWriter
+from src.governance.context.tiers import classify_task_tier
 from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
 from src.governance.execution_response import ExecutionResponse
 from src.governance.pipeline.output_compress import compress_output
+from src.governance.pipeline.input_compress import compress_input
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
 
@@ -67,10 +71,18 @@ RETRYABLE_CONDITIONS = {"timeout", "stuck", "unresponsive", "cost_limit", "rate_
 
 @dataclass
 class RolloutConfig:
-    """Per-task retry policy. Can be set in blueprint.yaml under `rollout:` key."""
+    """Per-task retry policy. Can be set in blueprint.yaml under `rollout:` key.
+
+    Round 21 (hermes-agent): added batch_mode + max_turns_override for
+    iteration budget refunding. Batch tasks (test suites, bulk processing)
+    get more agent turns without consuming retry quota.
+    """
     max_attempts: int = 2
     retry_conditions: set[str] = field(default_factory=lambda: {"timeout", "stuck"})
     backoff_seconds: float = 5.0
+    # Round 21: batch mode — grant more turns for tool-heavy tasks
+    batch_mode: bool = False
+    max_turns_override: int | None = None  # overrides MAX_AGENT_TURNS when set
 
     @classmethod
     def from_dict(cls, d: dict) -> "RolloutConfig":
@@ -81,6 +93,8 @@ class RolloutConfig:
             max_attempts=rc.get("max_attempts", 2),
             retry_conditions=set(rc.get("retry_conditions", ["timeout", "stuck"])),
             backoff_seconds=rc.get("backoff_seconds", 5.0),
+            batch_mode=rc.get("batch_mode", False),
+            max_turns_override=rc.get("max_turns_override"),
         )
 
 
@@ -432,9 +446,10 @@ class TaskExecutor:
 
     def _prepare_prompt(self, task: dict, dept_key: str, dept: dict,
                         task_cwd: str, project_name: str,
-                        blueprint=None) -> str:
+                        blueprint=None, session_id: str = "", tier=None) -> str:
         """Assemble the full prompt: department identity + authority + cognitive mode + task + context."""
-        return build_execution_prompt(task, dept_key, dept, task_cwd, project_name, blueprint=blueprint)
+        return build_execution_prompt(task, dept_key, dept, task_cwd, project_name,
+                                      blueprint=blueprint, session_id=session_id, tier=tier)
 
     def _log_agent_event(self, task_id: int, event_type: str, data: dict):
         """Safe wrapper: log agent event without breaking execution on failure."""
@@ -486,6 +501,46 @@ class TaskExecutor:
             else:
                 log.warning(f"TaskExecutor: worktree creation failed for task #{task_id}, using shared cwd")
 
+        # ── Session ID + Context Store (progressive disclosure) ──
+        session_id = f"task-{task_id}-{uuid.uuid4().hex[:8]}"
+        tier = classify_task_tier(task.get("action", ""), spec)
+        log.info(f"TaskExecutor: task #{task_id} tier={tier.name}, session={session_id}")
+
+        ctx_writer = ContextWriter(self.db, session_id)
+        # L1: chain outputs from predecessor tasks
+        # ── Input Compression (VibeVoice Round 17: Segment-then-Concat) ──
+        # Compress chain-from context BEFORE injection, not after.
+        # Analogous to VibeVoice's 7.5Hz tokenizer compressing audio before
+        # the LLM backbone sees it.
+        chain_from = spec.get("chain_from")
+        if chain_from:
+            prev_task = self.db.get_task(int(chain_from))
+            if prev_task and prev_task.get("output"):
+                raw_output = prev_task["output"]
+                compressed = compress_input(
+                    raw_output,
+                    context_budget=tier.context_budget,
+                )
+                if compressed.strategy != "passthrough":
+                    log.info(
+                        f"TaskExecutor: input compressed chain_from #{chain_from}: "
+                        f"{compressed.original_length}→{compressed.compressed_length} chars "
+                        f"({compressed.compression_ratio:.1%}), strategy={compressed.strategy}, "
+                        f"segments={compressed.num_segments}"
+                    )
+                ctx_writer.write_chain_output(int(chain_from), compressed.content)
+        # L1: conversation summary if provided
+        conv_summary = spec.get("conversation_summary", "")
+        if conv_summary:
+            ctx_writer.write_layer1(conversation_summary=conv_summary)
+        # L0: identity + catalog (written last so catalog includes L1 entries)
+        ctx_writer.write_layer0(task, dept_key)
+
+        # Store tier info in spec for downstream use
+        spec["context_budget"] = tier.context_budget
+        spec["session_id"] = session_id
+        self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+
         # ── Patch Restore (stolen from Cline Kanban) ──
         if self._patches.has_patch(task_id):
             restored = self._patches.restore(task_id, task_cwd)
@@ -497,7 +552,8 @@ class TaskExecutor:
         # ── Blueprint resolution ──
         blueprint = load_blueprint(dept_key)
 
-        prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name, blueprint=blueprint)
+        prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name,
+                                      blueprint=blueprint, session_id=session_id, tier=tier)
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
 
@@ -575,6 +631,15 @@ class TaskExecutor:
                     screened_tools.append(tool)  # REQUIRED/CUSTOM: allow but log
                     log.info(f"TaskExecutor: task #{task_id} tool '{tool}' flagged ({result.policy.value}): {result.reason}")
             allowed_tools = screened_tools
+
+        # Round 21 (hermes-agent): batch mode grants more turns for tool-heavy tasks
+        if rollout_cfg.batch_mode and rollout_cfg.max_turns_override:
+            task_max_turns = rollout_cfg.max_turns_override
+            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns overridden to {task_max_turns}")
+        elif rollout_cfg.batch_mode:
+            # Default batch boost: 2x normal turns
+            task_max_turns = task_max_turns * 2
+            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns doubled to {task_max_turns}")
 
         log.info(f"TaskExecutor: task #{task_id} policy={route.profile.value} "
                  f"model={effective_model} timeout={task_timeout}s max_turns={task_max_turns}")
@@ -767,8 +832,24 @@ class TaskExecutor:
                     )
                 response = anyio.run(_agent_coro)
                 if response.output:
-                    compressed = compress_output(response.output, max_chars=2000)
+                    compressed = compress_output(response.output)
                     output = compressed.content
+                    # Round 21 (hermes-agent): scan agent output for poisoned content
+                    try:
+                        from src.governance.safety.injection_scanner import scan_agent_output, has_high_severity
+                        _threats = scan_agent_output(f"task-{task_id}", output)
+                        if has_high_severity(_threats):
+                            log.warning(
+                                "TaskExecutor: task #%s output flagged by injection scanner: %s",
+                                task_id, _threats[0].pattern_name,
+                            )
+                            # Don't block — log and tag for review
+                            output = f"[⚠ output flagged: {_threats[0].pattern_name}]\n{output}"
+                    except Exception as _scan_err:
+                        log.debug("TaskExecutor: injection scan skipped: %s", _scan_err)
+                    # Store output for chain continuity
+                    if session_id:
+                        ctx_writer.write_chain_output(task_id, output)
                     if compressed.strategy != "passthrough":
                         log.info(
                             f"TaskExecutor: task #{task_id} output compressed "
@@ -778,6 +859,16 @@ class TaskExecutor:
                 else:
                     output = "(no output)"
                 status = "done" if response.status == "done" else "failed"
+                # Preserve structured data (e.g. exam nextBatch) in task spec
+                if response.context_variables:
+                    try:
+                        existing_spec = task.get("spec", {})
+                        existing_spec["context_variables"] = response.context_variables
+                        self.db.update_task(task_id, spec=json.dumps(
+                            existing_spec, ensure_ascii=False, default=str))
+                        log.info(f"TaskExecutor: task #{task_id} stored context_variables keys={list(response.context_variables.keys())}")
+                    except Exception as e:
+                        log.warning(f"TaskExecutor: task #{task_id} failed to store context_variables: {e}")
                 if hasattr(response, 'to_dict'):
                     self._log_agent_event(task_id, "execution_response", response.to_dict())
             except CostLimitExceededError as e:

@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 from src.governance.context.engine import BaseProvider, ContextChunk, TaskContext
+from src.governance.safety.injection_scanner import scan_context_file, has_high_severity
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,11 @@ class SystemPromptProvider(BaseProvider):
         try:
             content = skill_path.read_text(encoding="utf-8").strip()
             if not content:
+                return []
+            # Round 21 (hermes-agent): scan before injecting into system prompt
+            threats = scan_context_file(str(skill_path), content)
+            if has_high_severity(threats):
+                log.warning("SystemPromptProvider: blocked %s — injection detected", skill_path)
                 return []
             return [ContextChunk(
                 source=self.name,

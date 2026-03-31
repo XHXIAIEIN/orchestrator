@@ -1,0 +1,78 @@
+# config/permission_rules.yaml
+# Declarative Permission Rules — stolen from Claude Code v2.1.88 toolPermissionRules
+#
+# Claude Code uses regex-based toolPermissionRules in settings.json to create
+# a three-value decision gate (allow/deny/ask). We adapt this to Orchestrator's
+# Governor model: allow / deny / escalate (to Governor/human).
+#
+# Rules are evaluated in order within each category. First match wins.
+# Regex patterns use Python re syntax.
+
+rules:
+  # ── Bash tool rules ──
+  bash:
+    allow:
+      - pattern: "^git (status|log|diff|branch|show)"
+        description: "Read-only git commands"
+      - pattern: "^(ls|cat|head|tail|wc|find|grep|rg|fd)\\b"
+        description: "Read-only file inspection"
+      - pattern: "^npm (test|run lint|run check)"
+        description: "Safe npm commands"
+      - pattern: "^docker (ps|logs|inspect)"
+        description: "Read-only Docker inspection"
+      - pattern: "^python -m pytest"
+        description: "Test execution"
+    deny:
+      - pattern: "rm\\s+-rf\\s+/"
+        description: "Recursive delete from root"
+      - pattern: "\\bmkfs\\b"
+        description: "Filesystem formatting"
+      - pattern: "\\bdd\\s+if="
+        description: "Raw disk write"
+      - pattern: "git\\s+push\\s+--force.*main"
+        description: "Force push to main"
+      - pattern: "drop\\s+database"
+        description: "Drop database"
+    escalate:
+      - pattern: "git\\s+push"
+        description: "Any git push needs Governor approval"
+      - pattern: "docker\\s+(rm|stop|kill|restart)"
+        description: "Docker lifecycle changes need approval"
+      - pattern: "npm\\s+(publish|unpublish)"
+        description: "Package publishing needs approval"
+
+  # ── Write/Edit tool rules ──
+  write:
+    deny:
+      - pattern: "\\.env$"
+        path_field: "file_path"
+        description: "Never write .env files"
+      - pattern: "credentials"
+        path_field: "file_path"
+        description: "Never write credential files"
+    escalate:
+      - pattern: "CLAUDE\\.md$"
+        path_field: "file_path"
+        description: "Core config changes need approval"
+      - pattern: "docker-compose\\.ya?ml$"
+        path_field: "file_path"
+        description: "Docker config changes need approval"
+
+  # ── Agent tool rules ──
+  agent:
+    escalate:
+      - pattern: ".*"
+        description: "All sub-agent spawning requires review"
+
+# Department-specific overrides
+department_overrides:
+  quality:
+    # Quality department can only read
+    max_tier: BASIC
+  security:
+    # Security can escalate but not mutate
+    max_tier: ADVANCED
+    bash:
+      deny:
+        - pattern: "^(?!.*(grep|find|ls|cat|rg|git\\s+(log|diff|show|blame)))"
+          description: "Security dept: only allow inspection commands"

@@ -308,8 +308,13 @@ class TaskDispatcher:
                 log.debug(f"TaskDispatcher: scout dispatch failed ({e}), continuing without recon")
 
         # ── Complexity Classification ──
-        complexity = classify_complexity(action, spec)
-        spec["complexity"] = complexity.name
+        # Respect pre-set complexity (e.g. from --skip-scrutiny) or tier override
+        if spec.get("complexity") == "trivial" or spec.get("tier") == "light":
+            from src.gateway.complexity import Complexity
+            complexity = Complexity.TRIVIAL
+        else:
+            complexity = classify_complexity(action, spec)
+            spec["complexity"] = complexity.name
         self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
         log.info(f"TaskDispatcher: task #{task_id} complexity={complexity.name}")
 
