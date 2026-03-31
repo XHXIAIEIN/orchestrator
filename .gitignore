@@ -23,6 +23,7 @@ dashboard/node_modules/
 node_modules/
 .firecrawl/
 tmp/
+.trash/
 claw/Claw/bin/
 claw/Claw/obj/
 *.csproj.user
