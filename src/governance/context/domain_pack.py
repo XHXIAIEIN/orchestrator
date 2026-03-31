@@ -19,6 +19,8 @@ from pathlib import Path
 
 import yaml
 
+from src.governance.safety.injection_scanner import scan_context_file, has_high_severity
+
 log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent
@@ -58,8 +60,14 @@ def load_domain_pack(department: str) -> DomainPack:
     # SKILL.md
     skill_path = dept_dir / "SKILL.md"
     if skill_path.exists():
-        pack.skill_prompt = skill_path.read_text(encoding="utf-8")
-        files.append("SKILL.md")
+        _content = skill_path.read_text(encoding="utf-8")
+        # Round 21 (hermes-agent): scan before injecting into system prompt
+        threats = scan_context_file(str(skill_path), _content)
+        if has_high_severity(threats):
+            pack.errors.append(f"SKILL.md 被注入扫描拦截: {threats[0].pattern_name}")
+        else:
+            pack.skill_prompt = _content
+            files.append("SKILL.md")
     else:
         pack.errors.append("缺少 SKILL.md")
 
@@ -77,9 +85,15 @@ def load_domain_pack(department: str) -> DomainPack:
     if guide_dir.exists():
         for gf in sorted(guide_dir.glob("*.md")):
             try:
+                _gcontent = gf.read_text(encoding="utf-8")
+                # Round 21 (hermes-agent): scan guidelines before loading
+                gthreats = scan_context_file(str(gf), _gcontent)
+                if has_high_severity(gthreats):
+                    log.warning("Blocked guideline %s: %s", gf, gthreats[0].pattern_name)
+                    continue
                 pack.guidelines.append({
                     "name": gf.stem,
-                    "content": gf.read_text(encoding="utf-8"),
+                    "content": _gcontent,
                 })
                 files.append(f"guidelines/{gf.name}")
             except Exception:
@@ -88,8 +102,15 @@ def load_domain_pack(department: str) -> DomainPack:
     # learned-skills.md
     learned_path = dept_dir / "learned-skills.md"
     if learned_path.exists():
-        pack.learned_skills = learned_path.read_text(encoding="utf-8")
-        files.append("learned-skills.md")
+        _lcontent = learned_path.read_text(encoding="utf-8")
+        # Round 21 (hermes-agent): scan learned skills before loading
+        lthreats = scan_context_file(str(learned_path), _lcontent)
+        if has_high_severity(lthreats):
+            pack.errors.append(f"learned-skills.md 被注入扫描拦截: {lthreats[0].pattern_name}")
+            log.warning("Blocked learned-skills %s: %s", learned_path, lthreats[0].pattern_name)
+        else:
+            pack.learned_skills = _lcontent
+            files.append("learned-skills.md")
 
     pack.files_present = files
     pack.version = pack.blueprint.get("version", "1")

@@ -21,3 +21,8 @@ try:
     from .taint import TaintTracker, TaintViolation, TaintLabel
 except ImportError:
     pass
+
+try:
+    from .injection_scanner import scan_text, scan_context_file, scan_agent_output, has_high_severity
+except ImportError:
+    pass
