@@ -27,6 +27,13 @@ For multi-step tasks, state a brief plan with verification:
 2. [Step] → verify: [check]
 ```
 
+### Planning Discipline
+- All multi-step plans MUST follow `SOUL/public/prompts/plan_template.md` format.
+- **File Map first**: List every file that will be touched before writing any step.
+- **Atomic steps**: Each step is 2-5 minutes, starts with an action verb, has an explicit verify command.
+- **No Placeholder Iron Rule**: Never write vague steps. Banned: "implement the logic", "add appropriate error handling", "update as needed", "etc.", "similar to X", bare "refactor"/"clean up"/"optimize". Every step must specify exact targets, exact changes, exact verification.
+- **Explicit dependencies**: If step N depends on step M, write `depends on: step M`. Implicit ordering is not allowed.
+
 ### Surgical Changes
 - Every changed line must trace directly to the user's request. If it doesn't, revert it.
 - Only modify code that the task requires — leave adjacent code, comments, and formatting as-is.
@@ -46,6 +53,47 @@ For multi-step tasks, state a brief plan with verification:
 - After completing the full task, report what's in `.trash/`. Owner decides what stays and what goes.
 - **Exception**: Build artifacts (`node_modules/`, `__pycache__/`, `.pyc`) and clearly temporary files can be deleted directly.
 
+### Gate Functions — Mandatory Pre-Checks
+
+Before any dangerous operation, walk through the applicable gate. Do not skip steps.
+
+**Gate: Delete / Replace File**
+```
+1. Have I read the file's full content?  → NO: Read it first.
+2. Have I searched for references (imports, configs, dynamic loads)?  → NO: grep first.
+3. Is .trash/ move possible instead of hard delete?  → YES: mv to .trash/.
+4. Proceed.
+```
+
+**Gate: Git Reset / Restore / Checkout**
+```
+1. Did the owner explicitly say "roll back", "reset", or "revert"?  → NO: STOP. Diagnose with git diff instead.
+2. Have I backed up uncommitted work (git stash or git diff > backup.patch)?  → NO: Backup first.
+3. Have I told the owner where the backup is?  → NO: Report location.
+4. Proceed.
+```
+
+**Gate: Modify Core Config (CLAUDE.md, boot.md, docker-compose.yml, .env, hooks)**
+```
+1. Have I read the current file content?  → NO: Read it.
+2. Can I state exactly which lines change and why?  → NO: Narrow scope.
+3. Does the change trace directly to the user's request?  → NO: Don't touch it.
+4. Proceed.
+```
+
+**Gate: Send External Message (Telegram, email, GitHub comment, webhook)**
+```
+1. Did the owner explicitly request this send?  → NO: STOP.
+2. Is the recipient correct?  → Verify.
+3. Does the content contain any private info (real name, email, accounts)?  → YES: Redact or STOP.
+4. Proceed.
+```
+
+### Rationalization Immunity
+
+Before cutting corners, consult `SOUL/public/prompts/rationalization-immunity.md`.
+If your inner monologue matches any excuse in the left column, you are rationalizing. Execute the correct behavior column instead.
+
 </critical>
 
 ### UI/Frontend
@@ -62,6 +110,13 @@ For multi-step tasks, state a brief plan with verification:
 - Use `/analyze-ui` skill for UI detection testing, don't hand-write mss/ctypes screenshot code
 - cvui Stages can be composed; don't rewrite existing logic
 - detection.py/visualize.py are thin re-exports from cvui package
+
+### Verification Gate
+- Before declaring any task complete, pass the five-step evidence chain: **Identify** → **Execute** → **Read** → **Confirm** → **Declare**
+- Every completion claim must reference actual command output, not assumptions
+- Banned phrases in completion declarations: "should pass", "should work", "probably fine", "I believe this is correct", "Based on the changes, this should..."
+- If verification is impossible, say so explicitly and list what the owner should verify manually — do NOT claim completion
+- Full protocol: `.claude/skills/verification-gate/SKILL.md`
 
 ### Docker & Environment
 - Before Docker rebuilds, check if one is truly needed
