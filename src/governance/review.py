@@ -114,6 +114,12 @@ try:
 except ImportError:
     CrossModelReviewer = None
 
+# Elder Council (stolen from karpathy/llm-council, Round 19)
+try:
+    from src.governance.council import ElderCouncil
+except ImportError:
+    ElderCouncil = None
+
 log = logging.getLogger(__name__)
 
 # Departments considered high blast-radius for cross-review
@@ -187,11 +193,76 @@ class ReviewManager:
             except Exception as e:
                 log.warning(f"ReviewManager: verify gate error for task #{task_id}: {e}")
 
-        # ── Cross-Model Review: high blast-radius tasks get dual-model review ──
-        if (status == "done" and CrossModelReviewer
-                and (dept_key in _HIGH_BLAST_DEPARTMENTS
-                     or spec.get("requires_approval")
-                     or spec.get("priority") == "critical")):
+        # ── Elder Council / Cross-Model Review (Round 19: karpathy/llm-council) ──
+        # HIGH blast-radius → full council (5 elders + ranking + chairman)
+        # MEDIUM with critical flag → light council (skip ranking stage)
+        # Fallback → legacy CrossModelReviewer
+        _needs_review = (
+            status == "done"
+            and (dept_key in _HIGH_BLAST_DEPARTMENTS
+                 or spec.get("requires_approval")
+                 or spec.get("priority") == "critical")
+        )
+        if _needs_review and ElderCouncil:
+            try:
+                is_high = dept_key in _HIGH_BLAST_DEPARTMENTS or spec.get("requires_approval")
+                council = ElderCouncil(skip_ranking=not is_high)
+                # Round 22 (Review Swarm): build intent packet for focused deliberation
+                _intent = {
+                    "should_change": task.get("action", ""),
+                    "should_not_change": spec.get("constraints", []),
+                    "constraints": spec.get("expected", ""),
+                }
+                if build_manifest:
+                    try:
+                        manifest = build_manifest(task)
+                        speculative = [i.description for i in manifest.intents
+                                       if i.type == "speculative"]
+                        if speculative:
+                            _intent["speculative_changes"] = speculative
+                    except Exception:
+                        pass
+                verdict = council.deliberate(
+                    question=f"Review this {dept_key} task output for safety and correctness",
+                    context=output[:2000],
+                    intent=_intent,
+                )
+                self.db.add_agent_event(task_id, "council_verdict", verdict.to_event_dict())
+                if verdict.decision == "reject":
+                    output += f"\n\n[COUNCIL: REJECT] {verdict.synthesis[:300]}"
+                    log.warning(
+                        f"ReviewManager: council rejected task #{task_id} "
+                        f"(confidence={verdict.confidence:.0%}, dissent={verdict.dissent_count}/5)"
+                    )
+                elif verdict.decision == "defer":
+                    output += f"\n\n[COUNCIL: DEFER] {verdict.synthesis[:300]}"
+                    log.warning(f"ReviewManager: council deferred task #{task_id}")
+                else:
+                    log.info(
+                        f"ReviewManager: council approved task #{task_id} "
+                        f"(confidence={verdict.confidence:.0%}, dissent={verdict.dissent_count}/5)"
+                    )
+            except Exception as e:
+                log.debug(f"ReviewManager: council failed for task #{task_id}: {e}")
+                # Fallback to legacy cross-review
+                if CrossModelReviewer:
+                    try:
+                        reviewer = CrossModelReviewer()
+                        report = reviewer.review(
+                            question=f"Review this {dept_key} task output for safety and correctness",
+                            context=output[:2000],
+                        )
+                        self.db.add_agent_event(task_id, "cross_review", {
+                            "consensus": report.consensus,
+                            "confidence": report.confidence,
+                            "recommendation": report.recommendation[:500],
+                            "latency_ms": report.latency_ms,
+                        })
+                        if report.consensus == "disagree":
+                            output += f"\n\n[CROSS-REVIEW: DISAGREE] {report.recommendation[:300]}"
+                    except Exception as e2:
+                        log.debug(f"ReviewManager: cross-review fallback also failed: {e2}")
+        elif _needs_review and CrossModelReviewer:
             try:
                 reviewer = CrossModelReviewer()
                 report = reviewer.review(
@@ -206,9 +277,6 @@ class ReviewManager:
                 })
                 if report.consensus == "disagree":
                     output += f"\n\n[CROSS-REVIEW: DISAGREE] {report.recommendation[:300]}"
-                    log.warning(f"ReviewManager: cross-review disagreement on task #{task_id}")
-                else:
-                    log.info(f"ReviewManager: cross-review {report.consensus} on task #{task_id}")
             except Exception as e:
                 log.debug(f"ReviewManager: cross-review failed for task #{task_id}: {e}")
 
