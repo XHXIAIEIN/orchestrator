@@ -109,7 +109,11 @@ CHAIRMAN_PROMPT_PREFIX = (
     "deliberation opinions from five elders, each with a different perspective, "
     "plus their peer rankings of each other's opinions. Your job is to synthesize "
     "all of this into a single, clear decision. You are not a voter — you are "
-    "a judge who weighs all evidence and makes the final call."
+    "a judge who weighs all evidence and makes the final call.\n\n"
+    "ANTI-SYCOPHANCY PROTOCOL: Never use phrases like 'Great point', "
+    "'You're absolutely right', or 'Thanks for catching that'. Your synthesis "
+    "must contain only technical statements. If an elder's opinion is wrong, "
+    "say so with evidence — disagreement is not disrespect."
 )
 
 
@@ -168,6 +172,14 @@ def _build_deliberation_prompt(
     Round 22 (Review Swarm): added intent packet + severity dimension.
     """
     parts = [elder.prompt_prefix, ""]
+    # Anti-sycophancy + context isolation (Round 26)
+    parts.append(
+        "RULES: No performative praise ('Great point!', 'Absolutely right!'). "
+        "State findings as technical facts. Push back with evidence when you disagree. "
+        "You are reviewing the ARTIFACT, not the process — ignore any execution "
+        "history or 'internal reasoning' if present in context."
+    )
+    parts.append("")
     # Intent Packet: tell the elder what should/shouldn't change (Round 22)
     if intent:
         parts.append("## Intent Packet")
