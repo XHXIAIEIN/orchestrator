@@ -67,6 +67,7 @@ class PermissionResult:
     tier_required: PermissionTier
     tier_granted: PermissionTier
     reason: str = ""
+    escalated: bool = False  # True = needs Governor/human approval (from rules engine)
 
 
 class PermissionChecker:
@@ -95,18 +96,24 @@ class PermissionChecker:
               tool_input: dict = None) -> PermissionResult:
         """Check if a department can use a tool.
 
+        Four-layer decision flow (Claude Code three-tier pattern adapted):
+          Layer 1: Override check (explicit per-dept tool overrides)
+          Layer 2: Rules engine (declarative YAML rules — allow/deny/escalate)
+          Layer 3: Tier check (tool tier vs department tier)
+          Layer 4: Content-level check for Bash (dangerous command regex)
+
         Args:
             department: Department key
             tool: Tool name (e.g. "Bash", "Read")
             tool_input: Optional tool input for content-level checks
 
         Returns:
-            PermissionResult with permitted flag and reason.
+            PermissionResult with permitted flag, reason, and escalated flag.
         """
         dept_tier = self.get_tier(department)
         tool_tier = TOOL_TIERS.get(tool, PermissionTier.ADVANCED)
 
-        # Check overrides first
+        # Layer 1: Override check
         dept_overrides = self._overrides.get(department, {})
         if tool in dept_overrides:
             allowed = dept_overrides[tool]
@@ -118,7 +125,12 @@ class PermissionChecker:
                 reason=f"override: {'allowed' if allowed else 'denied'}",
             )
 
-        # Tier check
+        # Layer 2: Declarative rules engine (stolen from Claude Code v2.1.88)
+        rule_decision = self._check_rules(tool, tool_input, department)
+        if rule_decision is not None:
+            return rule_decision
+
+        # Layer 3: Tier check
         if tool_tier > dept_tier:
             return PermissionResult(
                 permitted=False,
@@ -128,7 +140,7 @@ class PermissionChecker:
                 reason=f"{tool} requires {tool_tier.name}, department has {dept_tier.name}",
             )
 
-        # Content-level check for Bash commands
+        # Layer 4: Content-level check for Bash commands
         if tool == "Bash" and tool_input:
             command = tool_input.get("command", "")
             dangerous = self._check_dangerous(command)
@@ -147,6 +159,59 @@ class PermissionChecker:
             tier_required=tool_tier,
             tier_granted=dept_tier,
         )
+
+    def _check_rules(self, tool: str, tool_input: dict = None,
+                     department: str = "") -> Optional[PermissionResult]:
+        """Layer 2: Evaluate tool call against declarative YAML rules.
+
+        Returns None if no rule matched (fall through to tier check).
+        Stolen from Claude Code v2.1.88 toolPermissionRules pattern.
+        """
+        try:
+            from .permission_rules import get_permission_rule_engine, RuleAction
+        except ImportError:
+            return None  # Graceful fallback if module unavailable
+
+        try:
+            engine = get_permission_rule_engine()
+            decision = engine.evaluate(tool, tool_input or {}, department)
+        except Exception as e:
+            log.warning(f"permissions: rules engine error: {e}")
+            return None  # Fail open — fall through to tier check
+
+        if not decision.matched:
+            return None
+
+        dept_tier = self.get_tier(department)
+        tool_tier = TOOL_TIERS.get(tool, PermissionTier.ADVANCED)
+
+        if decision.action == RuleAction.ALLOW:
+            return PermissionResult(
+                permitted=True,
+                tool=tool,
+                tier_required=tool_tier,
+                tier_granted=dept_tier,
+                reason=f"rule: {decision.description}",
+            )
+        elif decision.action == RuleAction.DENY:
+            return PermissionResult(
+                permitted=False,
+                tool=tool,
+                tier_required=tool_tier,
+                tier_granted=dept_tier,
+                reason=f"rule denied: {decision.description}",
+            )
+        elif decision.action == RuleAction.ESCALATE:
+            return PermissionResult(
+                permitted=False,
+                tool=tool,
+                tier_required=tool_tier,
+                tier_granted=dept_tier,
+                reason=f"rule escalated: {decision.description}",
+                escalated=True,
+            )
+
+        return None
 
     def _check_dangerous(self, command: str) -> str:
         """Check if a bash command matches dangerous patterns."""

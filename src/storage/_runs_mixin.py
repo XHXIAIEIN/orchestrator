@@ -217,6 +217,27 @@ class RunsMixin:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    # ── Checkpoints (execution stream profiling) ──
+
+    def add_checkpoint(self, task_id: int, name: str, timestamp_ms: int,
+                       session_id: str = "") -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO checkpoints (task_id, session_id, name, timestamp_ms) "
+                "VALUES (?, ?, ?, ?)",
+                (task_id, session_id, name, timestamp_ms),
+            )
+            return cursor.lastrowid
+
+    def get_checkpoints(self, task_id: int, limit: int = 200) -> list:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, task_id, session_id, name, timestamp_ms, created_at "
+                "FROM checkpoints WHERE task_id = ? ORDER BY timestamp_ms ASC LIMIT ?",
+                (task_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     # ── Task Sessions (cross-heartbeat context recovery) ──
 
     def save_session(self, task_id: int, agent_id: str, session_data: dict):

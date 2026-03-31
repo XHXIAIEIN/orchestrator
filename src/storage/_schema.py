@@ -271,6 +271,16 @@ CREATE TABLE IF NOT EXISTS context_store (
 );
 CREATE INDEX IF NOT EXISTS idx_context_session_layer ON context_store(session_id, layer);
 CREATE INDEX IF NOT EXISTS idx_context_key ON context_store(key);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    session_id TEXT DEFAULT '',
+    name TEXT NOT NULL,
+    timestamp_ms INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON checkpoints(task_id);
 """
 
 # Migrations: (table, column, type)
