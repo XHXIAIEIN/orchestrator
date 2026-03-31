@@ -2,70 +2,32 @@
 import json
 import logging
 import sqlite3
-import threading
 from datetime import datetime, timezone
 
 from src.channels import config as ch_cfg
+from src.storage.pool import get_pool, SQLitePool
 
 log = logging.getLogger(__name__)
 
-# ── Connection pool (per db_path singleton) ──────────────────────────────────
-
-_pool_lock = threading.Lock()
-_pools: dict[str, "_ChatConnPool"] = {}
+# ── Migration state (per db_path) ───────────────────────────────────────────
+_migrated: dict[str, bool] = {}
 
 
-class _ChatConnPool:
-    """Single-connection pool with threading lock — same pattern as EventsDB."""
+def _get_pool(db_path: str) -> SQLitePool:
+    return get_pool(db_path, log_prefix="chat_db")
 
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-        self.lock = threading.Lock()
-        self._conn: sqlite3.Connection | None = None
-        self._migrated = False  # ALTER TABLE only needs to run once
 
-    def _raw_connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
+def _ensure_migrated(pool: SQLitePool, conn: sqlite3.Connection, db_path: str):
+    """Run ALTER TABLE migrations once per pool lifetime."""
+    if _migrated.get(db_path):
+        return
+    for col, default in [("chat_client", "''"), ("media_paths", "''")]:
         try:
-            conn.execute("PRAGMA journal_mode=DELETE")
+            conn.execute(f"SELECT {col} FROM chat_messages LIMIT 0")
         except sqlite3.OperationalError:
-            pass
-        conn.execute("PRAGMA busy_timeout=30000")
-        return conn
-
-    def get_conn(self) -> sqlite3.Connection:
-        """Get or create the shared connection. Caller must hold self.lock."""
-        if self._conn is None:
-            self._conn = self._raw_connect()
-        return self._conn
-
-    def ensure_migrated(self, conn: sqlite3.Connection):
-        """Run ALTER TABLE migrations once per pool lifetime."""
-        if self._migrated:
-            return
-        for col, default in [("chat_client", "''"), ("media_paths", "''")]:
-            try:
-                conn.execute(f"SELECT {col} FROM chat_messages LIMIT 0")
-            except sqlite3.OperationalError:
-                conn.execute(f"ALTER TABLE chat_messages ADD COLUMN {col} TEXT DEFAULT {default}")
-                conn.commit()
-        self._migrated = True
-
-    def recycle(self):
-        """Close and reset connection on error."""
-        if self._conn:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-            self._conn = None
-
-
-def _get_pool(db_path: str) -> "_ChatConnPool":
-    with _pool_lock:
-        if db_path not in _pools:
-            _pools[db_path] = _ChatConnPool(db_path)
-        return _pools[db_path]
+            conn.execute(f"ALTER TABLE chat_messages ADD COLUMN {col} TEXT DEFAULT {default}")
+            conn.commit()
+    _migrated[db_path] = True
 
 
 # ── Public API (unchanged signatures) ───────────────────────────────────────
@@ -77,7 +39,7 @@ def save_message(db_path: str, chat_id: str, role: str, content: str,
     with pool.lock:
         conn = pool.get_conn()
         try:
-            pool.ensure_migrated(conn)
+            _ensure_migrated(pool, conn, db_path)
             count = conn.execute(
                 "SELECT COUNT(*) FROM chat_messages WHERE chat_id = ?", (chat_id,)
             ).fetchone()[0]
@@ -106,7 +68,7 @@ def load_recent(db_path: str, chat_id: str, limit: int = 20) -> list[dict]:
     pool = _get_pool(db_path)
     with pool.lock:
         conn = pool.get_conn()
-        pool.ensure_migrated(conn)
+        _ensure_migrated(pool, conn, db_path)
         rows = conn.execute(
             "SELECT role, content, media_paths FROM chat_messages "
             "WHERE chat_id = ? ORDER BY id DESC LIMIT ?",

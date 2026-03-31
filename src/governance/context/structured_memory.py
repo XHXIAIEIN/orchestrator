@@ -13,13 +13,13 @@
 import json
 import logging
 import sqlite3
-import threading
-import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+
+from src.storage.pool import get_pool as _get_pool, SQLitePool, _registry_lock, _registry
 
 log = logging.getLogger(__name__)
 
@@ -225,76 +225,11 @@ CREATE INDEX IF NOT EXISTS idx_persona_subject ON persona(subject);
 """
 
 
-# ── Connection Pool (mirrors events_db pattern) ────────────────────────
+# ── Connection Pool (delegates to src.storage.pool) ──────────────────
 
-_pool_lock = threading.Lock()
-_pools: dict[str, "_MemoryPool"] = {}
-
-
-class _MemoryPool:
-    """Single-connection pool with threading lock — same pattern as events_db._ConnPool."""
-
-    _MAX_RETRIES = 3
-    _RETRY_BASE_DELAY = 0.5
-
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-        self.lock = threading.Lock()
-        self._conn: sqlite3.Connection | None = None
-
-    def _raw_connect(self) -> sqlite3.Connection:
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA journal_mode=DELETE")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("PRAGMA busy_timeout=30000")
-        except sqlite3.OperationalError:
-            pass
-        return conn
-
-    def connect(self):
-        """Context manager yielding shared connection under lock, with retry."""
-        from contextlib import contextmanager
-
-        @contextmanager
-        def _ctx():
-            last_exc = None
-            for attempt in range(self._MAX_RETRIES + 1):
-                with self.lock:
-                    if self._conn is None:
-                        self._conn = self._raw_connect()
-                    try:
-                        with self._conn:
-                            yield self._conn
-                        return
-                    except sqlite3.OperationalError as exc:
-                        if "database is locked" in str(exc) or "disk I/O error" in str(exc):
-                            log.warning(f"memory_db: connection error, recycling: {exc}")
-                            try:
-                                self._conn.close()
-                            except Exception:
-                                pass
-                            self._conn = self._raw_connect()
-                            last_exc = exc
-                        else:
-                            raise
-                if attempt < self._MAX_RETRIES:
-                    delay = self._RETRY_BASE_DELAY * (2 ** attempt)
-                    time.sleep(delay)
-            raise last_exc
-
-        return _ctx()
-
-
-def _get_pool(db_path: str) -> _MemoryPool:
-    with _pool_lock:
-        if db_path not in _pools:
-            _pools[db_path] = _MemoryPool(db_path)
-        return _pools[db_path]
+# Backward-compat aliases for tests that import _pools / _pool_lock
+_pool_lock = _registry_lock
+_pools = _registry
 
 
 # ── Store ───────────────────────────────────────────────────────────────
@@ -304,7 +239,12 @@ class StructuredMemoryStore:
 
     def __init__(self, db_path: str = _DEFAULT_DB):
         self.db_path = db_path
-        self._pool = _get_pool(db_path)
+        self._pool = _get_pool(
+            db_path,
+            row_factory=sqlite3.Row,
+            ensure_parent=True,
+            log_prefix="memory_db",
+        )
         self._init_tables()
 
     def _connect(self):

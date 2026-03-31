@@ -1,8 +1,5 @@
 import logging
 import sqlite3
-import threading
-import time
-from contextlib import contextmanager
 from pathlib import Path
 
 from src.storage._schema import get_table_ddl, get_migrations, get_deferred_indexes, TABLE_DDL
@@ -12,92 +9,21 @@ from src.storage._learnings_mixin import LearningsMixin
 from src.storage._runs_mixin import RunsMixin
 from src.storage._sessions_mixin import SessionsMixin
 from src.storage._wake_mixin import WakeMixin
+from src.storage.pool import get_pool
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_DB = str(Path(__file__).resolve().parent.parent.parent / "data" / "events.db")
 
-# Per-path singleton lock: all EventsDB instances sharing the same file share one lock + connection.
-_pool_lock = threading.Lock()
-_pools: dict[str, "_ConnPool"] = {}
-
-
-class _ConnPool:
-    """Single-connection pool with a threading lock — serialises all DB access to one file."""
-
-    _MAX_RETRIES = 3
-    _RETRY_BASE_DELAY = 0.5
-
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-        self.lock = threading.Lock()
-        self._conn: sqlite3.Connection | None = None
-
-    def _raw_connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        # DELETE journal — WAL's -shm file breaks on Docker NTFS bind-mounts.
-        try:
-            conn.execute("PRAGMA journal_mode=DELETE")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("PRAGMA busy_timeout=30000")
-        except sqlite3.OperationalError:
-            pass
-        return conn
-
-    @contextmanager
-    def connect(self):
-        """Yield the shared connection under the serialisation lock.
-
-        Uses the connection as a context manager so that SQLite auto-commits on
-        success and auto-rolls-back on exception — same semantics as the old
-        ``with self._connect() as conn`` pattern used by all mixins.
-
-        Retries up to _MAX_RETRIES times with exponential backoff on
-        ``database is locked`` / ``disk I/O error``. The lock is released
-        during sleep so other threads can make progress.
-        """
-        last_exc: sqlite3.OperationalError | None = None
-        for attempt in range(self._MAX_RETRIES + 1):
-            with self.lock:
-                if self._conn is None:
-                    self._conn = self._raw_connect()
-                try:
-                    with self._conn:  # sqlite3 auto-commit / rollback
-                        yield self._conn
-                    return  # success — exit the retry loop
-                except sqlite3.OperationalError as exc:
-                    if "database is locked" in str(exc) or "disk I/O error" in str(exc):
-                        log.warning(f"events_db: connection error, recycling: {exc}")
-                        try:
-                            self._conn.close()
-                        except Exception:
-                            pass
-                        self._conn = self._raw_connect()
-                        last_exc = exc
-                    else:
-                        raise
-            # lock released — sleep before next attempt
-            if attempt < self._MAX_RETRIES:
-                delay = self._RETRY_BASE_DELAY * (2 ** attempt)
-                log.info(f"events_db: retrying in {delay}s (attempt {attempt + 1}/{self._MAX_RETRIES})")
-                time.sleep(delay)
-        raise last_exc
-
-
-def _get_pool(db_path: str) -> _ConnPool:
-    with _pool_lock:
-        if db_path not in _pools:
-            _pools[db_path] = _ConnPool(db_path)
-        return _pools[db_path]
-
 
 class EventsDB(TasksMixin, ProfileMixin, LearningsMixin, RunsMixin, SessionsMixin, WakeMixin):
     def __init__(self, db_path: str = _DEFAULT_DB):
         self.db_path = db_path
-        self._pool = _get_pool(db_path)
+        self._pool = get_pool(
+            db_path,
+            row_factory=sqlite3.Row,
+            log_prefix="events_db",
+        )
         self._init_tables()
 
     def _connect(self):
