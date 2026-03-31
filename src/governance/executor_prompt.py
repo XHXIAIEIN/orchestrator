@@ -24,11 +24,23 @@ except ImportError:
     format_runs_for_context = None
     load_recent_runs = None
 
+# Condenser — optional context compression before LLM execution
+try:
+    from src.governance.condenser.context_condenser import condense_context as _condense_context
+except ImportError:
+    _condense_context = None
+
 try:
     from src.governance.policy.prompt_canary import should_use_canary, get_canary_prompt
 except ImportError:
     should_use_canary = None
     get_canary_prompt = None
+
+# Voice Directive — department voice injection (gstack)
+try:
+    from src.governance.voice_directive import VoiceDirective as _VoiceDirective
+except ImportError:
+    _VoiceDirective = None
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +101,17 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     prompt = dept_prompt
     if mode_prompt:
         prompt += "\n\n" + mode_prompt
+
+    # ── Voice Directive: inject department voice parameters (gstack) ──
+    if _VoiceDirective:
+        try:
+            voice = _VoiceDirective.for_department(dept_key)
+            voice_block = voice.to_prompt_block()
+            if voice_block:
+                prompt += "\n\n" + voice_block
+        except Exception:
+            pass
+
     prompt += "\n\n" + base_prompt
     spec = task.get('spec', {})
     extra = spec.get('extra_instructions', '')
@@ -111,4 +134,33 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     except Exception as e:
         log.warning(f"TaskExecutor: context assembly failed ({e}), continuing without dynamic context")
 
+    # ── Condenser: optional context compression (post-assembly, pre-execution) ──
+    # Configurable per-department via manifest.yaml `condenser:` section.
+    if _condense_context:
+        condenser_config = _get_condenser_config(dept, blueprint)
+        prompt = _condense_context(prompt, dept_key=dept_key, config=condenser_config)
+
     return prompt
+
+
+def _get_condenser_config(dept: dict, blueprint=None) -> dict:
+    """Extract condenser config from department dict or blueprint.
+
+    Departments can configure condenser behavior in manifest.yaml:
+        condenser:
+          enabled: true
+          max_tokens: 128000
+          high_water: 0.85
+    """
+    config = {}
+    # dept dict may carry raw manifest fields
+    if isinstance(dept, dict) and "condenser" in dept:
+        raw = dept["condenser"]
+        if isinstance(raw, dict):
+            config.update(raw)
+    # Blueprint may also carry condenser overrides
+    if blueprint and hasattr(blueprint, "condenser"):
+        bp_config = getattr(blueprint, "condenser", None)
+        if isinstance(bp_config, dict):
+            config.update(bp_config)
+    return config

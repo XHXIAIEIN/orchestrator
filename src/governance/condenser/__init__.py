@@ -5,6 +5,15 @@ from .amortized_forgetting import AmortizedForgettingCondenser
 from .llm_summarizing import LLMSummarizingCondenser
 from .water_level import WaterLevelCondenser
 from .pipeline import CondenserPipeline
+from .context_condenser import condense_context
+
+# Ratio-Based Compression adapter (stolen from Hermes)
+# Wraps governance.compression.ContextCompressor as a Condenser so it can
+# participate in CondenserPipeline alongside the OpenHands-style condensers.
+try:
+    from .ratio_compression import RatioCompressionCondenser
+except ImportError:
+    RatioCompressionCondenser = None
 
 __all__ = [
     "Condenser", "View", "Event",
@@ -13,4 +22,6 @@ __all__ = [
     "LLMSummarizingCondenser",
     "WaterLevelCondenser",
     "CondenserPipeline",
+    "condense_context",
+    "RatioCompressionCondenser",
 ]
