@@ -5,6 +5,32 @@ from src.storage.events_db import EventsDB
 from src.core.llm_router import get_router
 from src.governance.context.prompts import SCRUTINY_PROMPT, SECOND_OPINION_MODEL
 
+# Safety modules — optional imports (consistent with executor.py pattern)
+try:
+    from src.governance.safety.injection_test import run_injection_suite, check_output_for_leak
+except ImportError:
+    run_injection_suite = None
+    check_output_for_leak = None
+
+try:
+    from src.governance.safety.prompt_lint import lint_prompt
+except ImportError:
+    lint_prompt = None
+
+try:
+    from src.governance.audit.change_aware import get_changed_files, map_files_to_domains, get_change_summary
+except ImportError:
+    get_changed_files = None
+    map_files_to_domains = None
+    get_change_summary = None
+
+# Voice Directive — voice consistency evaluation (gstack)
+try:
+    from src.governance.voice_directive import evaluate_voice, VoiceDirective
+except ImportError:
+    evaluate_voice = None
+    VoiceDirective = None
+
 log = logging.getLogger(__name__)
 
 
@@ -96,11 +122,27 @@ class Scrutinizer:
     def scrutinize(self, task_id: int, task: dict) -> tuple[bool, str]:
         """门下省审查。LOW/MEDIUM 单模型审查，HIGH 双模型交叉验证。"""
         spec = task.get("spec", {})
+        dept_key = spec.get("department", "engineering")
         project_name = spec.get("project", "orchestrator")
         task_cwd = _resolve_project_cwd(project_name, spec.get("cwd", ""))
 
         cognitive_mode = classify_cognitive_mode(task)
         blast_radius = estimate_blast_radius(spec)
+
+        # ── Change-Aware: enrich spec with affected domains from git diff ──
+        if get_change_summary:
+            try:
+                change_info = get_change_summary("HEAD~1", cwd=task_cwd)
+                if change_info.get("domains"):
+                    spec["affected_domains"] = change_info["domains"]
+                    spec["files_changed_count"] = len(change_info.get("files_changed", []))
+                    log.info(
+                        f"Scrutinizer: change-aware enrichment for #{task_id}: "
+                        f"domains={change_info['domains']}, files={spec['files_changed_count']}"
+                    )
+            except Exception as e:
+                log.debug(f"Scrutinizer: change-aware enrichment skipped ({e})")
+
         prompt = SCRUTINY_PROMPT.format(
             summary=spec.get("summary", task.get("action", "")),
             project=project_name,
@@ -116,10 +158,63 @@ class Scrutinizer:
 
         is_high_risk = blast_radius.startswith("HIGH")
 
+        # ── Voice Directive: inject department voice into scrutiny prompt (gstack) ──
+        if VoiceDirective:
+            try:
+                directive = VoiceDirective.for_department(dept_key)
+                prompt = directive.inject(prompt)
+            except Exception as e:
+                log.debug(f"Scrutinizer: voice directive injection skipped ({e})")
+
+        # ── Prompt Lint: check assembled prompt for anti-patterns ──
+        if lint_prompt:
+            try:
+                lint_report = lint_prompt(prompt, source=f"scrutiny#{task_id}")
+                if lint_report.error_count > 0:
+                    log.warning(f"Scrutinizer: prompt lint found {lint_report.error_count} errors for task #{task_id}")
+                    self.db.write_log(
+                        f"门下省 prompt lint: #{task_id} — {lint_report.error_count} errors, {lint_report.warning_count} warnings",
+                        "WARNING", "governor",
+                    )
+            except Exception as e:
+                log.debug(f"Scrutinizer: prompt lint skipped ({e})")
+
+        # ── Injection Test: static analysis of prompt defenses ──
+        if run_injection_suite:
+            try:
+                injection_report = run_injection_suite(
+                    department=spec.get("department", "unknown"),
+                    system_prompt=prompt,
+                )
+                if injection_report.failed > 0:
+                    log.warning(
+                        f"Scrutinizer: injection test found {injection_report.failed} "
+                        f"vulnerabilities for task #{task_id} (score={injection_report.score:.0f}%)"
+                    )
+                    self.db.write_log(
+                        f"门下省注入检测: #{task_id} — {injection_report.score:.0f}% "
+                        f"({injection_report.failed} vulnerable)",
+                        "WARNING", "governor",
+                    )
+            except Exception as e:
+                log.debug(f"Scrutinizer: injection test skipped ({e})")
+
         try:
             # First opinion (primary model via router)
             text1 = get_router().generate(prompt, task_type="scrutiny")
             approved1, reason1 = _parse_scrutiny_verdict(text1)
+
+            # ── Voice Evaluation: score output quality (gstack) ──
+            if evaluate_voice and text1:
+                try:
+                    voice_score = evaluate_voice(text1)
+                    if voice_score.issues:
+                        log.info(
+                            f"Scrutinizer: voice quality #{task_id}: "
+                            f"overall={voice_score.overall}, issues={voice_score.issues}"
+                        )
+                except Exception:
+                    pass
 
             if not is_high_risk:
                 log.info(f"Scrutinizer: scrutiny #{task_id} → {'APPROVE' if approved1 else 'REJECT'}: {reason1}")

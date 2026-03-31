@@ -34,7 +34,7 @@ from src.storage.events_db import EventsDB
 from src.core.llm_router import get_router
 from src.core.cost_tracking import CostTracker, CostLimitExceededError
 from src.core.system_monitor import get_monitor
-from src.governance.scrutiny import classify_cognitive_mode
+from src.governance.scrutiny import classify_cognitive_mode, estimate_blast_radius
 from src.governance.policy.blueprint import load_blueprint, get_allowed_tools, AuthorityCeiling
 from src.governance.safety.immutable_constraints import enforce_tool_constraint, enforce_timeout_constraint
 from src.governance.context.prompts import (
@@ -51,11 +51,19 @@ from src.governance.execution_response import ExecutionResponse
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
 
+# ── Resilient Retry (stolen from ChatDev 2.0, Round 13) ──
+# Exception chain traversal for deeper failure classification.
+try:
+    from src.core.resilient_retry import RetryPolicy, should_retry as resilient_should_retry
+except ImportError:
+    RetryPolicy = None
+    resilient_should_retry = None
+
 
 # ── Rollout Configuration (stolen from agent-lightning Round 8) ──
 
 # Conditions that warrant automatic retry
-RETRYABLE_CONDITIONS = {"timeout", "stuck", "unresponsive", "cost_limit"}
+RETRYABLE_CONDITIONS = {"timeout", "stuck", "unresponsive", "cost_limit", "rate_limited", "transient_server_error"}
 
 @dataclass
 class RolloutConfig:
@@ -74,6 +82,22 @@ class RolloutConfig:
             retry_conditions=set(rc.get("retry_conditions", ["timeout", "stuck"])),
             backoff_seconds=rc.get("backoff_seconds", 5.0),
         )
+
+
+# ── Default Resilient Retry Policy (ChatDev 2.0, Round 13) ──
+# Complements RolloutConfig's string-based _classify_failure with exception
+# chain traversal. Used when execution raises an actual exception (not just
+# a tagged output string).
+_DEFAULT_RESILIENT_POLICY = None
+if RetryPolicy is not None:
+    _DEFAULT_RESILIENT_POLICY = RetryPolicy(
+        enabled=True,
+        max_attempts=3,  # Evaluated independently, but capped by RolloutConfig.max_attempts
+        retry_on_types=["TimeoutError", "ConnectionError", "httpx.ReadTimeout"],
+        no_retry_types=["KeyboardInterrupt", "SystemExit", "CostLimitExceededError"],
+        retry_on_status_codes=[429, 502, 503, 529],
+        retry_on_substrings=["rate limit", "overloaded", "capacity"],
+    )
 
 
 # ── Lifecycle Hooks (stolen from agent-lightning R12) ──
@@ -107,8 +131,29 @@ class LifecycleHooks:
                 )
 
 
-def _classify_failure(output: str) -> str:
-    """Classify a failure output into a retry condition category."""
+def _classify_failure(output: str, exc: BaseException | None = None) -> str:
+    """Classify a failure output into a retry condition category.
+
+    Enhanced with ChatDev 2.0 resilient_retry (Round 13): when an actual
+    exception is provided, walks the __cause__/__context__ chain for deeper
+    classification before falling back to string matching on output text.
+    """
+    # ── Phase 1: Exception chain traversal (ChatDev 2.0) ──
+    if exc is not None and resilient_should_retry and _DEFAULT_RESILIENT_POLICY:
+        from src.core.resilient_retry import _iter_exception_chain, _extract_status_code
+        for error in _iter_exception_chain(exc):
+            status = _extract_status_code(error)
+            if status in (429, 529):
+                return "rate_limited"
+            if status in (502, 503):
+                return "transient_server_error"
+            type_name = type(error).__name__
+            if "Timeout" in type_name:
+                return "timeout"
+            if "Connection" in type_name:
+                return "transient_server_error"
+
+    # ── Phase 2: Original string-based classification (preserved) ──
     lower = output.lower() if output else ""
     if "timeout" in lower or "[WATCHDOG:" in output:
         return "timeout"
@@ -120,6 +165,8 @@ def _classify_failure(output: str) -> str:
         return "cost_limit"
     if "unresponsive" in lower:
         return "unresponsive"
+    if "rate limit" in lower:
+        return "rate_limited"
     return "unknown"
 
 # ── Execution Strategy (stolen from agent-lightning Round 8) ──
@@ -287,6 +334,53 @@ try:
 except (ImportError, FileNotFoundError):
     _intervention_checker = None
 
+# DualVerify — cross-model verification for HIGH risk post-execution review
+try:
+    from src.governance.safety.dual_verify import cross_verify as dual_cross_verify
+except ImportError:
+    dual_cross_verify = None
+
+# DriftDetector — detect agent straying from assigned task
+try:
+    from src.governance.safety.drift_detector import DriftDetector
+except ImportError:
+    DriftDetector = None
+
+# Permission Checker — 3-tier tool permission model (OpenAkita)
+try:
+    from src.governance.permissions import get_permission_checker
+except ImportError:
+    get_permission_checker = None
+
+# Plan Executor — plan-then-execute dual mode (OpenHands)
+try:
+    from src.governance.plan_executor import PlanExecutor
+except ImportError:
+    PlanExecutor = None
+
+# Concurrency Pool — unified concurrency limiter (Firecrawl)
+try:
+    from src.core.concurrency_pool import get_concurrency_pool
+except ImportError:
+    get_concurrency_pool = None
+
+# ExecutionSnapshot — incremental execution snapshots (Round 16 LobeHub)
+try:
+    from src.governance.audit.execution_snapshot import ExecutionSnapshot, SnapshotStore
+    _snapshot_store = SnapshotStore()
+except (ImportError, Exception):
+    ExecutionSnapshot = None
+    _snapshot_store = None
+
+# Global Lifecycle Hook Registry (stolen from Hermes, Round 3-7)
+# System-wide hooks (pre_llm_call, on_session_start, etc.) complement
+# the rollout-specific LifecycleHooks above. Rollout events are bridged
+# to the global registry via on_task_dispatch and on_session_start/end.
+try:
+    from src.core.lifecycle_hooks import get_lifecycle_hooks as _get_global_hooks
+except ImportError:
+    _get_global_hooks = None
+
 log = logging.getLogger(__name__)
 
 CLAUDE_TIMEOUT = 300
@@ -326,6 +420,7 @@ class TaskExecutor:
         self._session_runner = AgentSessionRunner(db=self.db, log_event_fn=self._log_agent_event)
         self._strategy = strategy or ProductionStrategy()
         self._hooks = hooks or LifecycleHooks()
+        self._plan_executor = PlanExecutor() if PlanExecutor else None
         self._worktree = WorktreeManager()
         self._patches = PatchManager()
 
@@ -407,6 +502,7 @@ class TaskExecutor:
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
 
         cognitive_mode = classify_cognitive_mode(task)
+        blast_radius = estimate_blast_radius(spec)
         bp_tag = f"bp=v{blueprint.version}" if blueprint else "bp=none"
         log.info(f"TaskExecutor: routing task #{task_id} to {dept['name']}({dept_key}), mode={cognitive_mode}, {bp_tag}, strategy={self._strategy.get_mode()}, project={project_name}, cwd={task_cwd}")
 
@@ -457,6 +553,15 @@ class TaskExecutor:
         # ── Immutable Constraints: tool check ──
         allowed_tools = [t for t in allowed_tools if enforce_tool_constraint(t)[0]]
 
+        # ── Permission Checker: 3-tier tool permission filter (OpenAkita) ──
+        if get_permission_checker:
+            try:
+                perm_checker = get_permission_checker()
+                allowed_tools = perm_checker.filter_tools(dept_key, allowed_tools)
+                log.debug(f"TaskExecutor: task #{task_id} tools after permission filter: {allowed_tools}")
+            except Exception as e:
+                log.debug(f"TaskExecutor: permission check skipped ({e})")
+
         # ── InterventionChecker: three-layer tool pre-screening (Round 16 LobeHub) ──
         if _intervention_checker:
             screened_tools = []
@@ -480,6 +585,22 @@ class TaskExecutor:
             ok, conflict = self.punch_clock.checkout(task_id, punch_files, dept_key)
             if not ok:
                 log.warning(f"TaskExecutor: task #{task_id} file conflict: {conflict}")
+
+        # ── Plan Executor: register plan if spec defines plan_steps (OpenHands) ──
+        if self._plan_executor and spec.get("plan_steps"):
+            try:
+                plan = self._plan_executor.create_plan(
+                    task_id=str(task_id),
+                    title=task.get("action", "")[:80],
+                    goal=spec.get("summary", spec.get("problem", "")),
+                    steps=spec["plan_steps"],
+                )
+                self._plan_executor.approve_plan(str(task_id))
+                plan_md = plan.to_markdown()
+                prompt += f"\n\n## Execution Plan\n{plan_md}"
+                log.info(f"TaskExecutor: task #{task_id} plan registered ({len(plan.steps)} steps)")
+            except Exception as e:
+                log.debug(f"TaskExecutor: plan registration skipped ({e})")
 
         # ── Heartbeat prompt injection ──
         if HEARTBEAT_PROMPT:
@@ -539,12 +660,39 @@ class TaskExecutor:
         if blueprint and hasattr(blueprint, 'rollout'):
             rollout_cfg = RolloutConfig.from_dict({"rollout": blueprint.rollout})
 
+        # ── DriftDetector: initialize for this task (monitors execution drift) ──
+        drift_detector = None
+        if DriftDetector:
+            try:
+                writable = blueprint.writable_paths if blueprint and hasattr(blueprint, 'writable_paths') else []
+                drift_detector = DriftDetector(task_spec=spec, writable_paths=writable)
+                log.debug(f"TaskExecutor: drift detector initialized for task #{task_id}")
+            except Exception as e:
+                log.debug(f"TaskExecutor: drift detector init skipped ({e})")
+
         cost_limit = float(os.environ.get("TASK_COST_LIMIT", "0"))  # 0 = 不限
         router = get_router()
 
         output = "(no output)"
         status = "failed"
         attempt = 0
+
+        # ── ExecutionSnapshot: create snapshot for this rollout ──
+        snapshot = None
+        if ExecutionSnapshot:
+            try:
+                snapshot = ExecutionSnapshot(task_id=task_id, department=dept_key)
+                snapshot.record("turn_start", {
+                    "turn": 0,
+                    "event": "rollout_start",
+                    "dept_key": dept_key,
+                    "project": project_name,
+                    "max_attempts": rollout_cfg.max_attempts,
+                    "strategy": self._strategy.get_mode(),
+                })
+            except Exception as e:
+                log.debug(f"TaskExecutor: snapshot init failed ({e})")
+                snapshot = None
 
         # ── Lifecycle: rollout_start ──
         self._hooks.fire("on_rollout_start", {
@@ -555,6 +703,32 @@ class TaskExecutor:
             "max_attempts": rollout_cfg.max_attempts,
             "strategy": self._strategy.get_mode(),
         })
+        # Bridge to global lifecycle registry (Hermes)
+        if _get_global_hooks:
+            try:
+                _get_global_hooks().fire("on_task_dispatch",
+                    task_id=task_id, department=dept_key,
+                    intent=spec.get("intent", ""), priority=spec.get("priority", "medium"))
+                _get_global_hooks().fire("on_session_start",
+                    task_id=task_id, department=dept_key,
+                    strategy=self._strategy.get_mode())
+            except Exception:
+                pass
+
+        # ── Concurrency Pool: acquire slot before execution (Firecrawl) ──
+        _pool_slot = None
+        if get_concurrency_pool:
+            try:
+                pool = get_concurrency_pool()
+                _pool_slot = pool.acquire(
+                    owner=f"task:{task_id}:{dept_key}",
+                    ttl=int(task_timeout) + 60,
+                    metadata={"task_id": task_id, "department": dept_key},
+                )
+                if not _pool_slot:
+                    log.warning(f"TaskExecutor: task #{task_id} concurrency pool full, proceeding anyway")
+            except Exception as e:
+                log.debug(f"TaskExecutor: concurrency pool acquire failed ({e})")
 
         while attempt < rollout_cfg.max_attempts:
             attempt += 1
@@ -584,6 +758,7 @@ class TaskExecutor:
             )
             router.set_tracker(tracker)
 
+            _last_exc = None  # Track exception for resilient_retry classification
             try:
                 async def _agent_coro():
                     return await self._run_agent_session(
@@ -596,11 +771,14 @@ class TaskExecutor:
                 if hasattr(response, 'to_dict'):
                     self._log_agent_event(task_id, "execution_response", response.to_dict())
             except CostLimitExceededError as e:
+                _last_exc = e
                 output = f"cost limit exceeded: {e}"
                 log.warning(f"TaskExecutor: task #{task_id} attempt #{attempt}: {e}")
-            except TimeoutError:
+            except TimeoutError as e:
+                _last_exc = e
                 output = f"timeout after {task_timeout}s"
             except Exception as e:
+                _last_exc = e
                 output = str(e)[:2000]
                 log.error(f"TaskExecutor: task #{task_id} attempt #{attempt} error: {e}")
             finally:
@@ -624,6 +802,19 @@ class TaskExecutor:
                     except Exception:
                         pass
 
+            # ── ExecutionSnapshot: record attempt result ──
+            if snapshot:
+                try:
+                    snapshot.record("progress", {
+                        "event": "attempt_end",
+                        "attempt": attempt,
+                        "status": status,
+                        "result_preview": output[:200],
+                    }, tokens=getattr(tracker, 'total_tokens', 0),
+                       cost=getattr(tracker, 'total_cost', 0.0))
+                except Exception:
+                    pass
+
             # ── Lifecycle: attempt_end ──
             self._hooks.fire("on_attempt_end", {
                 "task_id": task_id,
@@ -638,8 +829,19 @@ class TaskExecutor:
             if status == "done":
                 break  # Success, no retry needed
 
-            failure_type = _classify_failure(output)
-            if failure_type not in rollout_cfg.retry_conditions:
+            failure_type = _classify_failure(output, exc=_last_exc)
+
+            # Two-layer retry gate (Round 13 enhancement):
+            # 1. Original: check failure_type against rollout_cfg.retry_conditions
+            # 2. ChatDev 2.0: if the exception exists, also consult resilient_should_retry
+            is_retryable = failure_type in rollout_cfg.retry_conditions
+            if not is_retryable and _last_exc and resilient_should_retry and _DEFAULT_RESILIENT_POLICY:
+                is_retryable = resilient_should_retry(_last_exc, _DEFAULT_RESILIENT_POLICY)
+                if is_retryable:
+                    log.info(f"TaskExecutor: task #{task_id} resilient_retry says retryable "
+                             f"(exception chain: {type(_last_exc).__name__})")
+
+            if not is_retryable:
                 log.info(f"TaskExecutor: task #{task_id} failed with '{failure_type}' — not retryable")
                 break
 
@@ -658,6 +860,20 @@ class TaskExecutor:
             })
             time.sleep(rollout_cfg.backoff_seconds)
 
+        # ── ExecutionSnapshot: finalize and save ──
+        if snapshot:
+            try:
+                snapshot.record("progress", {
+                    "event": "rollout_end",
+                    "total_attempts": attempt,
+                    "final_status": status,
+                })
+                if _snapshot_store:
+                    _snapshot_store.save_snapshot(snapshot)
+                    log.debug(f"TaskExecutor: snapshot saved for task #{task_id}")
+            except Exception as e:
+                log.debug(f"TaskExecutor: snapshot save failed ({e})")
+
         # ── Lifecycle: rollout_end ──
         self._hooks.fire("on_rollout_end", {
             "task_id": task_id,
@@ -668,8 +884,69 @@ class TaskExecutor:
             "final_status": status,
             "final_result": output[:500],
         })
+        # Bridge to global lifecycle registry (Hermes)
+        if _get_global_hooks:
+            try:
+                _get_global_hooks().fire("on_session_end",
+                    task_id=task_id, department=dept_key,
+                    status=status, attempts=attempt)
+                if status != "done":
+                    _get_global_hooks().fire("on_error",
+                        task_id=task_id, department=dept_key,
+                        error=output[:200], status=status)
+            except Exception:
+                pass
+
+        # ── DriftDetector: post-execution drift check ──
+        if drift_detector:
+            try:
+                # Feed accumulated agent events into drift detector
+                agent_events = self.db.get_agent_events(task_id, limit=50)
+                for evt in (agent_events or []):
+                    drift_detector.record_turn(evt)
+                drift_report = drift_detector.check(task_id=task_id)
+                if drift_report.is_drifting:
+                    log.warning(
+                        f"TaskExecutor: task #{task_id} drift detected "
+                        f"(score={drift_report.drift_score:.2f}, signals={len(drift_report.signals)})"
+                    )
+                    self._log_agent_event(task_id, "drift_detected", drift_report.to_dict())
+            except Exception as e:
+                log.debug(f"TaskExecutor: drift check skipped ({e})")
+
+        # ── DualVerify: cross-model review for HIGH risk completed tasks ──
+        if dual_cross_verify and status == "done" and blast_radius.startswith("HIGH"):
+            try:
+                review_prompt = (
+                    f"Review this task execution output for correctness and safety.\n"
+                    f"Task: {task.get('action', '')[:200]}\n"
+                    f"Output: {output[:800]}\n\n"
+                    f"VERDICT: PASS or FAIL\nFINDINGS: list any issues"
+                )
+                router = get_router()
+                verification = dual_cross_verify(
+                    task_id=task_id,
+                    verification_type="quality",
+                    prompt=review_prompt,
+                    model_a_fn=lambda p: router.generate(p, task_type="review"),
+                    model_b_fn=lambda p: router.generate(p, task_type="review"),
+                )
+                log.info(
+                    f"TaskExecutor: task #{task_id} dual verify → {verification.agreement.value} "
+                    f"(confidence={verification.confidence:.0%})"
+                )
+                self._log_agent_event(task_id, "dual_verify", verification.to_dict())
+            except Exception as e:
+                log.debug(f"TaskExecutor: dual verify skipped ({e})")
 
         # ── Cleanup (once, after all attempts) ──
+        # Concurrency Pool: release slot
+        if _pool_slot and get_concurrency_pool:
+            try:
+                get_concurrency_pool().release(_pool_slot)
+            except Exception:
+                pass
+
         # Punch out
         if self.punch_clock:
             self.punch_clock.punch_out(task_id)

@@ -25,6 +25,20 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
 
+# Convergence detection — optional import (consistent with executor.py pattern)
+try:
+    from src.governance.safety.convergence import ConvergenceState, check_convergence
+except ImportError:
+    ConvergenceState = None
+    check_convergence = None
+
+# Drift detection — optional import for supervisor-level monitoring
+try:
+    from src.governance.safety.drift_detector import DriftDetector, DriftReport
+except ImportError:
+    DriftDetector = None
+    DriftReport = None
+
 log = logging.getLogger(__name__)
 
 # ── 常量 ────────────────────────────────────────────────────────────────────
@@ -148,6 +162,12 @@ class RuntimeSupervisor:
         # ── StuckDetector 集成 ──
         self._stuck_detector = None
 
+        # ── Convergence tracking (stolen from claude-cognitive) ──
+        self._convergence_state = ConvergenceState() if ConvergenceState else None
+
+        # ── DriftDetector instance (supervisor-level) ──
+        self._drift_detector = None
+
     # ── 记录接口 ──────────────────────────────────────────────────────────
 
     def record_tool_call(self, tool_name: str, params: dict) -> None:
@@ -217,6 +237,15 @@ class RuntimeSupervisor:
         """挂载 StuckDetector 实例，evaluate 时会查询 should_escalate()。"""
         self._stuck_detector = detector
 
+    def integrate_drift_detector(self, detector) -> None:
+        """挂载 DriftDetector 实例，evaluate 时会检查 drift。"""
+        self._drift_detector = detector
+
+    def record_convergence_score(self, score: float, text: str = "") -> None:
+        """记录一轮迭代的质量分数，用于收敛检测。"""
+        if self._convergence_state:
+            self._convergence_state.record(score, text)
+
     # ── 评估接口 ──────────────────────────────────────────────────────────
 
     def evaluate(self, iteration: int = 0) -> list[SupervisorDecision]:
@@ -256,6 +285,52 @@ class RuntimeSupervisor:
                     reason=reason,
                     suggestion="多次尝试后仍失败，建议人工介入或更换策略",
                 ))
+
+        # ── Convergence detection: stop iterating when diminishing returns ──
+        if self._convergence_state and check_convergence and len(self._convergence_state.scores) >= 2:
+            try:
+                verdict = check_convergence(self._convergence_state)
+                if verdict.recommendation == "stop":
+                    decisions.append(SupervisorDecision(
+                        level=InterventionLevel.NUDGE,
+                        detector_name="convergence_stop",
+                        reason=verdict.reason,
+                        suggestion="迭代已收敛，继续可能无收益",
+                        details=verdict.to_dict(),
+                    ))
+                elif verdict.recommendation == "escalate":
+                    decisions.append(SupervisorDecision(
+                        level=InterventionLevel.ESCALATE,
+                        detector_name="convergence_escalate",
+                        reason=verdict.reason,
+                        suggestion="迭代未收敛且无改善，需人工介入",
+                        details=verdict.to_dict(),
+                    ))
+            except Exception as e:
+                log.debug(f"Convergence check error: {e}")
+
+        # ── Drift detection: supervisor-level task drift monitoring ──
+        if self._drift_detector and DriftReport:
+            try:
+                drift_report = self._drift_detector.check()
+                if drift_report.should_intervene:
+                    decisions.append(SupervisorDecision(
+                        level=InterventionLevel.STRATEGY_SWITCH,
+                        detector_name="drift_high",
+                        reason=f"任务偏离检测 (drift={drift_report.drift_score:.2f})",
+                        suggestion="Agent 已偏离任务目标，建议重新聚焦",
+                        details=drift_report.to_dict(),
+                    ))
+                elif drift_report.is_drifting:
+                    decisions.append(SupervisorDecision(
+                        level=InterventionLevel.NUDGE,
+                        detector_name="drift_warning",
+                        reason=f"任务可能偏离 (drift={drift_report.drift_score:.2f})",
+                        suggestion="注意保持在任务范围内",
+                        details=drift_report.to_dict(),
+                    ))
+            except Exception as e:
+                log.debug(f"Drift detection error: {e}")
 
         # 按严重度降序
         decisions.sort(key=lambda d: d.level, reverse=True)
