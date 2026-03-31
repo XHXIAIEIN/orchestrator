@@ -8,7 +8,10 @@ INPUT=$(cat)
 # Extract agent prompt (use python — jq not always available on Windows)
 PROMPT=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null)
 
-if echo "$PROMPT" | grep -qiE '(steal|偷师|round\s*[0-9]+|P0.*pattern|pattern.*P0)'; then
+# Match imperative steal instructions, not background mentions like "Round 21 偷师" in context
+# Triggers: "steal from X", "execute steal plan", "偷师 Round 25", "implement round 23 patterns"
+# Does NOT trigger: "背景：Round 21 偷师", "this was stolen from X", "Round 21 的成果"
+if echo "$PROMPT" | grep -qiE '(^|\.\s*)(steal\s+(from|round|patterns|P0)|偷师\s*Round|execute.*steal|implement.*steal|implement.*round\s*[0-9]+\s*(steal|pattern))'; then
     BRANCH=$(git branch --show-current 2>/dev/null || echo "")
     # Must be on a dedicated steal branch, not main/master/feat/context-parity or other shared branches
     if ! echo "$BRANCH" | grep -qiE '(steal|round)'; then
