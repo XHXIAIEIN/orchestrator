@@ -51,6 +51,7 @@ from src.governance.context.tiers import classify_task_tier
 from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
 from src.governance.execution_response import ExecutionResponse
 from src.governance.pipeline.output_compress import compress_output
+from src.governance.pipeline.input_compress import compress_input
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
 
@@ -497,11 +498,27 @@ class TaskExecutor:
 
         ctx_writer = ContextWriter(self.db, session_id)
         # L1: chain outputs from predecessor tasks
+        # ── Input Compression (VibeVoice Round 17: Segment-then-Concat) ──
+        # Compress chain-from context BEFORE injection, not after.
+        # Analogous to VibeVoice's 7.5Hz tokenizer compressing audio before
+        # the LLM backbone sees it.
         chain_from = spec.get("chain_from")
         if chain_from:
             prev_task = self.db.get_task(int(chain_from))
             if prev_task and prev_task.get("output"):
-                ctx_writer.write_chain_output(int(chain_from), prev_task["output"])
+                raw_output = prev_task["output"]
+                compressed = compress_input(
+                    raw_output,
+                    context_budget=tier.context_budget,
+                )
+                if compressed.strategy != "passthrough":
+                    log.info(
+                        f"TaskExecutor: input compressed chain_from #{chain_from}: "
+                        f"{compressed.original_length}→{compressed.compressed_length} chars "
+                        f"({compressed.compression_ratio:.1%}), strategy={compressed.strategy}, "
+                        f"segments={compressed.num_segments}"
+                    )
+                ctx_writer.write_chain_output(int(chain_from), compressed.content)
         # L1: conversation summary if provided
         conv_summary = spec.get("conversation_summary", "")
         if conv_summary:

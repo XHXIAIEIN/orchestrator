@@ -69,6 +69,13 @@ log = logging.getLogger(__name__)
 
 MAX_AGENT_TURNS = 25
 
+# ── Phase Constants (VibeVoice Round 17: Disabled Unified Forward) ──
+# AgentSessionRunner has three distinct phases. Callers should use
+# the phase-specific methods rather than the monolithic run().
+PHASE_PREFILL = "prefill"     # WAL scan, session creation, component resolution
+PHASE_EXECUTE = "execute"     # Agent SDK streaming loop
+PHASE_FINALIZE = "finalize"   # Status determination, cleanup, response assembly
+
 # ── Hallucinated Action Detection (stolen from OpenFang Round 6) ──
 # Patterns that suggest the model claims it performed an action
 _ACTION_CLAIM_PATTERNS = [
@@ -137,22 +144,26 @@ class AgentSessionRunner:
         except Exception:
             pass
 
-    async def run(self, task_id: int, prompt: str, dept_prompt: str,
-                  allowed_tools: list, task_cwd: str,
-                  max_turns: int = MAX_AGENT_TURNS) -> ExecutionResponse:
-        """Run the Agent SDK session and stream events. Returns ExecutionResponse."""
-        # Agent SDK 环境准备
-        # CRITICAL: unset CLAUDECODE at process level to prevent
-        # "cannot launch inside another session" error when dispatching
-        # from an interactive Claude Code session.
-        _saved_claudecode = os.environ.pop("CLAUDECODE", None)
+    def prefill(self, task_id: int, prompt: str, task_cwd: str) -> dict:
+        """Phase 1: Prepare execution context — WAL scan, session creation, env setup.
+
+        Stolen from VibeVoice (Round 17): Disabled Unified Forward pattern.
+        Instead of one monolithic run(), expose phase-specific entry points
+        so callers can compose or skip phases explicitly.
+
+        Returns:
+            dict with keys: agent_env, session, wal_signals
+        """
+        # CRITICAL: unset CLAUDECODE to prevent nesting error
+        saved_claudecode = os.environ.pop("CLAUDECODE", None)
         agent_env = {}
         if os.name == "nt" and not os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"):
             bash_path = find_git_bash()
             if bash_path:
                 agent_env["CLAUDE_CODE_GIT_BASH_PATH"] = bash_path
 
-        # ── WAL: scan prompt for signals and write pre-execution checkpoint ──
+        # WAL: scan prompt for signals
+        wal_signals = []
         if scan_for_signals and _WAL_STATE_PATH:
             try:
                 signals = scan_for_signals(prompt)
@@ -161,25 +172,119 @@ class AgentSessionRunner:
                     if _P(_WAL_STATE_PATH).exists():
                         for sig in signals:
                             write_wal_entry(
-                                _WAL_STATE_PATH,
-                                "Active Tasks",
+                                _WAL_STATE_PATH, "Active Tasks",
                                 f"[task#{task_id}] signal={sig.signal_type}: {sig.matched_text[:80]}",
                             )
+                        wal_signals = signals
                         log.debug(f"WAL: wrote {len(signals)} signal(s) for task #{task_id}")
             except Exception as e:
                 log.debug(f"WAL: pre-exec scan failed ({e})")
 
-        # ── Session Manager: create session for lifecycle tracking ──
-        _session = None
+        # Session Manager: create session
+        session = None
         if _session_mgr:
             try:
-                _session = _session_mgr.create(
-                    task_id=str(task_id),
-                    cwd=task_cwd,
-                )
+                session = _session_mgr.create(task_id=str(task_id), cwd=task_cwd)
             except Exception as e:
                 log.debug(f"SessionManager: create failed ({e})")
 
+        return {
+            "agent_env": agent_env,
+            "session": session,
+            "wal_signals": wal_signals,
+            "_saved_claudecode": saved_claudecode,
+        }
+
+    def finalize(self, task_id: int, result_text: str, turn: int,
+                 num_turns: int, total_cost_usd: float, total_duration_ms: int,
+                 stop_reason: str, is_error: bool, tool_count: int,
+                 prefill_ctx: dict) -> ExecutionResponse:
+        """Phase 3: Determine final status, cleanup, assemble response.
+
+        Stolen from VibeVoice (Round 17): explicit phase boundary
+        ensures cleanup always runs regardless of execution path.
+        """
+        # Determine final status
+        if result_text.startswith("[STUCK:"):
+            final_status = "stuck"
+        elif result_text.startswith("[DOOM LOOP:"):
+            final_status = "doom_loop"
+        elif result_text.startswith("[SUPERVISOR:"):
+            final_status = "terminated"
+        elif result_text.startswith("[FROZEN:"):
+            final_status = "frozen"
+        elif is_error:
+            final_status = "failed"
+        else:
+            final_status = "done"
+
+        # WAL: post-execution checkpoint
+        if scan_for_signals and _WAL_STATE_PATH:
+            try:
+                from pathlib import Path as _P
+                if _P(_WAL_STATE_PATH).exists():
+                    write_wal_entry(
+                        _WAL_STATE_PATH, "Active Tasks",
+                        f"[task#{task_id}] completed status={final_status} turns={num_turns or turn}",
+                    )
+            except Exception as e:
+                log.debug(f"WAL: post-exec write failed ({e})")
+
+        # Session Manager: complete/fail session
+        session = prefill_ctx.get("session")
+        if _session_mgr and session:
+            try:
+                if final_status == "done":
+                    _session_mgr.complete(session.id, cost_usd=total_cost_usd)
+                else:
+                    _session_mgr.fail(session.id, reason=final_status)
+            except Exception as e:
+                log.debug(f"SessionManager: finalize failed ({e})")
+
+        # Restore CLAUDECODE env var
+        saved = prefill_ctx.get("_saved_claudecode")
+        if saved is not None:
+            os.environ["CLAUDECODE"] = saved
+
+        # Extract structured JSON blocks
+        ctx_vars: dict = {}
+        if result_text:
+            import json as _json
+            for m in re.finditer(r'```json\s*\n(.*?)\n```', result_text, re.DOTALL):
+                try:
+                    blob = _json.loads(m.group(1))
+                    if isinstance(blob, dict):
+                        ctx_vars.update(blob)
+                    elif isinstance(blob, list) and blob:
+                        ctx_vars.setdefault("_json_blocks", []).append(blob)
+                except (ValueError, TypeError):
+                    pass
+
+        return ExecutionResponse(
+            status=final_status,
+            output=result_text,
+            turns_taken=num_turns or turn,
+            cost_usd=total_cost_usd,
+            duration_ms=total_duration_ms,
+            stop_reason=stop_reason,
+            is_error=is_error or final_status != "done",
+            tool_calls_count=tool_count,
+            context_variables=ctx_vars,
+        )
+
+    async def run(self, task_id: int, prompt: str, dept_prompt: str,
+                  allowed_tools: list, task_cwd: str,
+                  max_turns: int = MAX_AGENT_TURNS) -> ExecutionResponse:
+        """Run the full Agent SDK session (prefill → execute → finalize).
+
+        For phase-specific control, use prefill() and finalize() directly.
+        This method composes all three phases for backwards compatibility.
+        """
+        # ── Phase 1: Prefill ──
+        prefill_ctx = self.prefill(task_id, prompt, task_cwd)
+        agent_env = prefill_ctx["agent_env"]
+
+        # ── Phase 2: Execute (streaming loop) ──
         result_text = ""
         turn = 0
         total_cost_usd = 0.0
@@ -459,54 +564,16 @@ class AgentSessionRunner:
                 })
                 self._log_event(task_id, "agent_result", result_data)
 
-        # ── Determine final status from result ──
-        if result_text.startswith("[STUCK:"):
-            final_status = "stuck"
-        elif result_text.startswith("[DOOM LOOP:"):
-            final_status = "doom_loop"
-        elif result_text.startswith("[SUPERVISOR:"):
-            final_status = "terminated"
-        elif result_text.startswith("[FROZEN:"):
-            final_status = "frozen"
-        elif is_error_final:
-            final_status = "failed"
-        else:
-            final_status = "done"
-
-        # ── WAL: write post-execution checkpoint ──
-        if scan_for_signals and _WAL_STATE_PATH:
-            try:
-                from pathlib import Path as _P
-                if _P(_WAL_STATE_PATH).exists():
-                    write_wal_entry(
-                        _WAL_STATE_PATH,
-                        "Active Tasks",
-                        f"[task#{task_id}] completed status={final_status} turns={num_turns or turn}",
-                    )
-            except Exception as e:
-                log.debug(f"WAL: post-exec write failed ({e})")
-
-        # ── Session Manager: complete/fail session ──
-        if _session_mgr and _session:
-            try:
-                if final_status == "done":
-                    _session_mgr.complete(_session.id, cost_usd=total_cost_usd)
-                else:
-                    _session_mgr.fail(_session.id, reason=final_status)
-            except Exception as e:
-                log.debug(f"SessionManager: finalize failed ({e})")
-
-        # Restore CLAUDECODE env var if we removed it
-        if _saved_claudecode is not None:
-            os.environ["CLAUDECODE"] = _saved_claudecode
-
-        return ExecutionResponse(
-            status=final_status,
-            output=result_text,
-            turns_taken=num_turns or turn,
-            cost_usd=total_cost_usd,
-            duration_ms=total_duration_ms,
+        # ── Phase 3: Finalize ──
+        return self.finalize(
+            task_id=task_id,
+            result_text=result_text,
+            turn=turn,
+            num_turns=num_turns,
+            total_cost_usd=total_cost_usd,
+            total_duration_ms=total_duration_ms,
             stop_reason=stop_reason_final,
-            is_error=is_error_final or final_status != "done",
-            tool_calls_count=tool_count,
+            is_error=is_error_final,
+            tool_count=tool_count,
+            prefill_ctx=prefill_ctx,
         )

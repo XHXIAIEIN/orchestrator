@@ -172,3 +172,66 @@ _DEFAULTS = {
 
 for _name, _path in _DEFAULTS.items():
     register(_name, _path)
+
+
+# ── Entry Point Plugin Discovery (stolen from VibeVoice, Round 17) ──
+# VibeVoice registers vLLM plugins via pyproject.toml entry points:
+#   [project.entry-points."vllm.general_plugins"]
+#   vibevoice = "vllm_plugin:register_vibevoice"
+#
+# For Orchestrator: any package can declare plugins via:
+#   [project.entry-points."orchestrator.plugins"]
+#   my_collector = "my_package:register_plugin"
+#
+# The register function receives the global `register` callable and
+# should call it to register components:
+#   def register_plugin(reg):
+#       reg("my_collector", "my_package.collector.MyCollector")
+
+PLUGIN_ENTRY_POINT_GROUP = "orchestrator.plugins"
+_plugins_discovered = False
+
+
+def discover_plugins(group: str = PLUGIN_ENTRY_POINT_GROUP) -> int:
+    """Scan installed packages for Orchestrator plugins via entry points.
+
+    Each entry point should be a callable that accepts our `register` function
+    and calls it to register components. Like VibeVoice's register_vibevoice()
+    that registers Config/Tokenizer/Processor/Model in one shot.
+
+    Returns:
+        Number of plugins successfully loaded.
+    """
+    global _plugins_discovered
+    if _plugins_discovered:
+        return 0
+
+    count = 0
+    try:
+        from importlib.metadata import entry_points
+        # Python 3.12+ returns SelectableGroups; 3.9+ uses group= kwarg
+        try:
+            eps = entry_points(group=group)
+        except TypeError:
+            eps = entry_points().get(group, [])
+
+        for ep in eps:
+            try:
+                plugin_register = ep.load()
+                plugin_register(register)
+                count += 1
+                log.info(f"Plugin: loaded {ep.name} from {ep.value}")
+            except Exception as e:
+                log.warning(f"Plugin: failed to load {ep.name}: {e}")
+
+    except ImportError:
+        log.debug("Plugin discovery: importlib.metadata not available")
+
+    _plugins_discovered = True
+    if count:
+        log.info(f"Plugin discovery: loaded {count} plugin(s) from '{group}'")
+    return count
+
+
+# Auto-discover on import (lazy — only runs once)
+discover_plugins()
