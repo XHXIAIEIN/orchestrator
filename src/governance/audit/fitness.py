@@ -17,7 +17,10 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.governance.audit.waiver import WaiverRegistry
 
 log = logging.getLogger(__name__)
 
@@ -90,8 +93,10 @@ class RuleVerdict:
     score: float
     gate: Gate
     tier: Tier
-    status: str  # "pass" | "warn" | "fail"
+    status: str  # "pass" | "warn" | "fail" | "waived"
     message: str = ""
+    original_gate: Gate | None = None  # set when waiver downgraded the gate
+    waived_by: str = ""  # waiver rule_id if a waiver was applied
 
 
 @dataclass
@@ -215,6 +220,52 @@ def load_fitness_rules(
 # ---------------------------------------------------------------------------
 
 
+def _check_waiver(
+    rule: FitnessRule,
+    waiver_registry: WaiverRegistry | None,
+) -> tuple[Gate, str, str]:
+    """Check if a rule has an active waiver and compute the effective gate.
+
+    Returns (effective_gate, waiver_id, waiver_message).
+    If no waiver applies, returns (rule.gate, "", "").
+
+    Waiver logic:
+      - HARD + waiver → downgrade to SOFT (still scored, but won't block)
+      - SOFT + waiver → downgrade to ADVISORY (reported, but no score impact)
+      - ADVISORY + waiver → stays ADVISORY (already non-blocking)
+    """
+    waiver_id = ""
+    waiver_msg = ""
+
+    # --- Priority 1: WaiverRegistry (the proper system) ---
+    if waiver_registry is not None and waiver_registry.is_waived(rule.dimension):
+        waiver = waiver_registry.get(rule.dimension)
+        if waiver is not None:
+            waiver_id = waiver.rule_id
+            waiver_msg = f"Waived until {waiver.expires_at}: {waiver.reason} (owner={waiver.owner})"
+    else:
+        # --- Priority 2: Legacy frontmatter waiver (backward compat) ---
+        if rule.waiver_reason and rule.waiver_expires:
+            from datetime import date
+            try:
+                expires = date.fromisoformat(rule.waiver_expires)
+                if date.today() <= expires:
+                    waiver_id = f"frontmatter:{rule.dimension}"
+                    waiver_msg = f"Waived until {rule.waiver_expires}: {rule.waiver_reason}"
+            except ValueError:
+                pass
+
+    if not waiver_id:
+        return rule.gate, "", ""
+
+    # Downgrade gate
+    _downgrade = {Gate.HARD: Gate.SOFT, Gate.SOFT: Gate.ADVISORY, Gate.ADVISORY: Gate.ADVISORY}
+    effective_gate = _downgrade[rule.gate]
+    log.info("fitness: waiver active for '%s' — gate %s→%s (%s)",
+             rule.dimension, rule.gate.value, effective_gate.value, waiver_id)
+    return effective_gate, waiver_id, waiver_msg
+
+
 def evaluate_rules(
     rules: dict[str, FitnessRule],
     scores: dict[str, float],
@@ -222,6 +273,7 @@ def evaluate_rules(
     run_tier: Tier = Tier.NORMAL,
     changed_files: list[str] | None = None,
     test_files_changed: list[str] | None = None,
+    waiver_registry: WaiverRegistry | None = None,
 ) -> FitnessVerdict:
     """Evaluate fitness rules against dimension scores.
 
@@ -231,7 +283,14 @@ def evaluate_rules(
         run_tier: only evaluate rules at this tier or below
         changed_files: git-changed source files (for evidence gap)
         test_files_changed: git-changed test files (for evidence gap)
+        waiver_registry: optional WaiverRegistry for rule exemptions
     """
+    # Auto-expire stale waivers before evaluation
+    if waiver_registry is not None:
+        expired = waiver_registry.enforce_expired()
+        for w in expired:
+            log.info("fitness: waiver expired pre-eval — rule '%s' now enforced", w.rule_id)
+
     active_tiers = Tier.includes(run_tier)
     verdict = FitnessVerdict()
 
@@ -242,22 +301,18 @@ def evaluate_rules(
         if rule.tier not in active_tiers:
             continue
 
-        # Waiver check
-        if rule.waiver_reason and rule.waiver_expires:
-            from datetime import date
-            try:
-                expires = date.fromisoformat(rule.waiver_expires)
-                if date.today() <= expires:
-                    verdict.results.append(RuleVerdict(
-                        dimension=dim, score=-1, gate=rule.gate, tier=rule.tier,
-                        status="waived", message=f"Waived until {rule.waiver_expires}: {rule.waiver_reason}",
-                    ))
-                    continue
-            except ValueError:
-                pass
+        # --- Waiver check (integrated) ---
+        effective_gate, waiver_id, waiver_msg = _check_waiver(rule, waiver_registry)
 
         score = scores.get(dim)
         if score is None:
+            # Even with no score, record waived status if waiver is active
+            if waiver_id:
+                verdict.results.append(RuleVerdict(
+                    dimension=dim, score=-1, gate=effective_gate, tier=rule.tier,
+                    status="waived", message=waiver_msg,
+                    original_gate=rule.gate, waived_by=waiver_id,
+                ))
             continue
 
         # Determine status
@@ -272,17 +327,19 @@ def evaluate_rules(
             msg = rule.error_summary or f"{dim} score {score} below warn threshold {rule.threshold_warn}"
 
         rv = RuleVerdict(
-            dimension=dim, score=score, gate=rule.gate, tier=rule.tier,
+            dimension=dim, score=score, gate=effective_gate, tier=rule.tier,
             status=status, message=msg,
+            original_gate=rule.gate if waiver_id else None,
+            waived_by=waiver_id,
         )
         verdict.results.append(rv)
 
-        # Gate semantics
-        if status == "fail" and rule.gate == Gate.HARD:
+        # Gate semantics — uses effective_gate (already downgraded by waiver)
+        if status == "fail" and effective_gate == Gate.HARD:
             verdict.hard_failures.append(dim)
 
         # Weighted scoring (SOFT + HARD contribute, ADVISORY does not)
-        if rule.gate != Gate.ADVISORY:
+        if effective_gate != Gate.ADVISORY:
             total_weight += rule.weight
             weighted_sum += rule.weight * score
 

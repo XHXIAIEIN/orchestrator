@@ -29,6 +29,7 @@ from src.governance.audit.fitness import (
 )
 from src.governance.audit.learnings import append_error, append_learning
 from src.governance.audit.promoter import scan_and_promote
+from src.governance.audit.waiver import WaiverRegistry
 
 log = logging.getLogger(__name__)
 
@@ -60,23 +61,27 @@ def ingest_exam(
     run_tier: Tier = Tier.NORMAL,
     changed_files: list[str] | None = None,
     test_files_changed: list[str] | None = None,
+    waiver_file: str = "data/waivers.yaml",
 ) -> SelfEvalOutcome:
     """
     把一次 Clawvard 考试结果灌进 learnings DB。
 
     1. 加载 fitness rules (docs/fitness/*.md)
-    2. 按 Gate/Tier 语义评估每个维度
-    3. HARD/SOFT fail → DB error + learning entries
-    4. ADVISORY fail → 仅日志，不记录
-    5. 达到晋升阈值 → 自动写 boot.md
+    2. 初始化 WaiverRegistry，自动过期失效 waiver
+    3. 按 Gate/Tier 语义评估每个维度（waiver 可降级 gate）
+    4. HARD/SOFT fail → DB error + learning entries
+    5. ADVISORY fail → 仅日志，不记录
+    6. 达到晋升阈值 → 自动写 boot.md
     """
     rules = load_fitness_rules(fitness_dir)
+    waiver_registry = WaiverRegistry(waiver_file=waiver_file)
     verdict = evaluate_rules(
         rules,
         result.dimensions,
         run_tier=run_tier,
         changed_files=changed_files,
         test_files_changed=test_files_changed,
+        waiver_registry=waiver_registry,
     )
 
     errors_recorded = []

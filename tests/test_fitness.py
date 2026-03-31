@@ -190,8 +190,8 @@ def test_weighted_score():
     assert 88 < v.weighted_score < 89
 
 
-def test_waiver_skips_rule(tmp_path):
-    """Waiver with future expiry date should skip evaluation."""
+def test_legacy_frontmatter_waiver_downgrades_hard_to_soft():
+    """Legacy frontmatter waiver with future expiry downgrades HARD→SOFT."""
     rules = {
         "execution": FitnessRule(
             dimension="execution", pattern_key="exec",
@@ -203,9 +203,14 @@ def test_waiver_skips_rule(tmp_path):
     }
     scores = {"execution": 30}
     v = evaluate_rules(rules, scores)
+    # HARD downgraded to SOFT → no hard_failures, but still scored
     assert v.passed
-    waived = [r for r in v.results if r.status == "waived"]
-    assert len(waived) == 1
+    assert "execution" not in v.hard_failures
+    fail_results = [r for r in v.results if r.dimension == "execution"]
+    assert len(fail_results) == 1
+    assert fail_results[0].gate == Gate.SOFT
+    assert fail_results[0].original_gate == Gate.HARD
+    assert "frontmatter:" in fail_results[0].waived_by
 
 
 # ---------------------------------------------------------------------------
