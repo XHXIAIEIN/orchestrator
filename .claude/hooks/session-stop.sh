@@ -1,11 +1,32 @@
 #!/bin/bash
-# Session Stop hook — lightweight, non-blocking experience logger
-# Reads last assistant message from stdin, spawns background process to evaluate and store
+# Session Stop hook — git safety + experience logger
+# Phase 0: force-save uncommitted work (shell-level, not LLM-dependent)
+# Phase 1-3: experience extraction + memory audit (background)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 DB_PATH="$SCRIPT_DIR/data/events.db"
 JSONL_PATH="$SCRIPT_DIR/SOUL/private/experiences.jsonl"
 TODAY=$(date +%Y-%m-%d)
+
+# ── Phase 0: Git safety net — stash uncommitted changes ──
+cd "$SCRIPT_DIR" 2>/dev/null
+if git rev-parse --is-inside-work-tree &>/dev/null; then
+    DIRTY=$(git status --porcelain 2>/dev/null | grep -v '^\?\?' | head -1)
+    UNTRACKED_SRC=$(git status --porcelain 2>/dev/null | grep '^\?\? src/' | head -1)
+
+    if [ -n "$DIRTY" ] || [ -n "$UNTRACKED_SRC" ]; then
+        # Stage tracked changes + new src/ files (skip .trash/, tmp/, *.log)
+        git add -u 2>/dev/null
+        git ls-files --others --exclude-standard -- 'src/' 'scripts/' | xargs -r git add 2>/dev/null
+
+        STAGED=$(git diff --cached --stat 2>/dev/null | tail -1)
+        if [ -n "$STAGED" ]; then
+            BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+            git commit -m "wip(session-stop): auto-save uncommitted work on ${BRANCH} [$(date '+%H:%M')]" \
+                --no-verify 2>/dev/null
+        fi
+    fi
+fi
 
 # Read stdin (hook arguments JSON)
 INPUT=$(cat)
