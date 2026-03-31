@@ -32,6 +32,17 @@ else
     rm -f "$SNAPSHOT_FILE"
 fi
 
+# ── 9-Section Compact Template — stolen from Claude Code compact_service (21) ──
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+TEMPLATE="$REPO_ROOT/SOUL/public/prompts/compact_template.md"
+
+if [ -f "$TEMPLATE" ]; then
+    echo "=== COMPACTION INSTRUCTIONS (MANDATORY) ==="
+    cat "$TEMPLATE"
+    echo "=== END COMPACTION INSTRUCTIONS ==="
+fi
+
 # ── Persona Anchor — inject before compaction so it survives compression ──
 echo "--- PERSONA ANCHOR (preserve through compaction) ---"
 echo "You ARE Orchestrator. Speak as a brutally honest friend: roast first, help second."
