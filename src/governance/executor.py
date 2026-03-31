@@ -479,6 +479,17 @@ class TaskExecutor:
             log.error(f"TaskExecutor: task #{task_id} not found")
             return {}
 
+        # ── Checkpoint Profiling (Claude Code P1-3) ──
+        _ckpt_session = ""  # will be set when session_id is created
+        def _checkpoint(name: str):
+            """Inline checkpoint for non-streaming execution profiling."""
+            try:
+                self.db.add_checkpoint(task_id, name, int(time.time() * 1000), _ckpt_session)
+            except Exception:
+                pass
+
+        _checkpoint("task_fetch")
+
         spec = task.get("spec", {})
         dept_key = spec.get("department", "engineering")
         dept = DEPARTMENTS.get(dept_key, DEPARTMENTS["engineering"])
@@ -503,6 +514,8 @@ class TaskExecutor:
 
         # ── Session ID + Context Store (progressive disclosure) ──
         session_id = f"task-{task_id}-{uuid.uuid4().hex[:8]}"
+        _ckpt_session = session_id
+        _checkpoint("session_created")
         tier = classify_task_tier(task.get("action", ""), spec)
         log.info(f"TaskExecutor: task #{task_id} tier={tier.name}, session={session_id}")
 
@@ -551,11 +564,13 @@ class TaskExecutor:
 
         # ── Blueprint resolution ──
         blueprint = load_blueprint(dept_key)
+        _checkpoint("blueprint_resolved")
 
         prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name,
                                       blueprint=blueprint, session_id=session_id, tier=tier)
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
+        _checkpoint("prompt_assembled")
 
         cognitive_mode = classify_cognitive_mode(task)
         blast_radius = estimate_blast_radius(spec)
@@ -672,6 +687,7 @@ class TaskExecutor:
             prompt += "\n" + HEARTBEAT_PROMPT
 
         # ── Approval Gate: tasks requiring APPROVE authority need human sign-off ──
+        _checkpoint("pre_approval")
         needs_approval = False
         if blueprint and blueprint.authority >= AuthorityCeiling.APPROVE:
             needs_approval = True
@@ -704,6 +720,7 @@ class TaskExecutor:
 
             log.info(f"TaskExecutor: task #{task_id} approved, proceeding")
             self.db.write_log(f"任务 #{task_id} 已获人工批准，开始执行", "INFO", "governor")
+            _checkpoint("post_approval")
 
         # ── System Monitor: 背压控制（偷自 Firecrawl system-monitor.ts）──
         monitor = get_monitor()
@@ -824,6 +841,7 @@ class TaskExecutor:
             router.set_tracker(tracker)
 
             _last_exc = None  # Track exception for resilient_retry classification
+            _checkpoint(f"attempt_{attempt}_start")
             try:
                 async def _agent_coro():
                     return await self._run_agent_session(
@@ -902,6 +920,7 @@ class TaskExecutor:
                                                 output_preview=output[:200])
                     except Exception:
                         pass
+                _checkpoint(f"attempt_{attempt}_end")
 
             # ── ExecutionSnapshot: record attempt result ──
             if snapshot:
@@ -1075,6 +1094,7 @@ class TaskExecutor:
             self._worktree.cleanup(task_id)
 
         # Finalize via callback
+        _checkpoint("finalize")
         if self.on_finalize:
             self.on_finalize(task_id, task, dept_key, status, output, task_cwd, project_name, now)
 

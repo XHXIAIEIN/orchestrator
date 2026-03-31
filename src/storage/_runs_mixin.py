@@ -238,6 +238,29 @@ class RunsMixin:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_checkpoint_latencies(self, task_id: int) -> list[dict]:
+        """Calculate delta_ms between consecutive checkpoints for latency profiling."""
+        rows = self.get_checkpoints(task_id)
+        if len(rows) < 2:
+            return []
+        latencies = []
+        for i in range(1, len(rows)):
+            prev, curr = rows[i - 1], rows[i]
+            latencies.append({
+                "from_name": prev["name"],
+                "to_name": curr["name"],
+                "delta_ms": curr["timestamp_ms"] - prev["timestamp_ms"],
+                "from_ts": prev["timestamp_ms"],
+                "to_ts": curr["timestamp_ms"],
+            })
+        return latencies
+
+    def get_slowest_checkpoints(self, task_id: int, top_n: int = 5) -> list[dict]:
+        """Return the top N slowest checkpoint intervals by delta_ms descending."""
+        latencies = self.get_checkpoint_latencies(task_id)
+        latencies.sort(key=lambda x: x["delta_ms"], reverse=True)
+        return latencies[:top_n]
+
     # ── Task Sessions (cross-heartbeat context recovery) ──
 
     def save_session(self, task_id: int, agent_id: str, session_data: dict):
