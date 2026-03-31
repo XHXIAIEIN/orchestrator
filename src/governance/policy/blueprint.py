@@ -75,7 +75,7 @@ class Policy:
 class PreflightCheck:
     """Single pre-execution verification step."""
     name: str
-    check: str  # "cwd_exists" | "file_exists" | "no_running_conflict" | "disk_space" | "custom"
+    check: str  # "cwd_exists" | "file_exists" | "disk_space" | "git_clean" | "env_var" | "command" | "custom"
     target: str = ""  # path, pattern, or custom expression
     required: bool = True
     message: str = ""
@@ -285,6 +285,29 @@ def _run_single_check(check: PreflightCheck, task: dict, task_cwd: str,
                 return PreflightResult(check.name, True, "Working tree clean")
             return PreflightResult(check.name, not check.required,
                                    f"Uncommitted changes in {task_cwd}")
+
+        elif check.check == "env_var":
+            # Salvaged from skill_template.py (Hermes) — check env var is set
+            import os
+            var_name = check.target or ""
+            value = os.environ.get(var_name)
+            if value is not None and value != "":
+                return PreflightResult(check.name, True, f"env {var_name} is set")
+            return PreflightResult(check.name, not check.required,
+                                   f"Environment variable not set: {var_name}")
+
+        elif check.check == "command":
+            # Salvaged from skill_template.py (Hermes) — run arbitrary command
+            import subprocess
+            cmd = check.target or ""
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True,
+                cwd=task_cwd, timeout=10, stdin=subprocess.DEVNULL,
+            )
+            if result.returncode == 0:
+                return PreflightResult(check.name, True, f"command '{cmd}' passed")
+            return PreflightResult(check.name, not check.required,
+                                   f"command '{cmd}' failed (exit {result.returncode})")
 
         elif check.check == "policy_tools_match":
             # Verify blueprint tools match DEPARTMENTS dict
