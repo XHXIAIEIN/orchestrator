@@ -1,4 +1,4 @@
-"""Periodic jobs — profile analysis, performance report, skill evolution, policy suggestions, shared knowledge, weekly audit."""
+"""Periodic jobs — profile analysis, performance report, skill evolution, policy suggestions, shared knowledge, weekly audit, skill vetting."""
 import logging
 
 from src.storage.events_db import EventsDB
@@ -7,6 +7,11 @@ from src.analysis.performance import PerformanceReport
 from src.governance.learning.skill_evolver import run_evolution
 from src.governance.policy.policy_advisor import generate_all_suggestions
 from src.jobs.shared_knowledge import update_all as update_shared_knowledge
+
+try:
+    from src.governance.audit.skill_vetter import vet_all_departments, risk_summary, RiskLevel
+except ImportError:
+    vet_all_departments = None
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +81,37 @@ def shared_knowledge(db: EventsDB):
     except Exception as e:
         log.error(f"SharedKnowledge update failed: {e}")
         db.write_log(f"共享知识更新失败: {e}", "ERROR", "shared_knowledge")
+
+
+def skill_vetting(db: EventsDB):
+    """Weekly audit of all department SKILL.md files for red flags (14-point check)."""
+    if not vet_all_departments:
+        log.debug("skill_vetting: skill_vetter not available, skipping")
+        return
+    try:
+        results = vet_all_departments("departments")
+        total_flags = 0
+        critical_depts = []
+        for dept, flags in results.items():
+            summary = risk_summary(flags)
+            total_flags += summary["total"]
+            if summary.get("CRITICAL", 0) > 0 or summary.get("HIGH", 0) > 0:
+                critical_depts.append(f"{dept}(C={summary.get('CRITICAL', 0)},H={summary.get('HIGH', 0)})")
+        if critical_depts:
+            db.write_log(
+                f"Skill vetting: {total_flags} flags across {len(results)} depts, "
+                f"critical/high: {', '.join(critical_depts)}",
+                "WARNING", "skill_vetter",
+            )
+        else:
+            db.write_log(
+                f"Skill vetting: {total_flags} flags across {len(results)} depts, no critical/high",
+                "INFO", "skill_vetter",
+            )
+        log.info(f"skill_vetting: scanned {len(results)} departments, {total_flags} total flags")
+    except Exception as e:
+        log.error(f"skill_vetting failed: {e}")
+        db.write_log(f"Skill vetting failed: {e}", "ERROR", "skill_vetter")
 
 
 def weekly_audit(db: EventsDB):

@@ -66,6 +66,17 @@ except ImportError:
     run_evolution_cycle = None
 
 try:
+    from src.governance.learning.fact_extractor import extract_facts, save_extracted_facts
+except ImportError:
+    extract_facts = None
+    save_extracted_facts = None
+
+try:
+    from src.governance.quality.fix_first import classify_eval_result
+except ImportError:
+    classify_eval_result = None
+
+try:
     from src.governance.pipeline.stage_pipeline import has_stage
 except ImportError:
     has_stage = None
@@ -87,11 +98,26 @@ except ImportError:
     save_gate_record = None
 
 try:
+    from src.governance.audit.file_ratchet import FileRatchet, DEFAULT_RATCHET
+except ImportError:
+    FileRatchet = None
+    DEFAULT_RATCHET = None
+
+try:
     from src.core.llm_router import get_router
 except ImportError:
     get_router = None
 
+# Cross-Model Review (stolen from gstack, Round 3-7)
+try:
+    from src.governance.cross_review import CrossModelReviewer
+except ImportError:
+    CrossModelReviewer = None
+
 log = logging.getLogger(__name__)
+
+# Departments considered high blast-radius for cross-review
+_HIGH_BLAST_DEPARTMENTS = {"security", "operations"}
 
 
 class ReviewManager:
@@ -161,6 +187,31 @@ class ReviewManager:
             except Exception as e:
                 log.warning(f"ReviewManager: verify gate error for task #{task_id}: {e}")
 
+        # ── Cross-Model Review: high blast-radius tasks get dual-model review ──
+        if (status == "done" and CrossModelReviewer
+                and (dept_key in _HIGH_BLAST_DEPARTMENTS
+                     or spec.get("requires_approval")
+                     or spec.get("priority") == "critical")):
+            try:
+                reviewer = CrossModelReviewer()
+                report = reviewer.review(
+                    question=f"Review this {dept_key} task output for safety and correctness",
+                    context=output[:2000],
+                )
+                self.db.add_agent_event(task_id, "cross_review", {
+                    "consensus": report.consensus,
+                    "confidence": report.confidence,
+                    "recommendation": report.recommendation[:500],
+                    "latency_ms": report.latency_ms,
+                })
+                if report.consensus == "disagree":
+                    output += f"\n\n[CROSS-REVIEW: DISAGREE] {report.recommendation[:300]}"
+                    log.warning(f"ReviewManager: cross-review disagreement on task #{task_id}")
+                else:
+                    log.info(f"ReviewManager: cross-review {report.consensus} on task #{task_id}")
+            except Exception as e:
+                log.debug(f"ReviewManager: cross-review failed for task #{task_id}: {e}")
+
         # ── Deslop: 扫描工部产出的 AI 臭味 ──
         if status == "done" and _has("deslop") and scan_for_slop:
             try:
@@ -182,6 +233,35 @@ class ReviewManager:
                     log.info(f"ReviewManager: deslop found {len(all_findings)} issues in task #{task_id}")
             except Exception as e:
                 log.debug(f"ReviewManager: deslop scan failed for task #{task_id}: {e}")
+
+        # ── File Ratchet: check for code bloat after execution ──
+        if status == "done" and FileRatchet and DEFAULT_RATCHET:
+            try:
+                ratchet = FileRatchet(DEFAULT_RATCHET, repo_root=task_cwd)
+                ratchet_results = ratchet.check_all()
+                ratchet_failures = [r for r in ratchet_results if not r.passed]
+                if ratchet_failures:
+                    ratchet_lines = []
+                    for r in ratchet_failures[:5]:  # Report top 5
+                        rel_path = ratchet._to_relative(r.path)
+                        ratchet_lines.append(
+                            f"  {rel_path}: {r.baseline_lines} -> {r.current_lines} (+{r.delta})"
+                        )
+                    ratchet_msg = "\n".join(ratchet_lines)
+                    output += f"\n\n[RATCHET WARNING] {len(ratchet_failures)} file(s) grew past threshold:\n{ratchet_msg}"
+                    log.warning(
+                        f"ReviewManager: file ratchet flagged {len(ratchet_failures)} files in task #{task_id}"
+                    )
+                    self.db.add_agent_event(task_id, "file_ratchet", {
+                        "failures": len(ratchet_failures),
+                        "details": [
+                            {"path": ratchet._to_relative(r.path), "baseline": r.baseline_lines,
+                             "current": r.current_lines, "delta": r.delta}
+                            for r in ratchet_failures[:10]
+                        ],
+                    })
+            except Exception as e:
+                log.debug(f"ReviewManager: file ratchet check failed for task #{task_id}: {e}")
 
         # 视觉验证
         if status == "done":
@@ -251,6 +331,19 @@ class ReviewManager:
                     save_lessons(dept_key, edit_lessons)
             except Exception as e:
                 log.debug(f"ReviewManager: learn_from_edit failed for task #{task_id}: {e}")
+
+        # ── Fact Extraction: 从任务输出中提取可复用事实 ──
+        if status == "done" and extract_facts and output:
+            try:
+                facts = extract_facts(output, task_spec=spec, department=dept_key)
+                if facts and save_extracted_facts:
+                    saved = save_extracted_facts(
+                        self.db, facts, department=dept_key, task_id=task_id,
+                    )
+                    if saved:
+                        log.info(f"ReviewManager: extracted {saved} facts from task #{task_id}")
+            except Exception as e:
+                log.debug(f"ReviewManager: fact extraction failed for task #{task_id}: {e}")
 
         # ── Evolution Cycle: 检查是否应触发自我改善 ──
         if should_trigger and should_trigger(dept_key):
@@ -330,6 +423,26 @@ class ReviewManager:
                 eval_result = parse_eval_output(output)
                 log.info(f"ReviewManager: EVAL task #{task_id}: passed={eval_result.passed} "
                          f"critical={eval_result.critical_count} high={eval_result.high_count}")
+
+                # ── Fix-First: classify findings as AUTO_FIX / ASK / SKIP ──
+                if classify_eval_result and eval_result.issues:
+                    try:
+                        fix_report = classify_eval_result(eval_result, task_id=task_id)
+                        self.db.add_agent_event(task_id, "fix_first_report", {
+                            "auto_fix": len(fix_report.auto_fixable),
+                            "ask": len(fix_report.needs_human),
+                            "skip": len(fix_report.skippable),
+                            "can_auto_resolve": fix_report.can_auto_resolve,
+                        })
+                        log.info(
+                            f"ReviewManager: FixFirst task #{task_id} — "
+                            f"{len(fix_report.auto_fixable)} auto-fix, "
+                            f"{len(fix_report.needs_human)} ask, "
+                            f"{len(fix_report.skippable)} skip"
+                        )
+                    except Exception as e:
+                        log.debug(f"ReviewManager: fix_first classification failed for task #{task_id}: {e}")
+
                 if eval_result.should_rework:
                     handoff = TaskHandoff(
                         from_dept="quality",
