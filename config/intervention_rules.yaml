@@ -1,0 +1,145 @@
+# config/intervention_rules.yaml
+# InterventionChecker 三层分级安全规则
+# Stolen from: LobeHub InterventionChecker pattern (Round 16, P0 #4)
+#
+# Layer 1: blacklist — 子串匹配，命中即拦截，不可覆盖
+# Layer 2: tool_policies — 按工具名分配策略
+# Layer 3: param_rules — 按参数值模式匹配，命中则升级为 REQUIRED
+
+# ── Layer 1: 安全黑名单（子串匹配） ─────────────────────────────
+blacklist:
+  - "rm -rf /"
+  - "rm -rf /*"
+  - "DROP DATABASE"
+  - "DROP TABLE"
+  - "TRUNCATE TABLE"
+  - "format c:"
+  - "format d:"
+  - "mkfs."
+  - "dd if=/dev/zero"
+  - ":(){ :|:& };:"          # fork bomb
+  - "> /dev/sda"
+  - "chmod -R 777 /"
+  - "shutdown -h now"
+  - "init 0"
+  - "del /f /s /q c:\\"
+
+# ── Layer 2: 工具策略 ───────────────────────────────────────────
+# policy: required | never | auto | custom
+tool_policies:
+  # Git — push 需要确认，其他 git 操作自动放行
+  - tool: "git_push"
+    policy: "required"
+  - tool: "git_force_push"
+    policy: "never"
+
+  # 文件操作 — 读取自动放行，写入需要看参数
+  - tool: "Read"
+    policy: "auto"
+  - tool: "Glob"
+    policy: "auto"
+  - tool: "Grep"
+    policy: "auto"
+  - tool: "Write"
+    policy: "custom"        # Layer 3 参数检查决定
+  - tool: "Edit"
+    policy: "custom"
+
+  # Bash — 最危险的工具，走 custom 让 Layer 3 检查参数
+  - tool: "Bash"
+    policy: "custom"
+
+  # 网络请求
+  - tool: "WebFetch"
+    policy: "auto"
+  - tool: "WebSearch"
+    policy: "auto"
+
+  # Agent 内部工具 — 默认自动放行
+  - tool: "Skill"
+    policy: "auto"
+  - tool: "ToolSearch"
+    policy: "auto"
+
+# ── Layer 3: 参数模式匹配 ───────────────────────────────────────
+# match_mode: exact | prefix | wildcard | regex
+# tool: 工具名（* = 所有工具）
+# param: 要检查的参数名（空 = 扫描所有参数值）
+# pattern: 匹配模式
+# policy: 命中后的策略（通常是 required）
+param_rules:
+  # 系统关键路径 — 任何工具写入这些路径都需确认
+  - tool: "*"
+    param: ""
+    match_mode: "regex"
+    pattern: "(?i)(/etc/|/usr/|/boot/|/sys/|C:\\\\Windows|C:\\\\Program Files)"
+    policy: "required"
+    reason: "操作涉及系统关键路径"
+
+  - tool: "*"
+    param: ""
+    match_mode: "regex"
+    pattern: "(?i)(\\.env|credentials|secret|password|token|api_key)"
+    policy: "required"
+    reason: "操作涉及敏感文件或凭据"
+
+  # Bash 特定 — 危险命令模式
+  - tool: "Bash"
+    param: "command"
+    match_mode: "regex"
+    pattern: "(?i)(curl.*\\|\\s*bash|wget.*\\|\\s*sh|pip install(?!.*-r)|npm install -g)"
+    policy: "required"
+    reason: "远程代码执行或全局包安装"
+
+  # Interpreter prefix injection (Codex ExecPolicy steal)
+  - tool: "Bash"
+    param: "command"
+    match_mode: "regex"
+    pattern: "(?i)(python3?\\s+-c|node\\s+-e|ruby\\s+-e|perl\\s+-e)\\s.*(requests|urllib|socket|subprocess|os\\.remove|shutil\\.rmtree|eval\\(|exec\\(|__import__)"
+    policy: "required"
+    reason: "解释器前缀注入 — 内联脚本含危险操作"
+
+  # Shell nesting evasion
+  - tool: "Bash"
+    param: "command"
+    match_mode: "regex"
+    pattern: "(?i)(bash|sh)\\s+-c\\s.*(bash|sh)\\s+-c"
+    policy: "required"
+    reason: "Shell 嵌套 — 双层 bash/sh -c 常见规避手法"
+
+  # Base64 decode to execution
+  - tool: "Bash"
+    param: "command"
+    match_mode: "regex"
+    pattern: "(?i)base64\\s+(-d|--decode)\\s*\\|.*(bash|sh|python|perl|ruby|node)"
+    policy: "required"
+    reason: "Base64 解码后执行 — 混淆命令注入"
+
+  - tool: "Bash"
+    param: "command"
+    match_mode: "regex"
+    pattern: "(?i)(git\\s+push|git\\s+reset\\s+--hard|git\\s+clean\\s+-f|git\\s+checkout\\s+--\\s+\\.)"
+    policy: "required"
+    reason: "Git 破坏性操作"
+
+  - tool: "Bash"
+    param: "command"
+    match_mode: "regex"
+    pattern: "(?i)(docker\\s+rm|docker\\s+system\\s+prune|docker-compose\\s+down\\s+-v)"
+    policy: "required"
+    reason: "Docker 容器/卷删除操作"
+
+  # Write/Edit — 写入 SOUL/private 或 .claude/ 需确认
+  - tool: "Write"
+    param: "file_path"
+    match_mode: "regex"
+    pattern: "(?i)(SOUL/private|SOUL\\\\private|\\.claude/)"
+    policy: "required"
+    reason: "写入私有/配置目录"
+
+  - tool: "Edit"
+    param: "file_path"
+    match_mode: "regex"
+    pattern: "(?i)(SOUL/private|SOUL\\\\private|\\.claude/)"
+    policy: "required"
+    reason: "编辑私有/配置目录"
