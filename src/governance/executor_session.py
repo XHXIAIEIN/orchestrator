@@ -8,6 +8,7 @@ component without changing code.
 import logging
 import os
 import re
+from pathlib import Path
 
 from claude_agent_sdk import (
     query, ClaudeAgentOptions, ResultMessage,
@@ -41,6 +42,28 @@ try:
     from src.governance.audit.heartbeat import parse_progress
 except ImportError:
     parse_progress = None
+
+# WAL — Write-Ahead Log for session state persistence (Round 14 ClawHub)
+try:
+    from src.governance.audit.wal import scan_for_signals, write_wal_entry, load_session_state
+    _WAL_STATE_PATH = str(Path(__file__).resolve().parent.parent.parent / "SOUL" / "private" / "session-state.md")
+except (ImportError, Exception):
+    scan_for_signals = None
+    _WAL_STATE_PATH = None
+
+# Session Repair — validate and repair event history before replay (OpenFang)
+try:
+    from src.governance.session_repair import SessionRepairer
+except ImportError:
+    SessionRepairer = None
+
+# Session Manager — fork/inherit session lifecycle (OpenHands)
+try:
+    from src.governance.session_manager import SessionManager as _SessionManager
+    _session_mgr = _SessionManager()
+except ImportError:
+    _SessionManager = None
+    _session_mgr = None
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +151,34 @@ class AgentSessionRunner:
             bash_path = find_git_bash()
             if bash_path:
                 agent_env["CLAUDE_CODE_GIT_BASH_PATH"] = bash_path
+
+        # ── WAL: scan prompt for signals and write pre-execution checkpoint ──
+        if scan_for_signals and _WAL_STATE_PATH:
+            try:
+                signals = scan_for_signals(prompt)
+                if signals:
+                    from pathlib import Path as _P
+                    if _P(_WAL_STATE_PATH).exists():
+                        for sig in signals:
+                            write_wal_entry(
+                                _WAL_STATE_PATH,
+                                "Active Tasks",
+                                f"[task#{task_id}] signal={sig.signal_type}: {sig.matched_text[:80]}",
+                            )
+                        log.debug(f"WAL: wrote {len(signals)} signal(s) for task #{task_id}")
+            except Exception as e:
+                log.debug(f"WAL: pre-exec scan failed ({e})")
+
+        # ── Session Manager: create session for lifecycle tracking ──
+        _session = None
+        if _session_mgr:
+            try:
+                _session = _session_mgr.create(
+                    task_id=str(task_id),
+                    cwd=task_cwd,
+                )
+            except Exception as e:
+                log.debug(f"SessionManager: create failed ({e})")
 
         result_text = ""
         turn = 0
@@ -310,6 +361,20 @@ class AgentSessionRunner:
                 if check_doom_loop and turn > 0 and turn % 6 == 0:
                     try:
                         events = self.db.get_agent_events(task_id, limit=30)
+                        # ── Session Repair: validate/repair events before doom loop analysis ──
+                        if SessionRepairer and events:
+                            try:
+                                repairer = SessionRepairer()
+                                events, repair_report = repairer.repair(events)
+                                if not repair_report.clean:
+                                    self._log_event(task_id, "session_repair", {
+                                        "turn": turn,
+                                        "summary": repair_report.summary(),
+                                        "events_removed": repair_report.events_removed,
+                                        "events_repaired": repair_report.events_repaired,
+                                    })
+                            except Exception as e:
+                                log.debug(f"SessionRepair: skipped ({e})")
                         doom = check_doom_loop(events)
                         if doom.triggered:
                             log.warning(f"DoomLoop: task #{task_id} — {doom.reason}")
@@ -407,6 +472,29 @@ class AgentSessionRunner:
             final_status = "failed"
         else:
             final_status = "done"
+
+        # ── WAL: write post-execution checkpoint ──
+        if scan_for_signals and _WAL_STATE_PATH:
+            try:
+                from pathlib import Path as _P
+                if _P(_WAL_STATE_PATH).exists():
+                    write_wal_entry(
+                        _WAL_STATE_PATH,
+                        "Active Tasks",
+                        f"[task#{task_id}] completed status={final_status} turns={num_turns or turn}",
+                    )
+            except Exception as e:
+                log.debug(f"WAL: post-exec write failed ({e})")
+
+        # ── Session Manager: complete/fail session ──
+        if _session_mgr and _session:
+            try:
+                if final_status == "done":
+                    _session_mgr.complete(_session.id, cost_usd=total_cost_usd)
+                else:
+                    _session_mgr.fail(_session.id, reason=final_status)
+            except Exception as e:
+                log.debug(f"SessionManager: finalize failed ({e})")
 
         # Restore CLAUDECODE env var if we removed it
         if _saved_claudecode is not None:

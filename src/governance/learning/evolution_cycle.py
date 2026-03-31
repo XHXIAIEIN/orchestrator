@@ -16,6 +16,14 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Evolution Chain — four-stage audit trail (Round 14 ClawHub)
+try:
+    from src.governance.audit.evolution_chain import (
+        record_signal, record_hypothesis, record_attempt, record_outcome,
+    )
+except ImportError:
+    record_signal = None
+
 log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent
@@ -115,6 +123,18 @@ def run_evolution_cycle(department: str, force: bool = False) -> dict:
     # 记录演化前成功率
     result["success_rate_before"] = _recent_success_rate(department)
 
+    # ── Evolution Chain: Signal phase ──
+    evo_id = None
+    if record_signal:
+        try:
+            evo_id = record_signal(department, {
+                "trigger": "run_count" if not force else "forced",
+                "success_rate_before": result["success_rate_before"],
+                "run_count": _count_runs(department),
+            })
+        except Exception as e:
+            log.debug(f"EvolutionChain: signal record failed ({e})")
+
     # ── Step 1: Pattern Analysis（无 LLM）──
     try:
         from src.governance.learning.pattern_analyzer import analyze_department_patterns
@@ -132,6 +152,15 @@ def run_evolution_cycle(department: str, force: bool = False) -> dict:
         if analysis and "暂无建议" not in analysis:
             result["suggestions_generated"] = True
             log.info(f"EvolutionCycle: {department} — suggestions generated")
+            # ── Evolution Chain: Hypothesis phase ──
+            if evo_id and record_signal:
+                try:
+                    from src.governance.audit.evolution_chain import record_hypothesis as _rec_hyp
+                    _rec_hyp(evo_id,
+                             hypothesis=f"Evolver suggests improvements for {department}",
+                             proposed_change=str(analysis)[:500])
+                except Exception as e:
+                    log.debug(f"EvolutionChain: hypothesis record failed ({e})")
         else:
             result["reason"] = "no actionable suggestions from evolver"
             _update_state(department)
@@ -148,6 +177,15 @@ def run_evolution_cycle(department: str, force: bool = False) -> dict:
         apply_result = apply_suggestions(department)
         result["patch_applied"] = apply_result["applied"]
         result["patch_text"] = apply_result["patch"]
+        # ── Evolution Chain: Attempt phase ──
+        if evo_id and record_signal:
+            try:
+                from src.governance.audit.evolution_chain import record_attempt as _rec_att
+                _rec_att(evo_id,
+                         files_changed=[f"departments/{department}/SKILL.md"],
+                         diff_summary=apply_result.get("patch", "")[:300])
+            except Exception as e:
+                log.debug(f"EvolutionChain: attempt record failed ({e})")
         if not apply_result["applied"]:
             result["reason"] = f"applier: {apply_result['reason']}"
             _update_state(department)
@@ -157,6 +195,17 @@ def run_evolution_cycle(department: str, force: bool = False) -> dict:
         log.warning(f"EvolutionCycle: {result['reason']}")
         _update_state(department)
         return result
+
+    # ── Evolution Chain: Outcome phase ──
+    if evo_id and record_signal:
+        try:
+            from src.governance.audit.evolution_chain import record_outcome as _rec_out
+            _rec_out(evo_id,
+                     success=True,
+                     metrics_before={"success_rate": result["success_rate_before"]},
+                     metrics_after={"patch_applied": True})
+        except Exception as e:
+            log.debug(f"EvolutionChain: outcome record failed ({e})")
 
     # ── Step 4: 更新状态 ──
     _update_state(department)
