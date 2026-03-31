@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -45,6 +46,8 @@ from src.gateway.routing import resolve_route, get_policy_config
 from src.gateway.complexity import classify_complexity, should_skip_scrutiny, get_recommended_turns
 
 from src.governance.executor_prompt import build_execution_prompt
+from src.governance.context.writer import ContextWriter
+from src.governance.context.tiers import classify_task_tier
 from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
 from src.governance.execution_response import ExecutionResponse
 from src.governance.pipeline.output_compress import compress_output
@@ -432,9 +435,10 @@ class TaskExecutor:
 
     def _prepare_prompt(self, task: dict, dept_key: str, dept: dict,
                         task_cwd: str, project_name: str,
-                        blueprint=None) -> str:
+                        blueprint=None, session_id: str = "", tier=None) -> str:
         """Assemble the full prompt: department identity + authority + cognitive mode + task + context."""
-        return build_execution_prompt(task, dept_key, dept, task_cwd, project_name, blueprint=blueprint)
+        return build_execution_prompt(task, dept_key, dept, task_cwd, project_name,
+                                      blueprint=blueprint, session_id=session_id, tier=tier)
 
     def _log_agent_event(self, task_id: int, event_type: str, data: dict):
         """Safe wrapper: log agent event without breaking execution on failure."""
@@ -486,6 +490,30 @@ class TaskExecutor:
             else:
                 log.warning(f"TaskExecutor: worktree creation failed for task #{task_id}, using shared cwd")
 
+        # ── Session ID + Context Store (progressive disclosure) ──
+        session_id = f"task-{task_id}-{uuid.uuid4().hex[:8]}"
+        tier = classify_task_tier(task.get("action", ""), spec)
+        log.info(f"TaskExecutor: task #{task_id} tier={tier.name}, session={session_id}")
+
+        ctx_writer = ContextWriter(self.db, session_id)
+        # L1: chain outputs from predecessor tasks
+        chain_from = spec.get("chain_from")
+        if chain_from:
+            prev_task = self.db.get_task(int(chain_from))
+            if prev_task and prev_task.get("output"):
+                ctx_writer.write_chain_output(int(chain_from), prev_task["output"])
+        # L1: conversation summary if provided
+        conv_summary = spec.get("conversation_summary", "")
+        if conv_summary:
+            ctx_writer.write_layer1(conversation_summary=conv_summary)
+        # L0: identity + catalog (written last so catalog includes L1 entries)
+        ctx_writer.write_layer0(task, dept_key)
+
+        # Store tier info in spec for downstream use
+        spec["context_budget"] = tier.context_budget
+        spec["session_id"] = session_id
+        self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+
         # ── Patch Restore (stolen from Cline Kanban) ──
         if self._patches.has_patch(task_id):
             restored = self._patches.restore(task_id, task_cwd)
@@ -497,7 +525,8 @@ class TaskExecutor:
         # ── Blueprint resolution ──
         blueprint = load_blueprint(dept_key)
 
-        prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name, blueprint=blueprint)
+        prompt = self._prepare_prompt(task, dept_key, dept, task_cwd, project_name,
+                                      blueprint=blueprint, session_id=session_id, tier=tier)
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
 
@@ -767,8 +796,11 @@ class TaskExecutor:
                     )
                 response = anyio.run(_agent_coro)
                 if response.output:
-                    compressed = compress_output(response.output, max_chars=2000)
+                    compressed = compress_output(response.output)
                     output = compressed.content
+                    # Store output for chain continuity
+                    if session_id:
+                        ctx_writer.write_chain_output(task_id, output)
                     if compressed.strategy != "passthrough":
                         log.info(
                             f"TaskExecutor: task #{task_id} output compressed "
@@ -778,6 +810,16 @@ class TaskExecutor:
                 else:
                     output = "(no output)"
                 status = "done" if response.status == "done" else "failed"
+                # Preserve structured data (e.g. exam nextBatch) in task spec
+                if response.context_variables:
+                    try:
+                        existing_spec = task.get("spec", {})
+                        existing_spec["context_variables"] = response.context_variables
+                        self.db.update_task(task_id, spec=json.dumps(
+                            existing_spec, ensure_ascii=False, default=str))
+                        log.info(f"TaskExecutor: task #{task_id} stored context_variables keys={list(response.context_variables.keys())}")
+                    except Exception as e:
+                        log.warning(f"TaskExecutor: task #{task_id} failed to store context_variables: {e}")
                 if hasattr(response, 'to_dict'):
                     self._log_agent_event(task_id, "execution_response", response.to_dict())
             except CostLimitExceededError as e:

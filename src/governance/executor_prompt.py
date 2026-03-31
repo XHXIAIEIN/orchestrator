@@ -42,7 +42,7 @@ log = logging.getLogger(__name__)
 
 def build_execution_prompt(task: dict, dept_key: str, dept: dict,
                            task_cwd: str, project_name: str,
-                           blueprint=None) -> str:
+                           blueprint=None, session_id: str = "", tier=None) -> str:
     """Assemble the full prompt: department identity + authority + cognitive mode + task + context."""
     base_prompt = TASK_PROMPT_TEMPLATE.format(
         cwd=task_cwd,
