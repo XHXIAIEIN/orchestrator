@@ -48,6 +48,7 @@ from src.gateway.complexity import classify_complexity, should_skip_scrutiny, ge
 from src.governance.executor_prompt import build_execution_prompt
 from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
 from src.governance.execution_response import ExecutionResponse
+from src.governance.pipeline.output_compress import compress_output
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
 
@@ -766,7 +767,17 @@ class TaskExecutor:
                         max_turns=task_max_turns, timeout=task_timeout,
                     )
                 response = anyio.run(_agent_coro)
-                output = response.output[:2000] if response.output else "(no output)"
+                if response.output:
+                    compressed = compress_output(response.output, max_chars=2000)
+                    output = compressed.content
+                    if compressed.strategy != "passthrough":
+                        log.info(
+                            f"TaskExecutor: task #{task_id} output compressed "
+                            f"({compressed.strategy}: {compressed.original_length} → {compressed.compressed_length} chars, "
+                            f"ratio={compressed.compression_ratio:.0%})"
+                        )
+                else:
+                    output = "(no output)"
                 status = "done" if response.status == "done" else "failed"
                 if hasattr(response, 'to_dict'):
                     self._log_agent_event(task_id, "execution_response", response.to_dict())
