@@ -1,18 +1,21 @@
 """
-Department Registry — manifest-driven auto-discovery.
+Registry — unified component & department registry.
 
-Scans departments/*/manifest.yaml at import time, builds:
-  - DEPARTMENTS: dict  (replaces hardcoded dict in prompts.py)
-  - INTENT_ROUTES: dict  (replaces hardcoded dict in routing.py)
-  - VALID_DEPARTMENTS: set
-  - DEPT_TAGS: dict  (department → tags, for semantic routing)
+Two layers:
+  1. Generic Registry class: namespaced key-value store with lazy loading,
+     custom loaders, metadata, duplicate detection. (Originally from ChatDev R13.)
+  2. Department discovery: scans departments/*/manifest.yaml at import time, builds
+     DEPARTMENTS, INTENT_ENTRIES, DEPT_TAGS, etc.
 
-Inspired by G-Assist's manifest.json plugin discovery.
 Single source of truth: add a directory + manifest.yaml → system knows about it.
 """
+from __future__ import annotations
+
+import importlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Callable
 
 import yaml
 
@@ -27,6 +30,92 @@ except ImportError:
     _manifest_resolver = None
 
 log = logging.getLogger(__name__)
+
+
+# ── Generic Registry (from ChatDev R13) ──────────────────────
+
+@dataclass
+class _Entry:
+    """Internal entry for the generic Registry."""
+    name: str
+    target: Any = None
+    module_path: str | None = None
+    attr_name: str | None = None
+    loader: Callable | None = None
+    metadata: dict = field(default_factory=dict)
+    _resolved: Any = field(default=None, repr=False)
+    _resolved_flag: bool = field(default=False, repr=False)
+
+
+class Registry:
+    """Namespaced component registry with lazy loading.
+
+    Supports 4 registration modes:
+      1. Direct target: register("name", target=obj)
+      2. Lazy module: register("name", module_path="mod", attr_name="cls")
+      3. Custom loader: register("name", loader=callable)
+      4. Metadata only: register("name", metadata={...})
+    """
+
+    def __init__(self, namespace: str):
+        self.namespace = namespace
+        self._entries: dict[str, _Entry] = {}
+
+    def register(self, name: str, *, target: Any = None, module_path: str | None = None,
+                 attr_name: str | None = None, loader: Callable | None = None,
+                 metadata: dict | None = None, override: bool = False):
+        if name in self._entries and not override:
+            raise ValueError(f"'{name}' already registered in '{self.namespace}'. Use override=True to replace.")
+        self._entries[name] = _Entry(name=name, target=target, module_path=module_path,
+                                      attr_name=attr_name, loader=loader, metadata=metadata or {})
+
+    def resolve(self, name: str) -> Any | None:
+        entry = self._entries.get(name)
+        if entry is None:
+            return None
+        if entry._resolved_flag:
+            return entry._resolved
+        result = None
+        if entry.target is not None:
+            result = entry.target
+        elif entry.module_path and entry.attr_name:
+            try:
+                mod = importlib.import_module(entry.module_path)
+                result = getattr(mod, entry.attr_name)
+            except (ImportError, AttributeError) as e:
+                log.warning(f"registry[{self.namespace}]: cannot resolve {name} → {entry.module_path}.{entry.attr_name}: {e}")
+                return None
+        elif entry.loader is not None:
+            try:
+                result = entry.loader()
+            except Exception as e:
+                log.warning(f"registry[{self.namespace}]: loader for {name} failed: {e}")
+                return None
+        else:
+            entry._resolved_flag = True
+            return None
+        entry._resolved = result
+        entry._resolved_flag = True
+        return result
+
+    def get_metadata(self, name: str) -> dict:
+        entry = self._entries.get(name)
+        return entry.metadata if entry else {}
+
+    def list(self) -> list[str]:
+        return list(self._entries.keys())
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._entries
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def __repr__(self) -> str:
+        return f"Registry({self.namespace!r}, entries={len(self._entries)})"
+
+
+# ── Department discovery ─────────────────────────────────────
 
 _REPO_ROOT = Path(__file__).resolve().parent
 while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_dir() and (_REPO_ROOT / "src").is_dir()):

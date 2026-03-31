@@ -1,6 +1,6 @@
-"""Tests for Generic Registry — stolen from ChatDev 2.0."""
+"""Tests for Generic Registry — merged into governance.registry from ChatDev R13."""
 import pytest
-from src.core.registry import Registry
+from src.governance.registry import Registry
 
 
 def test_register_and_resolve_target():
