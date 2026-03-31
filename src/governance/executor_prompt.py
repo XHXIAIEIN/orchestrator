@@ -1,5 +1,6 @@
 """Executor Prompt Builder — assemble the full prompt for task execution."""
 import logging
+from pathlib import Path
 
 from src.governance.scrutiny import classify_cognitive_mode
 from src.governance.policy.blueprint import AuthorityCeiling
@@ -115,12 +116,52 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     if runs_context:
         prompt += "\n\n" + runs_context
 
-    # 动态上下文组装 — ContextEngine pipeline (唯一路径)
+    # ── Context Access: progressive disclosure via ctx_read ──
+    if session_id:
+        ctx_instructions = f"""
+
+## Context Access (Progressive Disclosure)
+
+You have access to additional context stored in a database. Read what you need — don't read everything.
+
+**Tool:** `python scripts/ctx_read.py --session {session_id} <command>`
+
+**Commands:**
+- `--list` — see all available context keys and their token sizes
+- `--key <key>` — read a specific context entry
+- `--layer <0-3>` — read all entries in a layer
+- `--budget <N>` — limit read to N tokens
+
+**Layers:**
+- L0 (in this prompt): identity, task description
+- L1: session state, predecessor task outputs, conversation summary
+- L2: file contents, memory entries, conversation fragments
+- L3: full conversation transcript, codebase search, department history
+
+**Start with `--list` to see what's available, then read what's relevant to your task.**
+"""
+        prompt += ctx_instructions
+
+        # Inject L0 catalog directly (agent sees what's available without a tool call)
+        try:
+            _db_path = str(Path(task_cwd) / "data" / "events.db") if task_cwd else "data/events.db"
+            if not Path(_db_path).exists():
+                _db_path = "data/events.db"
+            from src.storage.events_db import EventsDB as _EDB
+            _db = _EDB(_db_path)
+            catalog_row = _db.get_context(session_id, "catalog")
+            if catalog_row:
+                prompt += "\n" + catalog_row["content"]
+        except Exception:
+            pass  # Catalog injection is best-effort
+
+    # ── Legacy ContextEngine (still runs, will be migrated in Phase 5) ──
     try:
         ctx = TaskContext.from_task(task, department=dept_key)
         ctx.cwd = task_cwd
         ctx.project_name = project_name
-        dynamic_ctx = _context_engine.assemble(ctx, budget_tokens=2000)
+        budget = tier.prompt_budget if tier else 2000
+        dynamic_ctx = _context_engine.assemble(ctx, budget_tokens=budget)
         if dynamic_ctx:
             prompt += "\n\n" + dynamic_ctx
     except Exception as e:
