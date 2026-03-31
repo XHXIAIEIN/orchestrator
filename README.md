@@ -209,11 +209,9 @@ cd claw/Claw && dotnet run
 
 ## API
 
-Full API docs: [docs/api-reference.md](docs/api-reference.md)
-
-Slim version for other Claude instances: [docs/api-for-claude.md](docs/api-for-claude.md)
-
 Interactive docs: `http://localhost:23714/api-reference` (Swagger UI)
+
+OpenAPI spec: `http://localhost:23714/openapi.json`
 
 Common endpoints:
 
@@ -295,7 +293,7 @@ These are not required. The system adapts automatically:
 
 ## Design References
 
-Pattern research from 50+ open-source projects. Full attribution log at [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) — source, adaptation method, and location in the codebase for each subsystem.
+Pattern research from 78+ open-source projects across 16 rounds. 119 patterns total (94 implemented). Full pattern library at [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md).
 
 Core sources:
 

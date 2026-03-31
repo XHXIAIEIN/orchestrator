@@ -209,11 +209,9 @@ cd claw/Claw && dotnet run
 
 ## API
 
-完整 API 文档：[docs/api-reference.md](docs/api-reference.md)
-
-给其他 Claude 实例用的精简版：[docs/api-for-claude.md](docs/api-for-claude.md)
-
 交互式文档：`http://localhost:23714/api-reference` (Swagger UI)
+
+OpenAPI spec：`http://localhost:23714/openapi.json`
 
 常用端点：
 
@@ -295,7 +293,7 @@ Governor 支持两种派单模式：
 
 ## 设计参考
 
-50+ 开源项目的模式研究。完整的偷师簿见 [docs/ATTRIBUTION.md](docs/ATTRIBUTION.md) —— 每个子系统的来源、改造方式、在代码库中的位置。
+78+ 开源项目、16 轮偷师的模式研究。119 个模式（94 个已实现）。完整模式库见 [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md)。
 
 核心来源：
 

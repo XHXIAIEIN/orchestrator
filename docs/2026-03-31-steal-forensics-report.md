@@ -26,6 +26,8 @@
 | R16 | LobeHub | 14 | 5 | 9 | 0 | 0 | 36% |
 | **总计** | | **135** | **78** | **55** | **1** | **1** | **58%** |
 
+> **2026-03-31 更新：所有 55 个孤岛模块已处理完毕，当前孤岛数为 0。** 详见下方 Resolution。
+
 ## 孤岛模块清单（55 个，需接入）
 
 ### Round 3-7 孤岛（21 个）
@@ -139,3 +141,38 @@
 12. group_orchestration (508行) → 需 governor 新增调用入口
 13. core/execution_context → 需重构 executor 传参模式
 14. governance/plan_executor → 需重新设计与 executor 的关系
+
+---
+
+## Resolution（2026-03-31 当日完成）
+
+**全部 55 个孤岛模块已处理完毕，孤岛数 55 → 0。** 18 commits，321 新集成测试。
+
+### 处理方式
+
+| 方式 | 数量 | 说明 |
+|------|------|------|
+| 接线到生产路径 | 52 | 按 P0→P1→P2 优先级逐批接入 |
+| 归档到 .trash/ | 3 | `execution_context.py`（DI 成本不值得）、`skill_template.py`（合并入 blueprint.py）、`handoff.py`（合并入 task_handoff.py） |
+
+### 关键接线 commits
+
+| Commit | 内容 |
+|--------|------|
+| `b98a60c` | safety/ 5 模块 → scrutiny/supervisor |
+| `663f48d` | storage/dedup + hotness → learnings + memory |
+| `db9772b` | audit/skill_vetter + change_aware + file_ratchet → quality pipeline |
+| `878885c` | learning/fact_extractor + experience_cull + fix_first → pipeline |
+| `2e619c7` | 6 R3-7 orphans（manifest_inherit, cross_review, lifecycle_hooks, webhook, rule_deps, deferred_retrieval） |
+| `20fd738` | condenser/ 3 压缩策略 → context assembly |
+| `3193c90` | ChatDev 2.0 4 模块（resilient_retry, event_stream, future_gate, function_catalog） |
+| `14f36d4` | audit/WAL + evolution_chain + execution_snapshot → observability |
+| `97952b6` | 剩余 14 孤岛批量接线 |
+| `87b855a` | output_compress.py 替换硬编码 `[:2000]` 截断 |
+| `9762525` | experiences + design_memory → structured_memory DB |
+
+### 归档记录
+
+- `.trash/execution-context-r13/` — DI 模式架构成本过高，REJECTION.md 记录原因
+- `.trash/2026-03-31-skill-template-consolidation/` — 预检逻辑已迁入 blueprint.py
+- `.trash/2026-03-31-orphan-consolidation/` — handoff.py 上下文过滤合并入 task_handoff.py + core/registry.py 泛型注册合并入 governance/registry.py

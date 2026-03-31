@@ -1,4 +1,4 @@
-# Plan: Learnings DB 统一 — 文件→DB，针对模型优化
+# Plan: Learnings DB 统一 — 文件→DB，针对模型优化 ✅ COMPLETE
 
 ## Context
 

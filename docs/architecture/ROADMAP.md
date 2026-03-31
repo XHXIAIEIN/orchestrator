@@ -4,7 +4,7 @@
 >
 > ✅ = done / 📐 = designed (spec exists) / 🔲 = pending / ⏸️ = shelved
 >
-> Last updated: 2026-03-30
+> Last updated: 2026-03-31
 
 ## Sprint 1: Quick Wins — ✅ ALL COMPLETE
 
@@ -55,6 +55,23 @@
 | 33 | A/B Testing Framework | I14 | Firecrawl (R5) | ✅ | `core/ab_testing.py` |
 | 34 | Text Tool Call Recovery (6 formats) | D10 | OpenFang (R6) | ✅ | `core/tool_call_recovery.py` |
 | 35 | Deep Research Multi-Round Loop | D8 | Firecrawl (R5) | ✅ | `core/deep_research.py` |
+
+## Sprint 4: Orphan Integration — ✅ ALL COMPLETE (2026-03-31)
+
+55 orphan modules from Rounds 3-16 integrated in 18 commits. 3 archived to `.trash/` after comparison. 321 new integration tests. See [forensics report](../2026-03-31-steal-forensics-report.md) for details.
+
+| # | Area | Modules | Status |
+|---|------|---------|--------|
+| 36 | Safety pipeline (5 modules) | injection_test, dual_verify, prompt_lint, drift_detector, convergence → scrutiny/supervisor | ✅ |
+| 37 | Storage (2 modules) | dedup, hotness → learnings + memory | ✅ |
+| 38 | Audit chain (6 modules) | skill_vetter, change_aware, file_ratchet, WAL, evolution_chain, execution_snapshot | ✅ |
+| 39 | Learning pipeline (3 modules) | fact_extractor, experience_cull, fix_first | ✅ |
+| 40 | Condenser strategies (3 modules) | llm_summarizing, water_level, amortized_forgetting → context assembly | ✅ |
+| 41 | ChatDev 2.0 core (4 modules) | resilient_retry, event_stream, future_gate, function_catalog | ✅ |
+| 42 | R3-7 orphans (6 modules) | manifest_inherit, cross_review, lifecycle_hooks, webhook, rule_deps, deferred_retrieval | ✅ |
+| 43 | Remaining 14 orphans | structured_memory, group_orchestration, cross_dept, session_repair, permissions, etc. | ✅ |
+| 44 | output_compress wiring | Replace hardcoded `[:2000]` truncation | ✅ |
+| 45 | Memory consolidation | experiences + design_memory → structured_memory DB | ✅ |
 
 ## Plan Files — ALL IMPLEMENTED
 

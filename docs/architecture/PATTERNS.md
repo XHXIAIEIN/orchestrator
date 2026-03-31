@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 10 轮偷师，56+ 项目，90+ 模式。按主题域组织，不按来源。
+> 16 轮偷师，78+ 项目，119 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,11 +8,11 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 97 |
+| Total patterns | 119 |
 | ✅ Implemented | 94 |
 | 📐 Designed (spec exists) | 2 |
 | 🔲 Pending (cvui only) | 6 |
-| ⏸️ Shelved | 11 |
+| ⏸️ Shelved | 17 |
 
 ---
 
