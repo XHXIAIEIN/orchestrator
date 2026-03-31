@@ -20,6 +20,56 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
+# ── Synthesis Check: patterns that indicate vague dispatch ──
+_VAGUE_PHRASES = [
+    "based on your findings",
+    "implement the changes",
+    "fix the issues found",
+    "apply the necessary modifications",
+    "update as needed",
+    "handle the edge cases",
+    "make it work",
+]
+
+_SYNTHESIS_GUIDANCE = (
+    "[Synthesis Warning] This dispatch lacks specific targets. "
+    "Provide: (1) exact file paths, (2) function/class names, (3) specific changes. "
+    "See SOUL/public/prompts/synthesis_discipline.md for the full protocol."
+)
+
+
+def _check_synthesis_quality(spec: dict, action: str) -> tuple[bool, str]:
+    """Check if a task spec contains specific targets for dispatch.
+
+    Returns (is_specific, warning_message). If is_specific is False,
+    the warning should be logged and synthesis guidance injected.
+    """
+    combined = f"{action} {spec.get('problem', '')} {spec.get('summary', '')}".lower()
+
+    # Check for banned vague phrases
+    for phrase in _VAGUE_PHRASES:
+        if phrase in combined:
+            return False, f"Vague phrase detected: '{phrase}'"
+
+    # Check for specificity signals: file paths, function names, line numbers
+    specificity_patterns = [
+        r'[\w/\\]+\.\w{1,4}',      # file paths (e.g., src/foo.py, config.yaml)
+        r'[A-Z]\w+\.\w+\(\)',       # method calls (e.g., TaskDispatcher.dispatch())
+        r'[Ll]ine\s*\d+',           # line references
+        r'L\d+',                     # compact line references (L42)
+        r'def\s+\w+',               # function definitions
+        r'class\s+\w+',             # class definitions
+    ]
+
+    import re
+    has_specifics = any(re.search(p, f"{action} {spec.get('problem', '')}") for p in specificity_patterns)
+
+    if not has_specifics:
+        return False, "No specific file paths, function names, or line numbers found in spec"
+
+    return True, ""
+
+
 # ── Fact-Expression Split: intents that benefit from two-phase dispatch ──
 _SPLIT_INTENTS = {"answer", "review", "analyze", "report", "explain", "advise", "assess"}
 
@@ -197,6 +247,19 @@ class TaskDispatcher:
             log.info(f"TaskDispatcher: task #{task_id} blocked on dependencies: {dep_str}")
             return task_id
         log.info(f"TaskDispatcher: created task #{task_id}: {summary} [{dept}]")
+
+        # ── Synthesis Quality Check ──
+        is_specific, synth_warning = _check_synthesis_quality(spec, action)
+        if not is_specific:
+            log.warning(f"TaskDispatcher: task #{task_id} synthesis check failed: {synth_warning}")
+            self.db.write_log(
+                f"任务 #{task_id} 综合检查不通过：{synth_warning}",
+                "WARNING", "governor",
+            )
+            # Inject synthesis guidance into spec so executor sees it
+            extra = spec.get("extra_instructions", "")
+            spec["extra_instructions"] = f"{extra}\n{_SYNTHESIS_GUIDANCE}".strip()
+            self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
 
         # Cognitive mode
         task_dict = self.db.get_task(task_id)

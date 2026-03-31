@@ -5,7 +5,7 @@ from src.governance.scrutiny import classify_cognitive_mode
 from src.governance.policy.blueprint import AuthorityCeiling
 from src.governance.context.prompts import (
     TASK_PROMPT_TEMPLATE, COGNITIVE_MODE_PROMPTS,
-    load_department,
+    load_department, load_prompt,
 )
 from src.governance.context.context_assembler import assemble_context
 
@@ -84,6 +84,28 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     prompt += "\n\n" + base_prompt
     if runs_context:
         prompt += "\n\n" + runs_context
+
+    # ── Synthesis Discipline: inject for multi-agent dispatch tasks ──
+    spec = task.get("spec", {})
+    is_multi_agent = bool(
+        spec.get("sub_tasks")
+        or spec.get("departments")
+        or spec.get("scout_task_id")
+        or spec.get("fact_layer_task_id")
+    )
+    if is_multi_agent:
+        synthesis_prompt = load_prompt("synthesis_discipline")
+        if synthesis_prompt:
+            prompt += "\n\n" + synthesis_prompt
+            log.info(f"TaskExecutor: injected synthesis_discipline for multi-agent task")
+
+    # ── Collaboration Mode: inject if specified ──
+    collab_mode = spec.get("collaboration_mode")
+    if collab_mode:
+        collab_prompt = load_prompt("collaboration_modes")
+        if collab_prompt:
+            prompt += f"\n\n[Active Collaboration Mode: {collab_mode}]\n{collab_prompt}"
+            log.info(f"TaskExecutor: injected collaboration_mode={collab_mode}")
 
     # 动态上下文组装
     try:
