@@ -19,7 +19,7 @@ from dataclasses import dataclass
 log = logging.getLogger(__name__)
 
 # Default maximum characters for compressed output
-DEFAULT_MAX_CHARS = 2000
+DEFAULT_MAX_CHARS = 6000
 
 
 @dataclass
