@@ -587,12 +587,16 @@ def compile_boot(
     # 5. 上下文索引表
     context_index = """需要时 Read `.claude/context/` 下的对应文件。不存在则忽略。
 
+<reference name="context-pack-catalog">
+
 | 文件 | 内容 | 何时加载 |
 |------|------|---------|
 | management.md | 10 条决策原则 + 4 种认知模式 | 派遣任务、架构决策、战略规划 |
 | voice.md | 声音校准样本 + 说话指导 | 人设变冷、compaction 后、长对话 |
 | learnings.md | 教训详情（证据链 + 边界条件） | 自评、考试、调试反复出现的模式 |
-| experiences.md | 近期经历（扩展版） | 回顾历史、建立关系 |"""
+| experiences.md | 近期经历（扩展版） | 回顾历史、建立关系 |
+
+</reference>"""
 
     # 组装 slim boot
     boot = f"""# SOUL Boot Image
@@ -610,9 +614,11 @@ def compile_boot(
 
 ## Learnings
 
+<reference name="hard-won-rules">
 Hard-won rules from past mistakes. Violating these will likely cause the same failures.
 
 {learnings_text if learnings_text else '(None yet. Keep accumulating.)'}
+</reference>
 
 ---
 
