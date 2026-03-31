@@ -1,7 +1,24 @@
 """
+# DEPRECATED: use ContextEngine instead. Will be removed.
+#
+# All functionality has been migrated:
+#   - match_guidelines, load_shared_knowledge → guidelines_utils.py
+#   - assemble_context → ContextEngine.default().assemble()
+#   - HOT/WARM/COLD layering → Provider priorities + PriorityProcessor + TruncateProcessor
+#
+# This file is kept only for backward compatibility.
+# Import from guidelines_utils.py or use ContextEngine directly.
+
 动态上下文组装器：根据任务描述匹配相关的 department guidelines。
 Parlant-inspired: 不全量注入，只注入任务相关的规则。
 """
+import warnings as _warnings
+_warnings.warn(
+    "context_assembler is deprecated. Use ContextEngine or guidelines_utils instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import re
 from pathlib import Path
 

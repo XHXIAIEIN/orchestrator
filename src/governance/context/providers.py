@@ -3,7 +3,7 @@
 
 偷师来源: LobeHub (Round 16, P0 #3)
   - SystemPromptProvider: 部门 SKILL.md
-  - GuidelinesProvider: 复用 context_assembler.match_guidelines
+  - GuidelinesProvider: guidelines_utils.match_guidelines + load_shared_knowledge
   - MemoryProvider: 从 memory_tier 读取 extended memory
   - HistoryProvider: 从 run_logger 读取最近执行记录
 """
@@ -52,7 +52,7 @@ class SystemPromptProvider(BaseProvider):
 
 
 class GuidelinesProvider(BaseProvider):
-    """复用 context_assembler.match_guidelines 做关键词匹配。
+    """guidelines_utils.match_guidelines + load_shared_knowledge 做关键词匹配。
 
     Priority 30 — WARM 层，条件匹配。
     """
@@ -63,11 +63,11 @@ class GuidelinesProvider(BaseProvider):
             return []
 
         try:
-            from src.governance.context.context_assembler import (
+            from src.governance.context.guidelines_utils import (
                 match_guidelines, load_shared_knowledge,
             )
         except ImportError:
-            log.warning("GuidelinesProvider: cannot import context_assembler")
+            log.warning("GuidelinesProvider: cannot import guidelines_utils")
             return []
 
         chunks = []

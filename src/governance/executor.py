@@ -41,7 +41,6 @@ from src.governance.context.prompts import (
     TASK_PROMPT_TEMPLATE, COGNITIVE_MODE_PROMPTS, DEPARTMENTS,
     load_department, find_git_bash,
 )
-from src.governance.context.context_assembler import assemble_context
 from src.gateway.routing import resolve_route, get_policy_config
 from src.gateway.complexity import classify_complexity, should_skip_scrutiny, get_recommended_turns
 
