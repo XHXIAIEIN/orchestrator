@@ -24,7 +24,11 @@ DB_PATH = str(Path(__file__).parent.parent / "data" / "events.db")
 
 
 def dispatch_raw(text: str, department: str, action: str, priority: str,
-                 cognitive_mode: str, db: EventsDB) -> dict:
+                 cognitive_mode: str, db: EventsDB,
+                 skip_scrutiny: bool = False,
+                 tier: str | None = None,
+                 chain_from: int | None = None,
+                 conversation_summary: str | None = None) -> dict:
     """Skip IntentGateway — create + execute task via Governor directly."""
     from src.governance.governor import Governor
 
@@ -39,6 +43,16 @@ def dispatch_raw(text: str, department: str, action: str, priority: str,
         "observation": f"CLI 直派：{action}",
         "importance": f"用户直接指派，优先级 {priority}",
     }
+    if skip_scrutiny:
+        spec["complexity"] = "trivial"
+        spec["rework_count"] = 1  # bypass novelty policy
+
+    if tier:
+        spec["tier"] = tier
+    if chain_from:
+        spec["chain_from"] = chain_from
+    if conversation_summary:
+        spec["conversation_summary"] = conversation_summary
 
     governor = Governor(db=db)
     task = governor._dispatch_task(spec, action=action,
@@ -105,13 +119,26 @@ def main():
                         help="Max wait seconds (default 300)")
     parser.add_argument("--context", type=str, default=None,
                         help="JSON context string (natural mode only)")
+    parser.add_argument("--skip-scrutiny", action="store_true",
+                        help="Skip Scrutinizer checks (sets complexity=trivial)")
+    parser.add_argument("--tier", default=None,
+                        choices=["light", "standard", "heavy"],
+                        help="Task tier (controls context budget, model, turns)")
+    parser.add_argument("--chain-from", type=int, default=None,
+                        help="Task ID to read chain context from (predecessor task)")
+    parser.add_argument("--conversation-summary", type=str, default=None,
+                        help="Summary of current conversation for sub-agent context")
     args = parser.parse_args()
 
     db = EventsDB(DB_PATH)
 
     if args.raw:
         action = args.action or args.text[:80]
-        result = dispatch_raw(args.text, args.dept, action, args.priority, args.mode, db)
+        result = dispatch_raw(args.text, args.dept, action, args.priority, args.mode, db,
+                              skip_scrutiny=args.skip_scrutiny,
+                              tier=args.tier,
+                              chain_from=args.chain_from,
+                              conversation_summary=args.conversation_summary)
     else:
         context = json.loads(args.context) if args.context else None
         result = dispatch_natural(args.text, context, db)
