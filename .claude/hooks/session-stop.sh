@@ -14,7 +14,10 @@ if git rev-parse --is-inside-work-tree &>/dev/null; then
     DIRTY=$(git status --porcelain 2>/dev/null | grep -v '^\?\?' | head -1)
     UNTRACKED_SRC=$(git status --porcelain 2>/dev/null | grep '^\?\? src/' | head -1)
 
-    if [ -n "$DIRTY" ] || [ -n "$UNTRACKED_SRC" ]; then
+    # Bail out if merge/rebase conflict is active — don't touch it
+    if git status --porcelain 2>/dev/null | grep -qE '^(UU|DD|AA|UD|DU) '; then
+        echo "[session-stop] merge conflict active — skipping auto-save" >&2
+    elif [ -n "$DIRTY" ] || [ -n "$UNTRACKED_SRC" ]; then
         # Stage tracked changes + new src/ files (skip .trash/, tmp/, *.log)
         git add -u 2>/dev/null
         git ls-files --others --exclude-standard -- 'src/' 'scripts/' | xargs -r git add 2>/dev/null
