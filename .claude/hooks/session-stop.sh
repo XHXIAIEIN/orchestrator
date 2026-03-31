@@ -105,20 +105,17 @@ except:
     except: pass
 " 2>/dev/null
 
-    # ── Phase 2: 6-type structured memory extraction (stolen from OpenViking) ──
+    # ── Phase 2: 6-type structured memory extraction → structured_memory.db ──
     python3 -c "
 import sys
 sys.path.insert(0, '$SCRIPT_DIR')
 try:
-    from src.governance.context.memory_extractor import extract_memories, persist_memories
+    from src.governance.context.memory_extractor import extract_memories
+    from src.governance.context.memory_bridge import save_extracted_to_structured_memory
     last_msg = '''${LAST_MSG//\'/\'\\\'\'}'''
     memories = extract_memories(last_msg, use_local=True)
     if memories:
-        persist_memories(
-            memories,
-            db_path='$DB_PATH',
-            memory_dir=None,  # DB only for now; file persistence via backfill
-        )
+        save_extracted_to_structured_memory(memories)
 except Exception:
     pass  # non-critical, fail silently
 " 2>/dev/null
