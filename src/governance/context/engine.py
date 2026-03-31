@@ -184,6 +184,164 @@ class ContextEngine:
         engine.register_provider(MemoryProvider())
         engine.register_provider(TwoStageRAGProvider())  # Two-Stage RAG (Round 16 P1)
         engine.register_provider(HistoryProvider())
+        # Structured Memory (Round 16 LobeHub P0 #1 — 6-dimensional memory)
+        try:
+            from src.governance.context.providers import StructuredMemoryProvider
+            engine.register_provider(StructuredMemoryProvider())
+        except (ImportError, Exception) as e:
+            log.debug(f"ContextEngine: StructuredMemoryProvider not available: {e}")
+        # Deferred Retrieval Provider (stolen from Parlant, Round 3-7)
+        try:
+            from src.governance.context.engine import DeferredRetrievalProvider
+            engine.register_provider(DeferredRetrievalProvider())
+        except (ImportError, Exception) as e:
+            log.debug(f"ContextEngine: DeferredRetrievalProvider not available: {e}")
+        # Design Memory Provider (stolen from gstack, Round 3-7)
+        try:
+            engine.register_provider(DesignMemoryProvider())
+        except Exception as e:
+            log.debug(f"ContextEngine: DesignMemoryProvider not available: {e}")
+        # Code Retrieval Provider (stolen from axe-dig, Round 3-7)
+        try:
+            engine.register_provider(CodeRetrievalProvider())
+        except Exception as e:
+            log.debug(f"ContextEngine: CodeRetrievalProvider not available: {e}")
         engine.register_processor(PriorityProcessor())
         engine.register_processor(TruncateProcessor(budget_tokens=budget_tokens))
         return engine
+
+
+class DesignMemoryProvider(BaseProvider):
+    """Provider that injects accumulated design preferences into UI-related tasks.
+
+    Wraps governance.design_memory.DesignMemory (gstack). Only activates when
+    the task touches frontend/UI code (detected via department or keywords).
+    """
+    name = "design_memory"
+
+    def __init__(self):
+        self._memory = None
+        try:
+            from src.governance.design_memory import DesignMemory
+            self._memory = DesignMemory()
+        except ImportError:
+            pass
+
+    def provide(self, ctx: TaskContext) -> list[ContextChunk]:
+        if not self._memory:
+            return []
+        # Only activate for UI-related contexts
+        ui_signals = {"dashboard", "frontend", "ui", "css", "style", "design", "component"}
+        task_text = (ctx.task_text + " " + ctx.department).lower()
+        if not any(sig in task_text for sig in ui_signals):
+            return []
+        context_text = self._memory.to_prompt_context(max_items=20)
+        if not context_text:
+            return []
+        return [ContextChunk(
+            source="design_memory",
+            content=context_text,
+            priority=65,  # lower priority than core context
+        )]
+
+
+class CodeRetrievalProvider(BaseProvider):
+    """Provider that retrieves relevant code context using L0/L1 layered search.
+
+    Wraps governance.code_retrieval.CodeRetriever (axe-dig). Performs lightweight
+    code search based on task keywords to provide relevant code snippets.
+    """
+    name = "code_retrieval"
+
+    def provide(self, ctx: TaskContext) -> list[ContextChunk]:
+        try:
+            from src.governance.code_retrieval import CodeRetriever
+        except ImportError:
+            return []
+
+        if not ctx.cwd or not ctx.task_text:
+            return []
+
+        # Extract keywords from task (first 3 significant words)
+        stop_words = {"the", "a", "an", "is", "are", "to", "for", "of", "in", "on",
+                      "and", "or", "with", "this", "that", "it", "be", "as", "at",
+                       "的", "了", "是", "在", "和", "用", "把", "被"}
+        words = [w for w in ctx.task_text.split()
+                 if len(w) > 2 and w.lower() not in stop_words]
+        keywords = words[:3]
+        if not keywords:
+            return []
+
+        retriever = CodeRetriever(project_root=ctx.cwd)
+        chunks = []
+        for kw in keywords:
+            try:
+                result = retriever.search(kw, layers=[0, 1], file_pattern="**/*.py")
+                if result.matches:
+                    content = result.to_context(max_tokens=800)
+                    if content:
+                        chunks.append(ContextChunk(
+                            source=f"code_retrieval:{kw}",
+                            content=content,
+                            priority=70,
+                        ))
+            except Exception:
+                continue
+
+        return chunks[:2]  # limit to 2 chunks max
+
+
+class DeferredRetrievalProvider(BaseProvider):
+    """Provider that materializes only the deferred context items that match the task.
+
+    Wraps DeferredContext from Parlant: expensive context loaders are registered
+    lazily and only invoked when a task actually needs them. This provider
+    materializes registered items relevant to the current department/task.
+    """
+    name = "deferred_retrieval"
+
+    def provide(self, ctx: TaskContext) -> list[ContextChunk]:
+        try:
+            from src.governance.deferred_retrieval import DeferredContext
+        except ImportError:
+            return []
+
+        deferred = _get_deferred_context()
+        if not deferred:
+            return []
+
+        chunks = []
+        # Only load items relevant to this department or task
+        dept = ctx.department
+        for key in list(deferred._retrievers.keys()):
+            # Load department-specific or universal keys
+            if key.startswith(f"{dept}:") or key.startswith("shared:"):
+                value = deferred.get(key)
+                if value and isinstance(value, str) and value.strip():
+                    chunks.append(ContextChunk(
+                        source=f"deferred:{key}",
+                        content=value,
+                        priority=60,  # lower priority than core context
+                    ))
+        return chunks
+
+
+# ── Deferred Context Singleton ──
+
+_deferred_ctx = None
+
+def _get_deferred_context():
+    """Get or create the global DeferredContext instance."""
+    global _deferred_ctx
+    if _deferred_ctx is not None:
+        return _deferred_ctx
+    try:
+        from src.governance.deferred_retrieval import DeferredContext
+        _deferred_ctx = DeferredContext()
+        return _deferred_ctx
+    except ImportError:
+        return None
+
+def get_deferred_context():
+    """Public API: get the global DeferredContext for registering loaders."""
+    return _get_deferred_context()

@@ -18,6 +18,14 @@ import yaml
 
 from src.core.llm_router import MODEL_SONNET
 
+# Manifest Inheritance (stolen from Axe, Round 3-7)
+try:
+    from src.governance.manifest_inherit import ManifestInheritanceResolver
+    _manifest_resolver = ManifestInheritanceResolver()
+except ImportError:
+    ManifestInheritanceResolver = None
+    _manifest_resolver = None
+
 log = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent
@@ -84,6 +92,31 @@ def _discover_manifests() -> list[dict]:
                 manifests.append(raw)
         except Exception as e:
             log.error(f"registry: failed to parse {manifest_path}: {e}")
+
+    # ── Manifest Inheritance: resolve extends chains ──
+    if _manifest_resolver:
+        try:
+            # Register all manifests as potential bases by key
+            for raw in manifests:
+                _manifest_resolver.register_base(raw["key"], raw)
+            # Resolve inheritance for manifests with 'extends' field
+            resolved = []
+            for raw in manifests:
+                if raw.get("extends"):
+                    try:
+                        resolved_manifest = _manifest_resolver.resolve(raw)
+                        # Preserve directory-aligned key
+                        resolved_manifest["key"] = raw["key"]
+                        resolved.append(resolved_manifest)
+                        log.info(f"registry: manifest '{raw['key']}' inherits from '{raw['extends']}'")
+                    except Exception as e:
+                        log.warning(f"registry: inheritance resolution failed for '{raw['key']}': {e}")
+                        resolved.append(raw)
+                else:
+                    resolved.append(raw)
+            manifests = resolved
+        except Exception as e:
+            log.warning(f"registry: manifest inheritance system error: {e}")
 
     return manifests
 
@@ -182,6 +215,17 @@ def _build_all():
     return departments, intent_routes, dept_default_intents, dept_tags, descriptions
 
 
+# ── Capability Registry (stolen from OpenAkita) ──────────────
+# Central registry mapping capabilities → tools. Departments declare
+# what capabilities they NEED, the registry resolves which tools satisfy.
+try:
+    from src.governance.capability_registry import build_default_registry, CapabilityRegistry
+    _capability_registry: CapabilityRegistry | None = build_default_registry()
+except ImportError:
+    _capability_registry = None
+    CapabilityRegistry = None
+
+
 # ── Module-level singletons (built on import) ─────────────────
 
 _departments, _intent_routes, _dept_default_intents, _dept_tags, _descriptions = _build_all()
@@ -198,6 +242,18 @@ _manifest_descriptions: dict[str, str] = _descriptions
 def get_department(key: str) -> dict:
     """Get department config by key. Falls back to engineering."""
     return DEPARTMENTS.get(key, DEPARTMENTS.get("engineering", {}))
+
+
+def get_capability_registry():
+    """Get the global CapabilityRegistry instance (from OpenAkita)."""
+    return _capability_registry
+
+
+def resolve_tools_for_capabilities(capabilities: list[str], max_tier: str = "system") -> list[str]:
+    """Resolve capability requirements to tool names via the global CapabilityRegistry."""
+    if _capability_registry:
+        return _capability_registry.resolve(capabilities, max_tier=max_tier)
+    return []
 
 
 def get_tags_for_prompt() -> str:

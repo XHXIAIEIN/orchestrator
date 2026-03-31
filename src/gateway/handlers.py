@@ -132,6 +132,65 @@ def handle_debt_list(**kwargs) -> dict:
         return {"type": "no_token", "handler": "debt_list", "data": []}
 
 
+# ── Webhook handler (stolen from Hermes, Round 3-7) ──
+
+try:
+    from src.gateway.webhook import get_webhook_receiver, WebhookEvent
+except ImportError:
+    get_webhook_receiver = None
+    WebhookEvent = None
+
+
+def handle_webhook(**kwargs) -> dict:
+    """Process an incoming webhook event and dispatch matching subscriptions.
+
+    Expected kwargs:
+        event_type: str — e.g. "github.push"
+        payload: dict — the webhook body
+        signature: str — optional HMAC signature
+        source_ip: str — optional source IP
+    """
+    if not get_webhook_receiver or not WebhookEvent:
+        return {"type": "error", "handler": "webhook", "message": "webhook module not available"}
+
+    event_type = kwargs.get("event_type", "")
+    if not event_type:
+        return {"type": "error", "handler": "webhook", "message": "event_type is required"}
+
+    try:
+        event = WebhookEvent(
+            event_type=event_type,
+            payload=kwargs.get("payload", {}),
+            signature=kwargs.get("signature", ""),
+            source_ip=kwargs.get("source_ip", ""),
+        )
+        receiver = get_webhook_receiver()
+        dispatched = receiver.handle(event)
+        return {
+            "type": "webhook",
+            "handler": "webhook",
+            "data": {
+                "event_type": event_type,
+                "dispatched": dispatched,
+                "count": len(dispatched),
+            },
+        }
+    except Exception as e:
+        log.error(f"webhook handler failed: {e}")
+        return {"type": "error", "handler": "webhook", "message": str(e)}
+
+
+def handle_webhook_stats(**kwargs) -> dict:
+    """Return webhook receiver stats."""
+    if not get_webhook_receiver:
+        return {"type": "no_token", "handler": "webhook_stats", "data": {}}
+    try:
+        return {"type": "no_token", "handler": "webhook_stats",
+                "data": get_webhook_receiver().get_stats()}
+    except Exception as e:
+        return {"type": "error", "handler": "webhook_stats", "message": str(e)}
+
+
 # ── Handler registry ──
 
 NO_TOKEN_HANDLERS = {
@@ -144,6 +203,8 @@ NO_TOKEN_HANDLERS = {
     "run_logs": handle_run_logs,
     "verify_chain": handle_verify_chain,
     "debt_list": handle_debt_list,
+    "webhook": handle_webhook,
+    "webhook_stats": handle_webhook_stats,
 }
 
 

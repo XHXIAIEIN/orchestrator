@@ -9,6 +9,14 @@ import re
 import logging
 from typing import Optional
 
+# Rule Dependency Resolver (stolen from Parlant, Round 3-7)
+try:
+    from src.gateway.rule_dependencies import RuleDependencyResolver
+    _dep_resolver = RuleDependencyResolver()
+except ImportError:
+    RuleDependencyResolver = None
+    _dep_resolver = None
+
 log = logging.getLogger(__name__)
 
 # ── Priority keywords ──
@@ -66,6 +74,27 @@ _DEPARTMENT_RULES: dict[str, list[tuple[re.Pattern, str, str]]] = {
 }
 
 
+# ── Register rules with dependency resolver ──
+def _init_dependency_resolver():
+    """Register all rules in the dependency resolver for activation tracking."""
+    if not _dep_resolver:
+        return
+    try:
+        for dept, rules in _DEPARTMENT_RULES.items():
+            for pattern, intent, mode in rules:
+                _dep_resolver.add_rule(intent, tags=[dept])
+        # Example cross-rule dependencies:
+        # code_review depends on code_fix being active (quality checks code)
+        if "quality_review" in [i for rules in _DEPARTMENT_RULES.values() for _, i, _ in rules]:
+            _dep_resolver.add_rule("quality_review", tags=["quality"],
+                                   requires_any=["code_fix", "code_feature", "code_refactor"])
+        log.debug(f"rule_deps: initialized {_dep_resolver.get_stats()['total_rules']} rules")
+    except Exception as e:
+        log.debug(f"rule_deps: init failed: {e}")
+
+_init_dependency_resolver()
+
+
 def try_rule_match(text: str):
     """Try to resolve intent from rules. Returns None if ambiguous or no match.
 
@@ -98,6 +127,13 @@ def try_rule_match(text: str):
         return None
 
     dept, intent, mode = matched_departments[0]
+
+    # ── Dependency check: skip rule if dependencies are not satisfied ──
+    if _dep_resolver and not _dep_resolver.is_active(intent):
+        log.debug("intent_rules: rule %s/%s inactive (dependency unsatisfied), falling through", dept, intent)
+        _stats["misses"] += 1
+        return None
+
     priority = _detect_priority(text)
 
     _stats["hits"] += 1
@@ -136,3 +172,8 @@ def reset_stats():
     _stats["hits"] = 0
     _stats["misses"] = 0
     _stats["ambiguous"] = 0
+
+
+def get_dependency_resolver():
+    """Return the rule dependency resolver (for testing/inspection)."""
+    return _dep_resolver
