@@ -1,6 +1,7 @@
 """TaskDispatcher — dispatch pipeline: create → classify → preflight → scrutinize → queue."""
 import json
 import logging
+import os
 from datetime import datetime, timezone
 
 from src.storage.events_db import EventsDB
@@ -94,6 +95,7 @@ def _needs_fact_expression_split(spec: dict) -> bool:
 CLAUDE_TIMEOUT = 300
 STALE_THRESHOLD = CLAUDE_TIMEOUT + 120
 MAX_CONCURRENT = 3
+MAX_CONCURRENT_SUBAGENTS = int(os.environ.get("MAX_CONCURRENT_SUBAGENTS", "5"))
 
 
 class TaskDispatcher:
@@ -254,6 +256,12 @@ class TaskDispatcher:
 
         Returns task_id on success, None if preflight/scrutiny rejects.
         NOTE: Does NOT execute the task — caller is responsible for execution."""
+
+        # ── SubagentLimit: hard cap on concurrent agents ──
+        active_count = self.semaphore.get_status().get("global_used", 0)
+        if active_count >= MAX_CONCURRENT_SUBAGENTS:
+            log.warning(f"SubagentLimit: {active_count}/{MAX_CONCURRENT_SUBAGENTS} agents active, rejecting new dispatch")
+            return None
 
         # ── Fact-Expression Split: two-phase dispatch for judgment+presentation tasks ──
         if spec.get("phase") is None and _needs_fact_expression_split(spec):
