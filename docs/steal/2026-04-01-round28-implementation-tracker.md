@@ -88,6 +88,42 @@
 | D9 | Memory Staleness Annotator | CC R29 | Tool | ✅ Done |
 | D10 | Instinct Learning Pipeline | Everything CC | Code | ✅ Done |
 
+## Already Done (confirmed 2026-04-01)
+
+These patterns were already implemented but not tracked:
+- R19 `<critical>` XML tags → boot.md:26, CLAUDE.md:45, scrutiny.md:24
+- R19 `<reference>` tags → boot.md:105 (hard-won-rules), boot.md:129 (context-pack-catalog)
+- R28b Coordinator Synthesis → synthesis_discipline.md + dispatcher.py:24-38
+- R28b Verification Adversarial → guardian_assessment.md (with self-injection defense)
+- R28b Compact 9-Section → compact_template.md + pre-compact.sh:35-44
+- R28b Permission Side-Query → guardian_assessment.md risk assessment
+
+## Closed as Reference-Only (18 patterns)
+
+These patterns are CC/claw-code internal architecture with no direct Orchestrator equivalent.
+Existing Orchestrator code already covers the underlying concern differently.
+
+| # | Pattern | Orchestrator Equivalent |
+|---|---------|------------------------|
+| 12 | Events-Before-Container | No container dispatch |
+| 14 | Unified Message Router | channel_router.py |
+| 15 | Event Stream Classifier | No equivalent need |
+| 17 | Bones-Soul Split | SOUL/public + SOUL/private |
+| 19 | Progressive Bundle Fallback | No remote agent dispatch |
+| 20 | Session Overage | No billing system |
+| 21 | Snapshot Coalescing | WebSocket handles this |
+| 22 | Three-Tier Feature Read | No feature flags |
+| 23 | Immutable Registry | project_registry.py |
+| 24 | Token Routing + Diversity | llm_router.py engine waterfall |
+| 25 | Permission Denial Inference | permission_rules.py |
+| 26 | Config Deep Merge | config.py layered config |
+| 27 | 4-Way Retrieval + RRF | For Construct3-RAG, not Orchestrator |
+| 28 | Retain-Time Bounding | No knowledge graph |
+| 29 | Token Budget Layers | context_budget.py |
+| R28b-1 | Cache Boundary | CC prompt cache internal |
+| R28b-4 | YOLO Self-Injection | guardian_assessment.md:52-60 |
+| R32-1 | Editor Adapter | ICollector protocol |
+
 ## Implementation Log
 
 | Time | Action | Commit |
