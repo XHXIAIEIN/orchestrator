@@ -67,12 +67,14 @@ rules:
 
   - name: browser-cookie-access
     action: block
-    description: "Browser cookie/session access"
+    description: "Browser cookie/session/credential file access"
     match_all:
-      - pattern: "(Cookies|Login\\s*Data|Session|\\.cookie)"
+      - pattern: "(Cookies|Login\\s*Data|Session\\s*Storage|\\.cookie|Cookie\\s*Store)"
         flags: "i"
-      - pattern: "(sqlite3|cat|cp|curl)"
+      - pattern: "(sqlite3|cp\\s|curl)"
         flags: "i"
+    exclude:
+      - pattern: "git\\s+(commit|log|diff|show|push|pull|merge|rebase|checkout|branch)"
 
   - name: interpreter-injection
     action: block

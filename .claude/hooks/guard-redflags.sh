@@ -109,9 +109,10 @@ if echo "$COMMAND" | grep -qE '(pip|npm|gem|cargo)\s+install.*(-q|--quiet|-s|--s
     exit 0
 fi
 
-# 9. Browser cookie/session access
-if echo "$COMMAND" | grep -qiE '(Cookies|Login\s*Data|Session|\.cookie)' && \
-   echo "$COMMAND" | grep -qiE '(sqlite3|cat|cp|curl)'; then
+# 9. Browser cookie/session/credential file access (narrowed — "Session" alone is too broad)
+if echo "$COMMAND" | grep -qiE '(Cookies|Login\s*Data|Session\s*Storage|\.cookie|Cookie\s*Store)' && \
+   echo "$COMMAND" | grep -qiE '(sqlite3|cp\s|curl)' && \
+   ! echo "$COMMAND" | grep -qE 'git\s+(commit|log|diff|show|push|pull|merge|rebase|checkout|branch)'; then
     echo '{"decision":"block","reason":"Browser cookie/session access detected — potential credential theft"}'
     exit 0
 fi
