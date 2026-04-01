@@ -157,9 +157,22 @@ All 12 plan files under `docs/superpowers/plans/` have been fully implemented:
 | F3 | Protocol SKILL.md + rephrase rule | `departments/protocol/SKILL.md` | ✅ |
 | F4 | boot.md learnings "举例前先查证" | `SOUL/private/` → compiler | ✅ |
 
+## Sprint 6: PUA Behavioral Engineering (R35) — ✅ COMPLETE (2026-04-01)
+
+6 patterns from tanweai/pua (14K+ stars). Core insight: externalize behavior correction to deterministic logic.
+
+| # | Pattern | ID | Source | Status | Target |
+|---|---------|-----|--------|--------|--------|
+| 76 | Deterministic Pressure Escalation | R17 | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` |
+| 77 | PreCompact Behavioral Checkpoint | R18 | PUA (R35) | ✅ | `.claude/hooks/pre-compact.sh` |
+| 78 | Methodology Router | O27 | PUA (R35) | ✅ | `src/governance/executor_prompt.py` |
+| 79 | Sub-Agent Behavioral Norms | S23 | PUA (R35) | ✅ | `.claude/hooks/dispatch-gate.sh` |
+| 80 | Anti-Rationalization Hook (dynamic) | H14 | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` (L2-L4) |
+| 81 | Failure-Mode → Methodology Switch | H15 | PUA (R35) | ✅ | `SOUL/public/prompts/methodology_router.md` |
+
 ## Remaining Work
 
-**Orchestrator 本体：** Sprint 1-5 全部 75 项已完成 ✅
+**Orchestrator 本体：** Sprint 1-6 全部 81 项已完成 ✅
 
 **cvui 包（独立仓库 `D:\Users\Administrator\Documents\GitHub\cvui`）：**
 - 🔲 V1: VLM Zone Stage

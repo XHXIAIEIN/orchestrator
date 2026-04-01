@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 34 轮偷师，90+ 项目，143 模式。按主题域组织，不按来源。
+> 35 轮偷师，90+ 项目，149 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 143 |
-| ✅ Implemented | 118 |
+| Total patterns | 149 |
+| ✅ Implemented | 124 |
 | 📐 Designed (spec exists) | 2 |
 | 🔲 Pending (cvui only) | 6 |
 | ⏸️ Shelved | 17 |
@@ -42,6 +42,7 @@
 | S20 | Config Protection Hook | CC+Codex (R28) | ✅ | `.claude/hooks/config-protect.sh` | Block writes to .env, CLAUDE.md, settings.json without approval |
 | S21 | Exec Policy Rule Engine | Codex CLI (R28c) | ✅ | `config/exec-policy.yaml` + `scripts/exec_policy_loader.py` | YAML-configurable guard rules with bash fallback |
 | S22 | Guardian Risk Assessment | Codex (R28c) | ✅ | `SOUL/public/prompts/guardian_assessment.md` | Semantic risk eval prompt for sub-agent modifications |
+| S23 | Sub-Agent Behavioral Norms Injection | PUA (R35) | ✅ | `.claude/hooks/dispatch-gate.sh` | Auto-inject verification discipline + diagnostic norms into sub-agent context |
 
 ---
 
@@ -65,6 +66,8 @@
 | R14 | Audit Hash Chain (Merkle) | Round 1 + OpenFang (R6) | ✅ | `governance/audit/run_logger.py` | SHA-256 hash chain JSONL. Confirmed equivalent to OpenFang's Merkle chain |
 | R15 | Loop Detection Hook | DeerFlow 2.0 (R28) | ✅ | `.claude/hooks/loop-detector.sh` | Detect repeated tool calls, inject break prompt |
 | R16 | Checkpoint-Restart Recovery | Codex CLI (R28c) | ✅ | `src/governance/checkpoint_recovery.py` | Resume interrupted sub-agents from checkpoint |
+| R17 | Deterministic Pressure Escalation | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` | Shell counter drives L1-L4 escalation on consecutive Bash failures; success resets to 0. LLM cannot opt out |
+| R18 | PreCompact Behavioral Checkpoint | PUA (R35) | ✅ | `.claude/hooks/pre-compact.sh` | Before compaction: dump tried approaches, eliminated hypotheses, failure count to disk. Bridges memory gap |
 
 ---
 
@@ -183,6 +186,7 @@
 | O24 | Evaluator-Fix Loop | yoyo-evolve (R30) | ✅ | `SOUL/public/prompts/evaluator_fix_loop.md` | Max 9-round evaluate→fix cycle |
 | O25 | SSE Progress Streaming | CC (R28a) | ✅ | `dashboard/server.js` | Server-Sent Events for collector progress |
 | O26 | Subagent Limit Middleware | CC (R28a) | ✅ | `src/governance/dispatcher.py` | Hard cap on concurrent sub-agents |
+| O27 | Methodology Router | PUA (R35) | ✅ | `src/governance/executor_prompt.py` + `SOUL/public/prompts/methodology_router.md` | Task type → thinking framework (RCA/FirstPrinciples/WorkingBackwards/etc). Cognitive mode overrides keyword match |
 
 ---
 
@@ -203,6 +207,8 @@
 | H11 | Collaboration Mode Switching | Codex CLI (R28c) | ✅ | `SOUL/public/prompts/collaboration_modes.md` | Suggest/auto-edit/full-auto mode switching |
 | H12 | Strategic Compact Decision Table | CC+Headroom (R28/R33) | ✅ | `SOUL/public/prompts/compact_template.md` | 9-section mandatory compaction + adaptive pressure |
 | H13 | Session Handoff Protocol | CC (R28) | ✅ | `SOUL/public/prompts/session_handoff.md` | Structured inter-session state transfer |
+| H14 | Anti-Rationalization Hook (dynamic) | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` (L2-L4 injections) | Static rationalization-immunity.md upgraded to dynamic: hook injects counter-arguments at escalation thresholds |
+| H15 | Failure-Mode → Methodology Switch Chain | PUA (R35) | ✅ | `SOUL/public/prompts/methodology_router.md` | Same error repeating → RCA; different errors → isolate; going in circles → Working Backwards; giving up → Search First |
 
 ---
 
@@ -250,6 +256,7 @@
 | yoyo-evolve | — | 30 | S19, O24 |
 | hindsight | — | 28e | I20 |
 | CC (R29) | — | 29 | I16, I19 |
+| tanweai/pua | 14K+ | 35 | S23, R17, R18, O27, H14, H15 |
 
 ---
 
