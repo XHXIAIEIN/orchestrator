@@ -13,19 +13,22 @@
 # Allowed: adding NEW rules (stricter), genuine config changes the user asked for.
 # Blocked: disabling rules, widening ignore patterns, loosening strictness.
 
-INPUT=$(cat)
+INPUT=$(head -c 65536)
 
-# Extract file path from tool input
-FILE_PATH=$(echo "$INPUT" | python3 -c "
+# Extract file path from tool input (jq preferred, python3 fallback)
+if command -v jq &>/dev/null; then
+    FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+else
+    FILE_PATH=$(echo "$INPUT" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     ti = d.get('tool_input', {})
-    # Edit tool uses 'file_path', Write tool uses 'file_path'
     print(ti.get('file_path', ''))
 except:
     print('')
 " 2>/dev/null)
+fi
 
 [ -z "$FILE_PATH" ] && echo '{"decision":"allow"}' && exit 0
 

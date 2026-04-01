@@ -13,10 +13,16 @@ WINDOW_SIZE=20
 WARN_THRESHOLD=3
 STOP_THRESHOLD=5
 
-INPUT=$(cat)
+INPUT=$(head -c 65536)
 
 # Extract tool name and input for hashing
-TOOL_HASH=$(echo "$INPUT" | python3 -c "
+# jq + md5sum for fast path; python3 fallback for complex normalization
+if command -v jq &>/dev/null; then
+    TOOL_HASH=$(echo "$INPUT" | jq -r '"\(.tool_name // ""):\(.tool_input | tostring | .[:200])"' 2>/dev/null | md5sum 2>/dev/null | cut -c1-12)
+    # md5sum not available on all Windows — fallback
+    [ -z "$TOOL_HASH" ] && TOOL_HASH=$(echo "$INPUT" | jq -r '"\(.tool_name // ""):\(.tool_input | tostring | .[:200])"' 2>/dev/null | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest()[:12])" 2>/dev/null)
+else
+    TOOL_HASH=$(echo "$INPUT" | python3 -c "
 import sys, json, hashlib
 
 try:
@@ -35,6 +41,7 @@ try:
 except:
     print('')
 " 2>/dev/null)
+fi
 
 # Skip if we couldn't extract a hash
 [ -z "$TOOL_HASH" ] && exit 0

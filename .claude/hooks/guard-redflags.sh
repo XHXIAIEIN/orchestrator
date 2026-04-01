@@ -2,12 +2,40 @@
 # Guard hook: detect and block red-flag patterns in Bash commands
 # Source: Round 26 steal — skill-vetter @spclaudehome (14 red flags)
 # Attached to PreToolUse(Bash) in settings.json
+#
+# Performance: jq for JSON extraction (~5ms) instead of python3 (~60ms)
+# Guard clauses: exit early on trivial input (Round 35 steal — claude-island-perf-fix)
 
-INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
+INPUT=$(head -c 65536)
+
+# ── Guard clause: use jq if available, fall back to python3 ──
+if command -v jq &>/dev/null; then
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+else
+    COMMAND=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
+fi
 
 # Exit early if no command
 [ -z "$COMMAND" ] && echo '{"decision":"allow"}' && exit 0
+
+# ── Guard clause: short commands can't be complex attacks ──
+if [ ${#COMMAND} -lt 8 ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── P0-5: Three-fix hard stop (Round 35 steal — claude-code-synthesis) ──
+# If 3+ consecutive failures, block next bash command until diagnostic is provided
+FAILURE_COUNT=$(cat /tmp/orchestrator-failure-count 2>/dev/null || echo 0)
+if [ "$FAILURE_COUNT" -ge 3 ]; then
+    # Allow diagnostic commands (read-only) through
+    if echo "$COMMAND" | grep -qE '^\s*(cat|head|tail|less|grep|rg|find|ls|git\s+(log|diff|status|show|blame)|echo|printf|type|which|where)\b'; then
+        : # allow diagnostic commands
+    else
+        echo "{\"decision\":\"block\",\"reason\":\"THREE-FIX STOP: ${FAILURE_COUNT} consecutive failures. Before retrying, you MUST: (1) State the exact error, (2) List hypotheses, (3) Run diagnostic commands to verify. Only read-only commands (cat/grep/git log/git diff) are allowed until the counter resets.\"}"
+        exit 0
+    fi
+fi
 
 # ── Try YAML rule engine first (fast, configurable) ──
 if [ -f "config/exec-policy.yaml" ] && command -v python3 &>/dev/null; then

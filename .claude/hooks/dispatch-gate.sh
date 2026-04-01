@@ -6,10 +6,14 @@
 # Convention: agent prompts that do steal work MUST include the [STEAL] tag.
 # No tag = no check. No regex guessing. Explicit declaration only.
 
-INPUT=$(cat)
+INPUT=$(head -c 65536)
 
-# Extract agent prompt (use python — jq not always available on Windows)
-PROMPT=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null)
+# Extract agent prompt (jq preferred, python3 fallback)
+if command -v jq &>/dev/null; then
+    PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty' 2>/dev/null)
+else
+    PROMPT=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null)
+fi
 
 # Explicit tag check — only [STEAL] triggers branch enforcement
 if echo "$PROMPT" | grep -qF '[STEAL]'; then

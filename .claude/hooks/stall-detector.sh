@@ -3,27 +3,30 @@
 # Reads patterns from config/stall-patterns.yaml (not hardcoded)
 # Post-hoc audit: logs violations + injects correction prompt
 
-INPUT=$(cat)
+INPUT=$(head -c 65536)
 SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CONFIG="$SCRIPT_DIR/config/stall-patterns.yaml"
 
-if [ ! -f "$CONFIG" ]; then
-    exit 0
-fi
+# Guard clause: no config = nothing to check
+[ ! -f "$CONFIG" ] && exit 0
 
-# Pass message via env var to avoid shell quoting hell
-export STALL_CONFIG="$CONFIG"
-export STALL_MSG=$(echo "$INPUT" | python3 -c "
+# Extract last_assistant_message (jq preferred, python3 fallback)
+if command -v jq &>/dev/null; then
+    export STALL_MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)
+else
+    export STALL_MSG=$(echo "$INPUT" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     print(d.get('last_assistant_message', '') or '')
 except: pass
 " 2>/dev/null)
-
-if [ -z "$STALL_MSG" ]; then
-    exit 0
 fi
+export STALL_CONFIG="$CONFIG"
+
+# Guard clause: short messages unlikely to be stall patterns
+[ -z "$STALL_MSG" ] && exit 0
+[ ${#STALL_MSG} -lt 10 ] && exit 0
 
 # Load patterns from YAML and match against message
 RESULT=$(python3 -c "

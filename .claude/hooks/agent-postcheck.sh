@@ -2,6 +2,9 @@
 # Hook: PostToolUse(Agent) — check if agent modified protected files
 # Source: yoyo-evolve Protected File Guardian (Round 30)
 
+# Drain stdin
+head -c 65536 > /dev/null
+
 PROTECTED_FILES=(
     "SOUL/private/identity.md"
     "SOUL/private/hall-of-instances.md"

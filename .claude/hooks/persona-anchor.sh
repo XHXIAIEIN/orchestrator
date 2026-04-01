@@ -6,6 +6,9 @@ COUNTER_FILE="/tmp/orchestrator-persona-counter"
 SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CONFIG="$SCRIPT_DIR/config/stall-patterns.yaml"
 
+# Consume stdin (not used, but must drain)
+head -c 65536 > /dev/null
+
 COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
 COUNT=$((COUNT + 1))
 echo $COUNT > "$COUNTER_FILE"

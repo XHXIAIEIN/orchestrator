@@ -9,7 +9,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-INPUT=$(cat)
+INPUT=$(head -c 65536)
 
 echo "$INPUT" | python3 -c "
 import sys, json, os, re

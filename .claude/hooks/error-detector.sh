@@ -34,7 +34,7 @@ if [ "$CURRENT_SESSION" != "$STORED_SESSION" ]; then
     echo "$CURRENT_SESSION" > "$FAILURE_SESSION_FILE"
 fi
 
-INPUT=$(cat)
+INPUT=$(head -c 65536)
 
 # Run Python inline — extract, classify, log, and escalate in one pass
 echo "$INPUT" | python3 -c "
