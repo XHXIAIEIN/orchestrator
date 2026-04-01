@@ -4,7 +4,7 @@
 >
 > ✅ = done / 📐 = designed (spec exists) / 🔲 = pending / ⏸️ = shelved
 >
-> Last updated: 2026-03-31
+> Last updated: 2026-04-01
 
 ## Sprint 1: Quick Wins — ✅ ALL COMPLETE
 
@@ -73,6 +73,48 @@
 | 44 | output_compress wiring | Replace hardcoded `[:2000]` truncation | ✅ |
 | 45 | Memory consolidation | experiences + design_memory → structured_memory DB | ✅ |
 
+## Sprint 5: Round 28-34 Steal Digest — ✅ COMPLETE (2026-04-01)
+
+21 patterns from 6 sub-rounds (R28a-f) + digest session. 11 P0 from main batch + 10 from digest.
+
+| # | Pattern | ID | Source | Status | Target |
+|---|---------|-----|--------|--------|--------|
+| 46 | Governor Synthesis Discipline | H10 | CC Prompts (R28b) | ✅ | `SOUL/public/prompts/synthesis_discipline.md` |
+| 47 | Verification Gate Adversarial | S22 | CC Verification (R28b) | ✅ | `SOUL/public/prompts/guardian_assessment.md` |
+| 48 | PreCompact 9-Section Structure | H12 | CC Compact (R28b) | ✅ | `SOUL/public/prompts/compact_template.md` |
+| 49 | Collaboration Mode Switching | H11 | Codex CLI (R28c) | ✅ | `SOUL/public/prompts/collaboration_modes.md` |
+| 50 | Cheapest-First Gate Chain | O19 | CC AutoDream (R28a) | ✅ | `src/core/gate_chain.py` |
+| 51 | Address Scheme Registry | O20 | CC peerAddress (R28a) | ✅ | `src/core/address_registry.py` |
+| 52 | Unified Executor Interface | O21 | CC backends (R28a) | ✅ | `src/governance/agent_executor_interface.py` |
+| 53 | Protocol Messages | O22 | CC teammateMailbox (R28a) | ✅ | `src/core/protocol_messages.py` |
+| 54 | Guard Banned Prefixes + Exec Policy | S21 | Codex ExecPolicy (R28c) | ✅ | `config/exec-policy.yaml` + `.claude/hooks/guard-redflags.sh` |
+| 55 | Guardian Risk Assessment | S22 | Codex policy (R28c) | ✅ | `SOUL/public/prompts/guardian_assessment.md` |
+| 56 | Loop Detection Hook | R15 | DeerFlow 2.0 | ✅ | `.claude/hooks/loop-detector.sh` |
+| 57 | Config Protection Hook | S20 | CC+Codex | ✅ | `.claude/hooks/config-protect.sh` |
+| 58 | Boundary Nonce | S19 | yoyo-evolve (R30) | ✅ | `src/channels/boundary_nonce.py` |
+| 59 | Strategic Compact Decision Table | H12 | CC+Headroom | ✅ | `SOUL/public/prompts/compact_template.md` |
+| 60 | Session Handoff Protocol | H13 | CC (R28) | ✅ | `SOUL/public/prompts/session_handoff.md` |
+| 61 | Evaluator-Fix Loop | O24 | yoyo-evolve (R30) | ✅ | `SOUL/public/prompts/evaluator_fix_loop.md` |
+| 62 | Middleware Pipeline | O23 | DeerFlow 2.0 | ✅ | `src/governance/pipeline/middleware.py` |
+| 63 | Memory Staleness Annotator | I19 | CC (R29) | ✅ | `SOUL/tools/memory_staleness.py` |
+| 64 | Instinct Learning Pipeline | I16 | CC (R29) | ✅ | `src/governance/learning/instinct_pipeline.py` |
+| 65 | SSE Progress Streaming | O25 | CC (R28a) | ✅ | `dashboard/server.js` |
+| 66 | Subagent Limit Middleware | O26 | CC (R28a) | ✅ | `src/governance/dispatcher.py` |
+
+## Sprint 5b: Additional Features (2026-04-01)
+
+| # | Feature | Status | Target |
+|---|---------|--------|--------|
+| 67 | Multi-Pass Model Normalization (P14) | ✅ | `src/core/model_normalize.py` |
+| 68 | Checkpoint-Restart Recovery (R16) | ✅ | `src/governance/checkpoint_recovery.py` |
+| 69 | Transcript Filter (S18) | ✅ | `src/governance/safety/transcript_filter.py` |
+| 70 | Memory 2-Phase Pipeline (I17) | ✅ | `SOUL/tools/memory_synthesizer.py` |
+| 71 | Memory No-Op Gate (I18) | ✅ | `SOUL/tools/memory_noop_gate.py` |
+| 72 | Disposition Parameters (I20) | ✅ | `config/disposition.yaml` |
+| 73 | babysit-pr Skill | ✅ | `.claude/skills/babysit-pr/SKILL.md` |
+| 74 | Forced Output Gate (scrutiny upgrade) | ✅ | `SOUL/public/prompts/scrutiny.md` |
+| 75 | Rationalization Immunity | ✅ | `SOUL/public/prompts/rationalization-immunity.md` |
+
 ## Plan Files — ALL IMPLEMENTED
 
 All 12 plan files under `docs/superpowers/plans/` have been fully implemented:
@@ -117,7 +159,7 @@ All 12 plan files under `docs/superpowers/plans/` have been fully implemented:
 
 ## Remaining Work
 
-**Orchestrator 本体：** Sprint 1-3 全部 35 项已完成 ✅
+**Orchestrator 本体：** Sprint 1-5 全部 75 项已完成 ✅
 
 **cvui 包（独立仓库 `D:\Users\Administrator\Documents\GitHub\cvui`）：**
 - 🔲 V1: VLM Zone Stage

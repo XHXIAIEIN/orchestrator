@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 16 轮偷师，78+ 项目，119 模式。按主题域组织，不按来源。
+> 34 轮偷师，90+ 项目，143 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 119 |
-| ✅ Implemented | 94 |
+| Total patterns | 143 |
+| ✅ Implemented | 118 |
 | 📐 Designed (spec exists) | 2 |
 | 🔲 Pending (cvui only) | 6 |
 | ⏸️ Shelved | 17 |
@@ -37,6 +37,11 @@
 | S15 | Zero Data Retention (ZDR) | Firecrawl (R5) | ⏸️ | — | Full-chain data scrubbing flag. Needed for multi-tenant, not now |
 | S16 | Fact-Expression Split (anti-sycophancy) | Research (R-) | ✅ | `governance/dispatcher.py` + `departments/quality/SKILL.md` + `departments/protocol/SKILL.md` | 2-step pipeline: Fact Layer (刑部) → Expression Layer (礼部). Auto-detect via intent |
 | S17 | Persona Anchor Hook (attention decay fix) | Research (R-) | ✅ | `.claude/hooks/persona-anchor.sh` | PostToolUse counter every 10 calls + PreCompact anchor injection |
+| S18 | Transcript Filter (strip assistant text) | CC System Prompts (R28b) | ✅ | `governance/safety/transcript_filter.py` | Strip assistant text before safety classifier input |
+| S19 | Boundary Nonce (injection defense) | yoyo-evolve (R30) | ✅ | `channels/boundary_nonce.py` | Random nonce at message boundary, detect cross-boundary injection |
+| S20 | Config Protection Hook | CC+Codex (R28) | ✅ | `.claude/hooks/config-protect.sh` | Block writes to .env, CLAUDE.md, settings.json without approval |
+| S21 | Exec Policy Rule Engine | Codex CLI (R28c) | ✅ | `config/exec-policy.yaml` + `scripts/exec_policy_loader.py` | YAML-configurable guard rules with bash fallback |
+| S22 | Guardian Risk Assessment | Codex (R28c) | ✅ | `SOUL/public/prompts/guardian_assessment.md` | Semantic risk eval prompt for sub-agent modifications |
 
 ---
 
@@ -58,6 +63,8 @@
 | R12 | Hook Lifecycle (4 hooks) | Agent Lightning (R8) | ✅ | `governance/executor.py` | LifecycleHooks: on_rollout_start/attempt_start/attempt_end/rollout_end |
 | R13 | Heartbeat + Lock Renewal | Firecrawl (R5) | ✅ | `core/system_monitor.py` | TTL-based heartbeat with death callback + lock renewal |
 | R14 | Audit Hash Chain (Merkle) | Round 1 + OpenFang (R6) | ✅ | `governance/audit/run_logger.py` | SHA-256 hash chain JSONL. Confirmed equivalent to OpenFang's Merkle chain |
+| R15 | Loop Detection Hook | DeerFlow 2.0 (R28) | ✅ | `.claude/hooks/loop-detector.sh` | Detect repeated tool calls, inject break prompt |
+| R16 | Checkpoint-Restart Recovery | Codex CLI (R28c) | ✅ | `src/governance/checkpoint_recovery.py` | Resume interrupted sub-agents from checkpoint |
 
 ---
 
@@ -78,6 +85,7 @@
 | P11 | LoDPI Adaptive Downscaling | Carbonyl (R9) | 🔲 | — | P1. Resolution-target-driven scale factor instead of fixed ratio. Apply to cvui DownscaleStage |
 | P12 | Shared Memory IPC (zero-copy frames) | Carbonyl (R9) | ✅ | `desktop_use/screen.py` | SharedFrameBuffer: zero-copy frame buffer via shared_memory |
 | P13 | CDP Screencast Frame Stream | Carbonyl (R9) | ✅ | `core/browser_cdp.py` | `take_screenshot()` + `enable/disable_screencast()` + `recv_screencast_frame()` with ack |
+| P14 | Multi-Pass Model Normalization | CC (R28a) | ✅ | `src/core/model_normalize.py` | 4-pass: exact/prefix/date/fuzzy model name resolution |
 
 ---
 
@@ -100,6 +108,11 @@
 | I13 | Dual-Track Extraction (profile vs task) | OpenAkita (R4) | ⏸️ | — | Separate user profile extraction from task experience extraction. Low priority |
 | I14 | A/B Testing Framework (model/engine) | Firecrawl (R5) | ✅ | `core/ab_testing.py` | Experiment/ABTestManager: split assignment, result tracking, winner detection |
 | I15 | Context Summarization (trajectory) | bytebot (R10) | ✅ | `desktop_use/trajectory.py` | Auto-summarize on window overflow; `_summary` prepended to prompt context |
+| I16 | Instinct Learning Pipeline | CC (R29) | ✅ | `src/governance/learning/instinct_pipeline.py` | Auto-extract instincts from successful patterns |
+| I17 | Memory 2-Phase Pipeline | Codex CLI (R28c) | ✅ | `SOUL/tools/memory_synthesizer.py` | Observation archive → synthesized context |
+| I18 | Memory No-Op Gate | Codex CLI (R28c) | ✅ | `SOUL/tools/memory_noop_gate.py` | Reject low-value memories before storage |
+| I19 | Memory Staleness Annotator | CC (R29) | ✅ | `SOUL/tools/memory_staleness.py` | Tag stale memories for refresh or removal |
+| I20 | Disposition Parameterization | hindsight (R28e) | ✅ | `config/disposition.yaml` | Configurable personality tuning parameters |
 
 ---
 
@@ -162,6 +175,14 @@
 | O16 | Channel 5-Level Routing | OpenFang (R6) | ✅ | `channels/channel_router.py` | 5-level priority: Binding→Direct→UserDefault→ChannelDefault→Global |
 | O17 | MCP Endpoint Exposure | bytebot (R10) | ✅ | `desktop_use/mcp_server.py` | DesktopMCPServer: 6 tools (screenshot/click/type/hotkey/scroll/find) |
 | O18 | Monotonic Sequence ID | Agent Lightning (R8) | ⏸️ | — | Distributed clock drift fix. Not needed for single-machine |
+| O19 | Cheapest-First Gate Chain | CC AutoDream (R28a) | ✅ | `src/core/gate_chain.py` | Escalating cost gates: regex→heuristic→small LLM→large LLM |
+| O20 | Address Scheme Registry | CC peerAddress (R28a) | ✅ | `src/core/address_registry.py` | Unified agent/channel/service addressing |
+| O21 | Unified Executor Interface | CC backends (R28a) | ✅ | `src/governance/agent_executor_interface.py` | Abstract agent execution backend |
+| O22 | Protocol Messages | CC teammateMailbox (R28a) | ✅ | `src/core/protocol_messages.py` | Structured inter-agent communication |
+| O23 | Middleware Pipeline | DeerFlow 2.0 (R28) | ✅ | `src/governance/pipeline/middleware.py` | Composable middleware chain for dispatch |
+| O24 | Evaluator-Fix Loop | yoyo-evolve (R30) | ✅ | `SOUL/public/prompts/evaluator_fix_loop.md` | Max 9-round evaluate→fix cycle |
+| O25 | SSE Progress Streaming | CC (R28a) | ✅ | `dashboard/server.js` | Server-Sent Events for collector progress |
+| O26 | Subagent Limit Middleware | CC (R28a) | ✅ | `src/governance/dispatcher.py` | Hard cap on concurrent sub-agents |
 
 ---
 
@@ -178,6 +199,10 @@
 | H7 | Delegation Span (DELEGATION tracking) | OpenAkita (R4) | ✅ | `governance/audit/delegation_span.py` | DelegationTracker: parent→child chain, depth limits, token aggregation |
 | H8 | Ephemeral Agent (temp profile, no disk) | OpenAkita (R4) | ⏸️ | — | Low value for current use case |
 | H9 | Task Scheduling (sub-tasks) | bytebot (R10) | ✅ | `governance/task_scheduler.py` | TaskScheduler: priority queue + IMMEDIATE/SCHEDULED + poll loop |
+| H10 | Synthesis Discipline | CC System Prompts (R28b) | ✅ | `SOUL/public/prompts/synthesis_discipline.md` | Never delegate understanding; prove comprehension before delegating |
+| H11 | Collaboration Mode Switching | Codex CLI (R28c) | ✅ | `SOUL/public/prompts/collaboration_modes.md` | Suggest/auto-edit/full-auto mode switching |
+| H12 | Strategic Compact Decision Table | CC+Headroom (R28/R33) | ✅ | `SOUL/public/prompts/compact_template.md` | 9-section mandatory compaction + adaptive pressure |
+| H13 | Session Handoff Protocol | CC (R28) | ✅ | `SOUL/public/prompts/session_handoff.md` | Structured inter-session state transfer |
 
 ---
 
@@ -217,6 +242,14 @@
 | Carbonyl | 17.1K | 9 | P11, P12, P13, H4, H5, H6, V15 |
 | bytebot | 10.6K | 10 | V11, V12, V13, I15, O17, H9 |
 | *(Sycophancy research)* | — | — | S16, S17 |
+| CC System Prompts | — | 28b | S18, H10 |
+| CC AutoDream / peerAddress / backends | — | 28a | P14, O19, O20, O21, O22, O25, O26 |
+| Codex CLI | — | 28c | S21, S22, R16, I17, I18, H11 |
+| CC+Codex | — | 28 | S20, H12, H13 |
+| DeerFlow 2.0 | — | 28 | R15, O23 |
+| yoyo-evolve | — | 30 | S19, O24 |
+| hindsight | — | 28e | I20 |
+| CC (R29) | — | 29 | I16, I19 |
 
 ---
 
@@ -233,6 +266,8 @@ These patterns appeared across multiple rounds and are consolidated above:
 | ComponentSpec / Config-Driven | R6 (HAND.toml), R8 (ComponentSpec) | **O6** |
 | Audit Hash Chain | R1 (hash chain), R6 (Merkle audit) | **R14** |
 | Blueprint / Declarative Agent | R1 (blueprint.yaml), R6 (HAND.toml) | **O10** |
+| Loop Detection | R1 (doom loop), R2 (StuckDetector), R4 (Signature Repeat), R6 (result-aware), R8 (Watchdog), R28 (hook) | **R1** (core) + **R3** (Watchdog) + **R15** (hook) |
+| Prompt Injection Defense | R2 (test suite), R5 (LLM hardening), R6 (3-level scanner), R30 (boundary nonce) | **S4** (core) + **S19** (nonce variant) |
 
 ---
 
