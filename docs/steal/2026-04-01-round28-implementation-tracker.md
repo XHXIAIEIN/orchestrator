@@ -1,24 +1,24 @@
 # Round 28 Implementation Tracker
 
 > Date: 2026-04-01
-> Branch: steal/round23-p1
-> Sources: 6 sub-rounds, 10 steal reports, ~93 patterns total
+> Branches: steal/round23-p1, steal/digest-apr01
+> Sources: 6 sub-rounds + 8 new reports, ~93 + 70 patterns total
 
 ## Quick Comparison: All P0 Patterns
 
 | # | Pattern | Source | Category | Status | Impact |
 |---|---------|--------|----------|--------|--------|
-| 1 | Governor Synthesis Discipline | CC System Prompts | Prompt | 🔄 In Progress | Agent output quality |
-| 2 | Verification Gate Adversarial | CC Verification Agent | Prompt | 🔄 In Progress | Bug escape rate |
-| 3 | PreCompact 9-Section Structure | CC Compact Service | Hook | 🔄 In Progress | Context continuity |
-| 4 | Collaboration Mode Switching | Codex CLI | Prompt | 🔄 In Progress | Task precision |
-| 5 | Cheapest-First Gate Chain | CC AutoDream | Code | 🔄 In Progress | Background task efficiency |
-| 6 | Address Scheme Registry | CC peerAddress | Code | 🔄 In Progress | Unified routing |
-| 7 | Unified Executor Interface | CC backends/types | Code | 🔄 In Progress | Agent abstraction |
-| 8 | Protocol Messages | CC teammateMailbox | Code | 🔄 In Progress | Structured comms |
-| 9 | Agent Registry | CC concurrentSessions | Code | 🔄 In Progress | Agent discovery |
-| 10 | Guard.sh Banned Prefixes | Codex ExecPolicy | Security | 🔄 In Progress | Command injection defense |
-| 11 | Guardian Risk Assessment | Codex policy.md | Security | 🔄 In Progress | Semantic risk eval |
+| 1 | Governor Synthesis Discipline | CC System Prompts | Prompt | ✅ Done | Agent output quality |
+| 2 | Verification Gate Adversarial | CC Verification Agent | Prompt | ✅ Done | Bug escape rate |
+| 3 | PreCompact 9-Section Structure | CC Compact Service | Hook | ✅ Done | Context continuity |
+| 4 | Collaboration Mode Switching | Codex CLI | Prompt | ✅ Done | Task precision |
+| 5 | Cheapest-First Gate Chain | CC AutoDream | Code | ✅ Done | Background task efficiency |
+| 6 | Address Scheme Registry | CC peerAddress | Code | ✅ Done | Unified routing |
+| 7 | Unified Executor Interface | CC backends/types | Code | ✅ Done | Agent abstraction |
+| 8 | Protocol Messages | CC teammateMailbox | Code | ✅ Done | Structured comms |
+| 9 | Agent Registry | CC concurrentSessions | Code | ✅ Done | Agent discovery |
+| 10 | Guard.sh Banned Prefixes | Codex ExecPolicy | Security | ✅ Done | Command injection defense |
+| 11 | Guardian Risk Assessment | Codex policy.md | Security | ✅ Done | Semantic risk eval |
 | 12 | Events-Before-Container | CC Teleport | Code | 📋 Pending | Dispatch race elimination |
 | 13 | Lock File mtime = State | CC consolidationLock | Code | 📋 Pending | Zero-dep state tracking |
 | 14 | Unified Message Router | CC SendMessageTool | Code | 📋 Pending | Single entry routing |
@@ -42,7 +42,7 @@
 | 32 | Memory No-Op Gate | Codex CLI | Prompt | 📋 Pending | Memory quality |
 | 33 | Exec Policy Rule Engine | Codex CLI | Security | 📋 Pending | Command parsing |
 | 34 | babysit-pr Skill | Codex CLI | Skill | 📋 Pending | PR automation |
-| 35 | Compaction as Handoff Summary | Codex CLI | Prompt | 📋 Pending | Session continuity |
+| 35 | Compaction as Handoff Summary | Codex CLI | Prompt | ✅ Done | Session continuity |
 
 ## P1 Notable Patterns (Next Wave)
 
@@ -73,10 +73,30 @@
 | Review 8 Bug Criteria | Codex CLI | Precise review rules |
 | Orchestrator Coordinator-Only | Codex CLI | Don't work while coordinating |
 
+## Digest Session: steal/digest-apr01 (10 new patterns)
+
+| # | Pattern | Source | Category | Status |
+|---|---------|--------|----------|--------|
+| D1 | Loop Detection Hook | DeerFlow 2.0 | Hook | ✅ Done |
+| D2 | Config Protection Hook | Everything CC | Hook | ✅ Done |
+| D3 | Boundary Nonce (injection defense) | yoyo-evolve | Security | ✅ Done |
+| D4 | Strategic Compact Decision Table | Everything CC | Prompt | ✅ Done |
+| D5 | Adaptive Pressure Levels | Headroom | Prompt | ✅ Done |
+| D6 | Session Handoff Protocol | Everything CC | Prompt | ✅ Done |
+| D7 | Evaluator-Fix Loop | yoyo-evolve | Prompt | ✅ Done |
+| D8 | Middleware Pipeline | DeerFlow 2.0 | Code | ✅ Done |
+| D9 | Memory Staleness Annotator | CC R29 | Tool | ✅ Done |
+| D10 | Instinct Learning Pipeline | Everything CC | Code | ✅ Done |
+
 ## Implementation Log
 
 | Time | Action | Commit |
 |------|--------|--------|
 | 23:xx | Raw steal docs committed | e4b884c |
-| 23:xx | 6 parallel agents dispatched | — |
-| — | Waiting for agents... | — |
+| 23:xx | 6 parallel agents dispatched (R28 p1) | — |
+| 01:xx | R28 p1 agents complete: synthesis/verification/compact/security/core4 | e844321→e94b0ef |
+| 15:xx | Digest session: 3 security hooks | bc0816b |
+| 15:xx | Digest session: compact template upgrade | 7d166fa |
+| 15:xx | Digest session: architecture (handoff/evaluator/middleware) | 979d117 |
+| 15:xx | Digest session: learning pipeline + staleness | 678c582 |
+| 15:xx | Merged steal/digest-apr01 → main | — |
