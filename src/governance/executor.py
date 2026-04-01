@@ -54,6 +54,7 @@ from src.governance.pipeline.output_compress import compress_output
 from src.governance.pipeline.input_compress import compress_input
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
+from src.governance.checkpoint_recovery import detect_checkpoint
 
 # ── Resilient Retry (stolen from ChatDev 2.0, Round 13) ──
 # Exception chain traversal for deeper failure classification.
@@ -754,6 +755,7 @@ class TaskExecutor:
 
         cost_limit = float(os.environ.get("TASK_COST_LIMIT", "0"))  # 0 = 不限
         router = get_router()
+        task_start_time = time.time()  # for checkpoint recovery
 
         output = "(no output)"
         status = "failed"
@@ -1082,6 +1084,20 @@ class TaskExecutor:
                 "final_status": status,
                 "max_attempts": rollout_cfg.max_attempts,
             })
+
+        # ── Checkpoint Recovery: capture partial progress on failure ──
+        # Stolen from yoyo-evolve Checkpoint-Restart (Round 30)
+        if status != "done":
+            checkpoint = detect_checkpoint(str(task_id), task_start_time, cwd=task_cwd)
+            if checkpoint:
+                log.info(f"TaskExecutor: checkpoint detected for task #{task_id}: "
+                         f"{len(checkpoint.commits_during_task)} commits, "
+                         f"{len(checkpoint.files_modified)} files modified")
+                self._log_agent_event(task_id, "checkpoint_recovery", {
+                    "commits": checkpoint.commits_during_task[:10],
+                    "files_modified": checkpoint.files_modified[:20],
+                    "resume_prompt_length": len(checkpoint.resume_prompt),
+                })
 
         # ── Patch: save on failure, cleanup on success ──
         if status == "done":
