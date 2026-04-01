@@ -9,6 +9,22 @@ COMMAND=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);pri
 # Exit early if no command
 [ -z "$COMMAND" ] && echo '{"decision":"allow"}' && exit 0
 
+# ── Try YAML rule engine first (fast, configurable) ──
+if [ -f "config/exec-policy.yaml" ] && command -v python3 &>/dev/null; then
+    RESULT=$(echo "$COMMAND" | python3 scripts/exec_policy_loader.py 2>/dev/null)
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 1 ]; then
+        echo "$RESULT"
+        exit 0
+    elif [ $EXIT_CODE -eq 0 ]; then
+        echo '{"decision":"allow"}'
+        exit 0
+    fi
+    # If python3 failed (non-0/1 exit), fall through to bash rules
+fi
+
+# ── Fallback: original bash rules (kept for resilience) ──
+
 # ============================================================
 # HARD BLOCK — immediate rejection
 # ============================================================
@@ -54,7 +70,7 @@ if echo "$COMMAND" | grep -qE 'cat\s+.*(/\.ssh/|/\.aws/|/\.gnupg/)' && \
 fi
 
 # 7. System file modification outside workspace
-if echo "$COMMAND" | grep -qE '(>\s*|tee\s+|cp\s+.*\s+|mv\s+.*\s+)(/etc/|/usr/|/var/|C:\\Windows\\)'; then
+if echo "$COMMAND" | grep -qE '(>\s*|tee\s+|cp\s+.*\s+|mv\s+.*\s+)(/etc/|/usr/|/var/|C:\Windows\)'; then
     echo '{"decision":"block","reason":"Modifying system files outside workspace — requires explicit authorization"}'
     exit 0
 fi
@@ -74,7 +90,7 @@ fi
 
 # ============================================================
 # INTERPRETER PREFIX INJECTION
-# Block python/node/ruby/perl/bash -c/-e with dangerous ops
+# Block python/node/ruby/bash -c/-e with dangerous ops
 # Source: Round 23 steal — Codex ExecPolicy banned prefixes
 # ============================================================
 

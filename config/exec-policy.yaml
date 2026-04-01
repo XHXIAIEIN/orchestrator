@@ -1,0 +1,111 @@
+# Execution Policy Rules — loaded by guard-redflags.sh
+# Source: Codex CLI ExecPolicy Rule Engine (Round 28c)
+#
+# Format: each rule has a name, patterns to match, and action (block/warn)
+# Rules are evaluated in order. First match wins.
+
+version: 1
+
+rules:
+  - name: soul-exfiltration
+    action: block
+    description: "SOUL/private exfiltration — reading private files + network"
+    match_all:
+      - pattern: "(SOUL/private|IDENTITY\\.md|experiences\\.jsonl|hall-of-instances)"
+        flags: "i"
+      - pattern: "(curl|wget|nc |ncat|python.*http|requests\\.|fetch)"
+        flags: "i"
+
+  - name: memory-exfiltration
+    action: block
+    description: "MEMORY.md exfiltration — sending memory over network"
+    match_all:
+      - pattern: "MEMORY\\.md"
+        flags: "i"
+      - pattern: "(curl|wget|nc |ncat)"
+        flags: "i"
+
+  - name: raw-ip-network
+    action: block
+    description: "Network request to raw IP (not localhost/docker)"
+    match_all:
+      - pattern: "(curl|wget)\\s+.*https?://[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"
+    exclude:
+      - pattern: "(127\\.0\\.0\\.1|localhost|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.|10\\.)"
+
+  - name: eval-injection
+    action: block
+    description: "eval/exec with external input"
+    match_any:
+      - pattern: "(eval|exec)\\s*\\$|eval\\s+\\$\\(|eval\\s+\"?\\$"
+
+  - name: sudo-escalation
+    action: block
+    description: "sudo privilege escalation"
+    match_any:
+      - pattern: "\\bsudo\\b"
+
+  - name: credential-theft
+    action: block
+    description: "Reading credential dirs with network/encoding tools"
+    match_all:
+      - pattern: "cat\\s+.*(/\\.ssh/|/\\.aws/|/\\.gnupg/)"
+      - pattern: "(curl|wget|nc |python|base64)"
+        flags: "i"
+
+  - name: system-file-modification
+    action: block
+    description: "Modifying system files outside workspace"
+    match_any:
+      - pattern: "(>\\s*|tee\\s+|cp\\s+.*\\s+|mv\\s+.*\\s+)(/etc/|/usr/|/var/|C:\\\\Windows\\\\)"
+
+  - name: silent-install
+    action: block
+    description: "Silent package installation"
+    match_any:
+      - pattern: "(pip|npm|gem|cargo)\\s+install.*(-q|--quiet|-s|--silent)"
+
+  - name: browser-cookie-access
+    action: block
+    description: "Browser cookie/session access"
+    match_all:
+      - pattern: "(Cookies|Login\\s*Data|Session|\\.cookie)"
+        flags: "i"
+      - pattern: "(sqlite3|cat|cp|curl)"
+        flags: "i"
+
+  - name: interpreter-injection
+    action: block
+    description: "Interpreter prefix with dangerous operations"
+    match_all:
+      - pattern: "(python3?\\s+-c|node\\s+-e|ruby\\s+-e|perl\\s+-e)\\s"
+      - pattern: "(requests\\.|urllib|http\\.client|socket\\.|subprocess|os\\.remove|os\\.unlink|shutil\\.rmtree|eval\\(|exec\\(|__import__|curl|wget|rm\\s+-rf)"
+        flags: "i"
+
+  - name: shell-dangerous
+    action: block
+    description: "bash/sh -c with dangerous operations"
+    match_all:
+      - pattern: "(bash|sh)\\s+-c\\s"
+      - pattern: "(curl|wget|nc\\s|ncat|rm\\s+-rf|dd\\s+if=|mkfs|>\\s*/dev/|eval\\s|base64)"
+        flags: "i"
+
+  - name: shell-nesting
+    action: block
+    description: "Double shell nesting (evasion technique)"
+    match_any:
+      - pattern: "(bash|sh)\\s+-c\\s.*(bash|sh)\\s+-c\\s"
+
+  - name: base64-execution
+    action: block
+    description: "Base64 decode piped to execution"
+    match_any:
+      - pattern: "base64\\s+(-d|--decode)\\s*\\|.*\\b(bash|sh|python|perl|ruby|node)\\b"
+        flags: "i"
+
+  - name: base64-chain
+    action: block
+    description: "echo/printf to base64 decode to shell"
+    match_any:
+      - pattern: "(echo|printf)\\s.*\\|\\s*base64\\s+(-d|--decode)\\s*\\|\\s*(bash|sh)"
+        flags: "i"
