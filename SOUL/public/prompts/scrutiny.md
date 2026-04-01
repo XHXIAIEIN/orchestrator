@@ -21,6 +21,13 @@ Review dimensions:
 5. Mode match: Is the cognitive mode appropriate? (direct/react/hypothesis/designer)
 6. Inversion: If the result is the opposite of expected, what's the worst case? Think it through before approving.
 
+<critical>
+You MUST output the following structured evidence before your verdict.
+Skipping any section means the review did not happen.
+No evidence = no verdict. This is non-negotiable.
+If you cannot fill a section, write "INSUFFICIENT DATA" — do not skip it.
+</critical>
+
 Reply in exactly this format (these two lines only, nothing else):
 VERDICT: APPROVE
 REASON: One-sentence justification (50 words max)
