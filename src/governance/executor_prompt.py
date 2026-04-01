@@ -89,6 +89,9 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     cognitive_mode = classify_cognitive_mode(task)
     mode_prompt = COGNITIVE_MODE_PROMPTS.get(cognitive_mode, "")
 
+    # ── Methodology Router (Round 35 PUA steal — task type → thinking framework) ──
+    methodology_prompt = _resolve_methodology(task, cognitive_mode)
+
     # 注入最近执行记录
     recent_runs = load_recent_runs(dept_key, n=5) if load_recent_runs else []
     runs_context = format_runs_for_context(recent_runs) if format_runs_for_context else ""
@@ -97,6 +100,8 @@ def build_execution_prompt(task: dict, dept_key: str, dept: dict,
     prompt = dept_prompt
     if mode_prompt:
         prompt += "\n\n" + mode_prompt
+    if methodology_prompt:
+        prompt += "\n\n" + methodology_prompt
 
     # ── Voice Directive: inject department voice parameters (gstack) ──
     if _VoiceDirective:
@@ -219,3 +224,99 @@ def _get_condenser_config(dept: dict, blueprint=None) -> dict:
         if isinstance(bp_config, dict):
             config.update(bp_config)
     return config
+
+
+# ── Methodology Router (stolen from PUA flavor-based methodology, Round 35) ──
+# Maps task characteristics to thinking frameworks. Deterministic, not LLM-judged.
+# The methodology is injected into the task prompt as a ~80 token compass.
+
+_METHODOLOGY_TABLE = {
+    "debug": {
+        "name": "RCA (Root Cause Analysis)",
+        "principle": "Diagnose before treating",
+        "steps": "1. Reproduce 2. Hypothesize (2-3 causes) 3. Verify each 4. Fix confirmed cause 5. Regression test",
+    },
+    "build": {
+        "name": "First Principles",
+        "principle": "Question every assumption",
+        "steps": "1. Simplest version? 2. What constraints? 3. Build minimal 4. Iterate",
+    },
+    "review": {
+        "name": "Subtraction",
+        "principle": "Less is more",
+        "steps": "1. What can be removed? 2. What can be simplified? 3. Blast radius? 4. One owner per decision",
+    },
+    "research": {
+        "name": "Search First",
+        "principle": "Don't reinvent",
+        "steps": "1. Search codebase 2. Search docs 3. Search web 4. Synthesize 5. Form opinion",
+    },
+    "architect": {
+        "name": "Working Backwards",
+        "principle": "Start from the user",
+        "steps": "1. Ideal usage 2. Define interface 3. Design implementation 4. Identify risks",
+    },
+    "performance": {
+        "name": "Measure First",
+        "principle": "No premature optimization",
+        "steps": "1. Profile/benchmark 2. Identify bottleneck 3. Hypothesize fix 4. Implement 5. Measure again",
+    },
+    "deploy": {
+        "name": "Closed Loop",
+        "principle": "Every action has verification",
+        "steps": "1. Pre-check 2. Execute 3. Verify 4. Monitor 5. Rollback plan ready",
+    },
+    "refactor": {
+        "name": "Preserve Behavior",
+        "principle": "Tests are the contract",
+        "steps": "1. Tests pass 2. Refactor one thing 3. Tests pass again 4. Repeat",
+    },
+}
+
+# Keywords that signal each methodology type (checked against action + problem text)
+_METHODOLOGY_SIGNALS = {
+    "debug": ["fix", "bug", "error", "broken", "fail", "crash", "issue", "debug", "修复", "报错", "崩溃"],
+    "build": ["add", "create", "implement", "new feature", "build", "新建", "新增", "实现"],
+    "review": ["review", "audit", "check", "inspect", "审查", "检查"],
+    "research": ["research", "investigate", "find out", "explore", "understand", "调研", "研究", "了解"],
+    "architect": ["design", "architect", "restructure", "plan", "设计", "架构", "规划"],
+    "performance": ["performance", "slow", "optimize", "speed", "latency", "性能", "优化", "慢"],
+    "deploy": ["deploy", "release", "publish", "ship", "部署", "发布", "上线"],
+    "refactor": ["refactor", "clean", "reorganize", "simplify", "重构", "简化", "整理"],
+}
+
+
+def _resolve_methodology(task: dict, cognitive_mode: str) -> str:
+    """Resolve methodology for a task. Returns a compact prompt block or empty string.
+
+    Priority:
+    1. Cognitive mode override: hypothesis → RCA, designer → Working Backwards
+    2. Keyword matching against action + problem text
+    3. No match → no injection (direct mode tasks don't need methodology)
+    """
+    # Cognitive mode overrides
+    if cognitive_mode == "hypothesis":
+        method = _METHODOLOGY_TABLE["debug"]
+    elif cognitive_mode == "designer":
+        method = _METHODOLOGY_TABLE["architect"]
+    elif cognitive_mode == "direct":
+        return ""  # Trivial tasks don't need methodology
+    else:
+        # Keyword matching
+        spec = task.get("spec", {}) if isinstance(task.get("spec"), dict) else {}
+        text = f"{task.get('action', '')} {spec.get('problem', '')} {spec.get('summary', '')}".lower()
+
+        method = None
+        for method_key, signals in _METHODOLOGY_SIGNALS.items():
+            if any(sig in text for sig in signals):
+                method = _METHODOLOGY_TABLE[method_key]
+                break
+
+    if not method:
+        return ""
+
+    return (
+        f"[Methodology: {method['name']}]\n"
+        f"{method['principle']}\n"
+        f"Steps: {method['steps']}"
+    )
