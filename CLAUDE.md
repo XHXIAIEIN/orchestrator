@@ -33,12 +33,14 @@ For multi-step tasks, state a brief plan with verification:
 - **Atomic steps**: Each step is 2-5 minutes, starts with an action verb, has an explicit verify command.
 - **No Placeholder Iron Rule**: Never write vague steps. Banned: "implement the logic", "add appropriate error handling", "update as needed", "etc.", "similar to X", bare "refactor"/"clean up"/"optimize". Every step must specify exact targets, exact changes, exact verification.
 - **Explicit dependencies**: If step N depends on step M, write `depends on: step M`. Implicit ordering is not allowed.
+- **Delete Before Rebuild**: For files >300 LOC undergoing structural refactor, first remove dead code (unused exports/imports/props/debug logs) and commit separately. Then start the real work with a clean token budget.
 
 ### Surgical Changes
 - Every changed line must trace directly to the user's request. If it doesn't, revert it.
 - Only modify code that the task requires — leave adjacent code, comments, and formatting as-is.
 - Match existing style, even if you'd do it differently.
 - Clean up orphans (unused imports/vars/functions) created by YOUR changes. Leave pre-existing dead code alone unless asked.
+- **Edit Integrity**: Before every edit, re-read the file. After editing, read it again to confirm the change applied. The Edit tool fails silently when old_string doesn't match stale context. Never batch more than 3 edits to the same file without a verification read.
 
 <critical>
 
