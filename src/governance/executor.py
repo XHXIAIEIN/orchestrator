@@ -50,6 +50,7 @@ from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
 from src.governance.execution_response import ExecutionResponse
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
+from src.governance.checkpoint_recovery import detect_checkpoint
 
 
 # ── Rollout Configuration (stolen from agent-lightning Round 8) ──
@@ -520,6 +521,7 @@ class TaskExecutor:
 
         cost_limit = float(os.environ.get("TASK_COST_LIMIT", "0"))  # 0 = 不限
         router = get_router()
+        task_start_time = time.time()  # for checkpoint recovery
 
         output = "(no output)"
         status = "failed"
@@ -664,6 +666,20 @@ class TaskExecutor:
                 "final_status": status,
                 "max_attempts": rollout_cfg.max_attempts,
             })
+
+        # ── Checkpoint Recovery: capture partial progress on failure ──
+        # Stolen from yoyo-evolve Checkpoint-Restart (Round 30)
+        if status != "done":
+            checkpoint = detect_checkpoint(str(task_id), task_start_time, cwd=task_cwd)
+            if checkpoint:
+                log.info(f"TaskExecutor: checkpoint detected for task #{task_id}: "
+                         f"{len(checkpoint.commits_during_task)} commits, "
+                         f"{len(checkpoint.files_modified)} files modified")
+                self._log_agent_event(task_id, "checkpoint_recovery", {
+                    "commits": checkpoint.commits_during_task[:10],
+                    "files_modified": checkpoint.files_modified[:20],
+                    "resume_prompt_length": len(checkpoint.resume_prompt),
+                })
 
         # ── Patch: save on failure, cleanup on success ──
         if status == "done":
