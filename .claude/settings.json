@@ -44,6 +44,16 @@
         ]
       },
       {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/config-protect.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
@@ -71,6 +81,11 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/persona-anchor.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/loop-detector.sh",
             "timeout": 3
           }
         ]

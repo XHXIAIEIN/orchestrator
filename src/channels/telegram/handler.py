@@ -7,6 +7,7 @@ import urllib.request
 
 from src.channels import config as ch_cfg
 from src.channels import chat as chat_engine
+from src.channels.boundary_nonce import wrap_untrusted_block
 from src.channels.media import (
     MediaAttachment, MediaType, download_url, extract_document_text,
 )
@@ -34,6 +35,10 @@ class TelegramHandler:
         """Route a (possibly batched) message to chat engine."""
         if not text and attachments:
             text = self._describe_media(attachments)
+
+        # Security: wrap external input with nonce boundary to prevent injection
+        text = wrap_untrusted_block(text, label="telegram_message",
+                                    source=f"telegram/{chat_id}")
 
         if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
             file_path, char_count = chat_engine.save_to_inbox(text)

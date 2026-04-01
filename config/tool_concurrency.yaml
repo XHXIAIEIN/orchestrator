@@ -1,0 +1,37 @@
+# Tool Concurrency Safety — declares which tools can safely run in parallel.
+# Stolen from Claude Code v2.1.88 StreamingToolExecutor.isConcurrencySafe().
+#
+# Categories:
+#   safe:     Can run concurrently with any other tool (read-only, no side effects)
+#   unsafe:   Must run exclusively (mutates files, state, or external systems)
+#   guarded:  Can run concurrently within the same guard group, but not across groups
+#
+# Default: tools not listed are treated as 'unsafe' (conservative).
+
+safe:
+  - Read
+  - Glob
+  - Grep
+  - LS
+  - WebSearch
+  - WebFetch
+  - TaskGet
+  - TaskList
+  - NotebookRead
+
+unsafe:
+  - Edit
+  - Write
+  - Bash
+  - NotebookEdit
+  - mcp__*        # All MCP tools default unsafe (external side effects)
+
+guarded:
+  # Tools in the same guard group can run together, but block other groups.
+  git_ops:
+    - git_status
+    - git_diff
+    - git_log
+  docker_ops:
+    - docker_ps
+    - docker_logs

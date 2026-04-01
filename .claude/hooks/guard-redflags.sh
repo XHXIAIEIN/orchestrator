@@ -73,6 +73,56 @@ if echo "$COMMAND" | grep -qiE '(Cookies|Login\s*Data|Session|\.cookie)' && \
 fi
 
 # ============================================================
+# INTERPRETER PREFIX INJECTION
+# Block python/node/ruby/perl/bash -c/-e with dangerous ops
+# Source: Round 23 steal — Codex ExecPolicy banned prefixes
+# ============================================================
+
+# 10. Interpreter prefix + dangerous operations (network/deletion/eval)
+if echo "$COMMAND" | grep -qE '(python3?\s+-c|node\s+-e|ruby\s+-e|perl\s+-e)\s' && \
+   echo "$COMMAND" | grep -qiE '(requests\.|urllib|http\.client|socket\.|subprocess|os\.remove|os\.unlink|shutil\.rmtree|eval\(|exec\(|__import__|curl|wget|rm\s+-rf)'; then
+    echo '{"decision":"block","reason":"Interpreter prefix injection detected — inline script with dangerous operations (network/deletion/eval)"}'
+    exit 0
+fi
+
+# 11. bash -c / sh -c with dangerous operations
+if echo "$COMMAND" | grep -qE '(bash|sh)\s+-c\s' && \
+   echo "$COMMAND" | grep -qiE '(curl|wget|nc\s|ncat|rm\s+-rf|dd\s+if=|mkfs|>\s*/dev/|eval\s|base64)'; then
+    echo '{"decision":"block","reason":"Shell -c with dangerous operations detected — potential guard bypass via shell prefix injection"}'
+    exit 0
+fi
+
+# ============================================================
+# SHELL NESTING DETECTION
+# Block double-nested shell invocations (evasion technique)
+# Source: Round 23 steal — Codex ExecPolicy shell nesting
+# ============================================================
+
+# 12. Double shell nesting: bash -c "bash -c ...", sh -c "sh -c ..."
+if echo "$COMMAND" | grep -qE '(bash|sh)\s+-c\s.*\b(bash|sh)\s+-c\s'; then
+    echo '{"decision":"block","reason":"Shell nesting detected — double bash/sh -c is a common evasion technique"}'
+    exit 0
+fi
+
+# ============================================================
+# BASE64 DECODE TO EXECUTION
+# Block base64 decode piped to shell execution
+# Source: Round 23 steal — Codex ExecPolicy obfuscation detection
+# ============================================================
+
+# 13. Base64 decode piped to execution
+if echo "$COMMAND" | grep -qiE 'base64\s+(-d|--decode)\s*\|.*\b(bash|sh|python|perl|ruby|node)\b'; then
+    echo '{"decision":"block","reason":"Base64 decode piped to execution detected — obfuscated command execution is forbidden"}'
+    exit 0
+fi
+
+# 14. Reverse pattern: echo/printf to base64 decode to execution
+if echo "$COMMAND" | grep -qiE '(echo|printf)\s.*\|\s*base64\s+(-d|--decode)\s*\|\s*(bash|sh)'; then
+    echo '{"decision":"block","reason":"Base64 decode chain to shell detected — obfuscated command execution is forbidden"}'
+    exit 0
+fi
+
+# ============================================================
 # ALLOW — all checks passed
 # ============================================================
 echo '{"decision":"allow"}'

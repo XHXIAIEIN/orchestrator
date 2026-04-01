@@ -46,6 +46,14 @@ Do not argue with it. Execute the correct behavior immediately.
 | "I checked it already" (but you didn't) | Self-deception under time pressure is the #1 cause of data loss. If you can't point to the exact line you verified, you didn't check. | Actually check. Show the evidence. |
 | "A quick reset will fix this" | Uncommitted work may represent hours of effort. Gone is gone. | Diagnose with `git diff`. Fix surgically. Backup before any reset. |
 
+## Verification-Specific
+
+| Rationalization | Rebuttal | Correct Behavior |
+|---|---|---|
+| "The test is trivial" | Trivial code still breaks. One-line changes have caused outages. The test that feels pointless is the one that catches the regression you didn't predict. | Write and run the trivial test. It takes 30 seconds. |
+| "I ran similar checks already" | "Similar" ≠ "same". Different input, different state, different code path. The check you skip is the one where the bug hides. | Run the exact check for this specific change. |
+| "The change is purely cosmetic" | Cosmetic changes can break parsers, configs, layouts, and screen readers. A "harmless" whitespace change has broken YAML, Makefiles, and Python. | Verify cosmetic changes the same as functional ones. |
+
 ## Meta-Rationalization
 
 | Rationalization | Rebuttal | Correct Behavior |
