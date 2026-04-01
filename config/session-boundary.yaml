@@ -1,0 +1,55 @@
+# Session Boundary Rules — when to recommend a new session
+# Evaluated when a new task arrives mid-conversation
+# The assistant checks these rules and suggests handoff if triggered
+
+version: 1
+
+# Hard triggers: any ONE of these → strongly recommend new session
+hard_triggers:
+  - name: topic_shift
+    description: "New task is unrelated to current conversation topic"
+    signal: "No shared files, modules, or domain between current and new task"
+
+  - name: phase_boundary
+    description: "New task is a different phase (spec vs plan vs implement vs review)"
+    signal: "Current session did planning, new task asks for implementation"
+
+  - name: context_pressure
+    description: "Context window usage is above threshold"
+    signal: "Conversation has >50 tool calls or >30 messages"
+
+  - name: steal_or_research
+    description: "Task involves steal/偷师, deep research, or multi-repo exploration"
+    signal: "Will need to read 10+ files from external sources"
+
+  - name: full_feature
+    description: "Task is a complete feature from scratch (not a tweak or fix)"
+    signal: "Requires spec → plan → implement → test cycle"
+
+# Soft triggers: 2+ of these → suggest new session
+soft_triggers:
+  - name: different_context_pack
+    description: "Would need to load different context packs than currently loaded"
+    signal: "Current session is backend, new task is frontend/SOUL/infra"
+
+  - name: large_diff
+    description: "Estimated change is >300 LOC or >5 files"
+    signal: "Based on task description complexity"
+
+  - name: unrelated_branch
+    description: "Should be on a different git branch"
+    signal: "Current branch is steal/X, new task is a bugfix"
+
+  - name: accumulated_staleness
+    description: "Long session with multiple compactions — file context may be stale"
+    signal: "Session has been compacted 2+ times"
+
+# What to do when triggered
+action:
+  # Write handoff using session_handoff.md protocol
+  write_handoff: true
+  # Include a startup prompt for the new session
+  startup_prompt_template: |
+    Continue from handoff at .remember/now.md
+    New task: {task_description}
+    Priority: {priority}
