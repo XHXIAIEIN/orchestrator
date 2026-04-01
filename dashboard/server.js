@@ -1635,6 +1635,54 @@ else:
   });
 });
 
+// ── SSE Progress Streaming (stolen from agentlytics Round 32) ──
+// Streams real-time progress events during collection runs.
+app.get('/api/collect/stream', (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+    });
+
+    const heartbeat = setInterval(() => {
+        res.write(': heartbeat\n\n');
+    }, 15000);
+
+    const child = spawn('python3', ['scripts/collect.py', '--progress'], {
+        cwd: path.join(__dirname, '..'),
+        env: { ...process.env, PROGRESS_MODE: '1' },
+    });
+
+    child.stdout.on('data', (data) => {
+        const lines = data.toString().trim().split('\n');
+        for (const line of lines) {
+            try {
+                const event = JSON.parse(line);
+                res.write(`event: ${event.type || 'progress'}\n`);
+                res.write(`data: ${JSON.stringify(event)}\n\n`);
+            } catch {
+                res.write(`event: log\ndata: ${JSON.stringify({ message: line })}\n\n`);
+            }
+        }
+    });
+
+    child.stderr.on('data', (data) => {
+        res.write(`event: error\ndata: ${JSON.stringify({ message: data.toString().trim() })}\n\n`);
+    });
+
+    child.on('close', (code) => {
+        clearInterval(heartbeat);
+        res.write(`event: complete\ndata: ${JSON.stringify({ exit_code: code })}\n\n`);
+        res.end();
+    });
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        child.kill('SIGTERM');
+    });
+});
+
 // ── WebSocket 增强：session ID + 断线消息补发 ──
 const crypto = require('crypto');
 const WS_BUFFER_MAX = 200;  // 最多缓存 200 条消息
