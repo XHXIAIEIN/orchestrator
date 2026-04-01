@@ -1,0 +1,68 @@
+# Stall Detection Patterns — loaded by stall-detector.sh + persona-anchor.sh
+# Detects confirmation-seeking behavior that violates "execute directly" rule
+#
+# Format: regex patterns grouped by category
+# Used with grep -iE (case-insensitive extended regex)
+
+version: 1
+
+# Injected into persona-anchor every N tool calls (keep short, ~1 line)
+anchor_reminder: "Do NOT ask for confirmation. Execute directly, report after."
+
+# Sample banned phrases shown in anchor (rotated subset for variety)
+anchor_examples:
+  - "should I"
+  - "want me to"
+  - "要不要"
+  - "这样可以吗"
+  - "如果没问题"
+  - "before I proceed"
+
+patterns:
+  # English — model's default safety instinct
+  en_direct:
+    - "should I"
+    - "want me to"
+    - "shall I"
+    - "would you like"
+    - "do you want"
+    - "let me know if"
+    - "before I proceed"
+    - "before proceeding"
+    - "if you.re okay"
+    - "if that.s okay"
+    - "ready to proceed"
+
+  # Chinese — direct confirmation seeking
+  zh_direct:
+    - "要不要"
+    - "是否需要"
+    - "需要我"
+    - "需要确认"
+    - "等你确认"
+    - "请确认"
+    - "你确定"
+
+  # Chinese — polite/indirect
+  zh_indirect:
+    - "你觉得呢"
+    - "你意下如何"
+    - "你看[怎行]"
+    - "这样可以吗"
+    - "这样行吗"
+    - "可以吗？"
+    - "行吗？"
+    - "好吗？"
+    - "如果你同意"
+    - "如果没问题"
+    - "没问题的话"
+    - "你同意的话"
+    - "方便的话"
+    - "接下来[要怎]"
+
+  # Chinese — hedging/deferring
+  zh_hedge:
+    - "先[问确].*一下"
+    - "我[先想打]算"
+    - "还是.*你来决定"
+    - "取决于你"
