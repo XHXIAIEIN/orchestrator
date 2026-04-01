@@ -40,6 +40,13 @@ case "$BASENAME" in
         IS_CONFIG=true ;;
     .editorconfig)
         IS_CONFIG=true ;;
+    .env|.env.*|.envrc)
+        IS_CONFIG=true ;;
+    settings.json|settings.local.json)
+        if echo "$FILE_PATH" | grep -qE '\.claude/'; then
+            IS_CONFIG=true
+        fi
+        ;;
     pyproject.toml|setup.cfg)
         # Only protect if editing tool-config sections — check content
         EDIT_CONTENT=$(echo "$INPUT" | python3 -c "
@@ -79,7 +86,7 @@ except:
 
 # Relaxation indicators
 IS_RELAXING=false
-if echo "$CHANGE_CONTENT" | grep -qiE '(\"off\"|: *0|disable|no-|ignore|skip|suppress|allow|relaxed|nocheck|@ts-ignore|@ts-nocheck|# noqa|# type: ignore|# pylint: disable|eslint-disable|prettier-ignore)'; then
+if echo "$CHANGE_CONTENT" | grep -qiE '("off"|: *0|disable|no-|ignore|skip|suppress|allow|relaxed|nocheck|@ts-ignore|@ts-nocheck|# noqa|# type: ignore|# pylint: disable|eslint-disable|prettier-ignore)'; then
     IS_RELAXING=true
 fi
 

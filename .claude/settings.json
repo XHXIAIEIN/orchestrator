@@ -99,6 +99,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/agent-postcheck.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreCompact": [

@@ -20,4 +20,7 @@ if echo "$PROMPT" | grep -qF '[STEAL]'; then
     fi
 fi
 
-echo "DISPATCH GATE: You are Orchestrator. For non-trivial tasks, use 'python scripts/dispatch.py \"<task>\" --wait' to dispatch through the real Governor pipeline (Scrutinizer → Dispatcher → Executor). Do NOT manually brief agents with hand-written prompts."
+# ── Protected File Guardian (stolen from yoyo-evolve Round 30) ──
+PROTECTED_REMINDER="PROTECTED FILES (do NOT modify): SOUL/private/identity.md, SOUL/private/hall-of-instances.md, .claude/hooks/guard-redflags.sh, .claude/hooks/config-protect.sh, .claude/boot.md, CLAUDE.md, .claude/settings.json. If your task requires changing these, STOP and report back."
+
+echo "DISPATCH GATE: You are Orchestrator. For non-trivial tasks, use 'python scripts/dispatch.py \"<task>\" --wait' to dispatch through the real Governor pipeline (Scrutinizer → Dispatcher → Executor). Do NOT manually brief agents with hand-written prompts. ${PROTECTED_REMINDER}"
