@@ -41,5 +41,9 @@ class Channel(ABC):
     def stop(self):
         """停止监听。"""
 
+    def get_platform_hints(self) -> str:
+        """返回平台规则提示词（子类覆写）。"""
+        return ""
+
     def __repr__(self):
         return f"<Channel:{self.name} enabled={self.enabled}>"

@@ -3,7 +3,15 @@
 # Attached to PreToolUse(Bash) in settings.local.json
 # Performance: jq (~5ms) instead of python3 (~60ms) — Round 35 steal
 
-INPUT=$(head -c 65536)
+INPUT=$(cat)
+
+# ── Guard clause: non-Bash tools are irrelevant ──
+# R35c: guard clause — zero-cost exit for non-Bash tools
+tool_name=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+if [ "$tool_name" != "Bash" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
 
 # Extract command
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)

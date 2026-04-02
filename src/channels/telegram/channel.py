@@ -33,6 +33,9 @@ _PLATFORM_RULES = (
     "# Platform: Telegram (HTML mode)\n"
     "- Use <b>bold</b> and <code>code</code>. No Markdown syntax.\n"
     "- No Markdown headings (#). No emoji.\n"
+    "- Max message length: 4096 chars. Split longer content into multiple messages.\n"
+    "- Code blocks use <pre><code class=\"language-xxx\">...</code></pre>.\n"
+    "- Inline links: <a href=\"url\">text</a>.\n"
     "- NEVER fabricate image/file URLs. Only use real, accessible URLs.\n"
     "\n"
     "## Image modes (pick ONE per message, or omit for plain text):\n"
@@ -41,6 +44,16 @@ _PLATFORM_RULES = (
     "2. <preview>URL</preview>  — Large link-preview above text (articles, dashboards).\n"
     "3. <thumb>URL</thumb>  — Small link-preview below text (subtle reference).\n"
 )
+
+# Telegram 平台能力声明（供外部模块查询）
+PLATFORM_CAPABILITIES = {
+    "markdown": False,
+    "html": True,
+    "images": True,
+    "voice": True,
+    "max_message_length": 4096,
+    "code_blocks": True,
+}
 
 
 class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
@@ -311,6 +324,12 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
                 typing_stop.set()
 
         threading.Thread(target=_chat_with_typing, name="tg-chat", daemon=True).start()
+
+    # ── 平台提示 ──────────────────────────────────────────────────────────
+
+    def get_platform_hints(self) -> str:
+        """返回 Telegram 平台规则提示词。"""
+        return _PLATFORM_RULES
 
     # ── 系统提示词 ──────────────────────────────────────────────────────────
 

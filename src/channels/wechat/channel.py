@@ -25,9 +25,22 @@ log = logging.getLogger(__name__)
 # WeChat 平台规则（注入系统提示词）
 _PLATFORM_RULES = (
     "# Platform: WeChat\n"
-    "- Plain text only. No Markdown, no emoji. WeChat doesn't render formatting.\n"
-    "- Images and text arrive as separate messages. When text follows images, it refers to those images.\n"
+    "- Plain text only. Absolutely NO formatting — no asterisks, no backticks, no HTML tags.\n"
+    "- No Markdown, no emoji. WeChat doesn't render any formatting.\n"
+    "- Max message length ~2048 chars; longer content is auto-split.\n"
+    "- Images and voice arrive as separate messages. Reference them by order (第一张图/第二段语音).\n"
+    "- When text follows images, it refers to those images.\n"
 )
+
+# WeChat 平台能力声明（供外部模块查询）
+PLATFORM_CAPABILITIES = {
+    "markdown": False,
+    "html": False,
+    "images": True,
+    "voice": True,
+    "max_message_length": 2048,
+    "code_blocks": False,
+}
 
 
 class WeChatChannel(WeChatSender, WeChatHandler, Channel):
@@ -126,6 +139,12 @@ class WeChatChannel(WeChatSender, WeChatHandler, Channel):
                     self._consecutive_failures = 0
                 else:
                     self._stop_event.wait(timeout=RETRY_S)
+
+    # ── 平台提示 ──────────────────────────────────────────────────────────
+
+    def get_platform_hints(self) -> str:
+        """返回 WeChat 平台规则提示词。"""
+        return _PLATFORM_RULES
 
     # ── 系统提示词 ──────────────────────────────────────────────────────────
 

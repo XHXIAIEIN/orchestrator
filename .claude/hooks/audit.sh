@@ -4,7 +4,13 @@
 
 INPUT=$(cat)
 LOG_DIR="D:/Agent/tmp/audit-logs"
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" 2>/dev/null
+
+# ── Guard clause: if log dir is not writable, skip silently ──
+# R35c: guard clause — don't waste cycles if we can't write anyway
+if [ ! -d "$LOG_DIR" ] || [ ! -w "$LOG_DIR" ]; then
+    exit 0
+fi
 
 LOG_FILE="$LOG_DIR/$(date +%Y-%m-%d).jsonl"
 
