@@ -48,6 +48,41 @@ Start by doing X, then verify with Y.
 - Before switching to a different task branch
 - When you detect the conversation is winding down
 
+## Example
+
+```markdown
+# Session Handoff — 2026-04-03 14:30
+
+## 1. What I Was Doing
+Rewriting department prompt.md files to add structured output formats and escalation conditions.
+
+## 2. What Worked (Validated)
+- Engineering 4/4 prompts rewritten — verified by reading each file back
+- Operations 4/4 prompts rewritten — verified by reading each file back
+- Scrutiny prompt contradiction fixed — parser test: `grep "VERDICT" output` still matches
+
+## 3. What Failed
+- Tried to Write files without reading first — Edit tool requires prior Read (error: "File has not been read yet")
+- Workaround: batch-read all 19 remaining files, then batch-write
+
+## 4. Untried Approaches
+- Could validate prompts by running a test dispatch through Governor to see if output matches new format
+
+## 5. Key Files Touched
+- D:\Users\Administrator\Documents\GitHub\orchestrator\departments\*/*/prompt.md — all 24 files
+- D:\Users\Administrator\Documents\GitHub\orchestrator\SOUL\public\prompts\scrutiny.md
+
+## 6. Decisions Made
+- Chose ~40 line prompts over ~100 line — balance between specificity and token budget in assembled prompt
+- Kept Output Format as fenced code block, not YAML — easier for models to pattern-match
+
+## 7. Blockers
+N/A
+
+## 8. Recommended Next Step
+Start by committing the changes in two batches (departments + core), then run a test dispatch to verify new output formats work end-to-end.
+```
+
 ## Rules
 
 - Sections 1, 2, 3 are mandatory. Others can be "N/A" if truly not applicable.

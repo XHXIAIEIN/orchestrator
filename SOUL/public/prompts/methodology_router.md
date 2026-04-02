@@ -32,6 +32,13 @@ When the current approach isn't working, switch methodology based on the failure
 | Code works but wrong approach | Works but fragile/complex | Subtraction — what can you remove? |
 | Performance issue | "It's slow" without numbers | Measure First — profile before guessing |
 
+### Examples
+
+- **Same error repeating**: You've tried 3 different fixes for `KeyError: 'user_id'` but the error keeps appearing → you're fixing the symptom, not the cause. Switch to RCA: where does `user_id` get set? Trace backwards from the error.
+- **Different error each time**: First `ImportError`, then `TypeError`, then `AttributeError` → you're making cascading changes without isolating the variable. Switch to First Principles: revert everything, change ONE thing, observe.
+- **Going in circles**: You've restructured the config twice and are now considering a third layout → you've lost sight of the goal. Switch to Working Backwards: write the ideal usage first, then work backward to the implementation.
+- **Giving up**: "This probably needs a different library" or "The API doesn't support this" → you haven't searched thoroughly. Switch to Search First: check the actual docs, search for issues, look at examples.
+
 ## Integration with Cognitive Modes
 
 This router supplements, not replaces, the cognitive mode system:
