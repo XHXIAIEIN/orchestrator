@@ -66,11 +66,27 @@ def evaluate(command: str, rules: list[dict] | None = None) -> tuple[str, str]:
     return "allow", ""
 
 
+def strip_heredoc(command: str) -> str:
+    """Strip heredoc bodies from command — they are data, not code.
+
+    Without this, commit messages like 'removed sudo usage' trigger
+    false positives on the sudo-escalation rule.
+    """
+    lines = command.split("\n")
+    if len(lines) <= 1:
+        return command
+    # If command contains heredoc marker, keep only the first line (the actual command)
+    if re.search(r"<<['\"]?\w+", lines[0]):
+        return lines[0]
+    return command
+
+
 if __name__ == "__main__":
     command = sys.stdin.read().strip()
     if not command:
         sys.exit(0)
 
+    command = strip_heredoc(command)
     action, reason = evaluate(command)
     if action == "block":
         print(json.dumps({"decision": "block", "reason": reason}))

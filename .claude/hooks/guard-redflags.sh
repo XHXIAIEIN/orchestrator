@@ -46,6 +46,14 @@ if [ -f "config/exec-policy.yaml" ] && command -v python3 &>/dev/null; then
     # If python3 failed (non-0/1 exit), fall through to bash rules
 fi
 
+# ── Pre-process: strip data payloads before pattern scanning ──
+# Heredoc bodies and -m message content are DATA, not CODE.
+# Without this, commit messages like "removed sudo usage" trigger false positives.
+if echo "$COMMAND" | grep -qE '<<'; then
+    # Keep only the command line, drop heredoc body
+    COMMAND=$(echo "$COMMAND" | head -1)
+fi
+
 # ── Fallback: original bash rules (kept for resilience) ──
 
 # ============================================================
