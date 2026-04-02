@@ -1,7 +1,11 @@
-"""Skill red-flag checker — 14-point static audit for SKILL.md files.
+"""Skill red-flag checker — 16-point static audit for SKILL.md files.
 
 Ported from ClawHub skill-vetter (Round 14 P2): pure regex-driven,
 no LLM dependency. Each check returns a RiskLevel and a human-readable hint.
+
+Checks 15-16 added from Claudeception steal (Round 36c):
+  15. WEAK_DESCRIPTION — description-as-retrieval-key quality
+  16. QUALITY_GATE_SPECIFICITY — Reusable/Non-trivial/Specific/Verified heuristic
 """
 
 from __future__ import annotations
@@ -296,7 +300,77 @@ def _check_missing_identity(content: str) -> list[RedFlag]:
     return []
 
 
-# ── All 14 checkers in order ───────────────────────────────────
+def _check_weak_description(content: str) -> list[RedFlag]:
+    """Check if the frontmatter description is too short or lacks trigger conditions.
+
+    A good description includes: specific trigger words, use-when scenarios,
+    and NOT-for exclusions. Source: Claudeception (Round 36c steal).
+    """
+    desc_match = re.search(
+        r"^description\s*:\s*[\"']?(.*?)(?:[\"']?\s*$|\n---)",
+        content,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not desc_match:
+        return [RedFlag(
+            code="WEAK_DESCRIPTION",
+            message="No description field in frontmatter — skill will never be discovered",
+            risk=RiskLevel.HIGH,
+            line_hint="frontmatter",
+        )]
+    desc = desc_match.group(1).strip().strip("\"'")
+    flags: list[RedFlag] = []
+    # Too short
+    if len(desc) < 40:
+        flags.append(RedFlag(
+            code="WEAK_DESCRIPTION",
+            message=f"Description too short ({len(desc)} chars) — aim for 80+ with trigger words",
+            risk=RiskLevel.MEDIUM,
+            line_hint=f"description: {desc[:60]}",
+        ))
+    # No trigger conditions
+    trigger_patterns = re.compile(
+        r"\b(use\s+when|trigger|NOT\s+for|when\s+to\s+use|examples?\s*:)\b",
+        re.IGNORECASE,
+    )
+    if not trigger_patterns.search(desc):
+        flags.append(RedFlag(
+            code="WEAK_DESCRIPTION",
+            message="Description lacks trigger conditions (Use when: / NOT for:)",
+            risk=RiskLevel.MEDIUM,
+            line_hint=f"description: {desc[:60]}...",
+        ))
+    return flags
+
+
+def _check_quality_gate(content: str) -> list[RedFlag]:
+    """Check the 4-point quality gate: Reusable, Non-trivial, Specific, Verified.
+
+    This is a heuristic check — it looks for signals that suggest the skill
+    may fail one or more quality criteria. Source: Claudeception (Round 36c).
+    """
+    body = re.sub(r"^---.*?---", "", content, flags=re.DOTALL).strip()
+    flags: list[RedFlag] = []
+    # Specificity check: does the body contain concrete triggers (error messages, commands, filenames)?
+    concrete_patterns = re.compile(
+        r"(`[^`]+`"         # inline code
+        r"|```"             # code blocks
+        r"|\berror\b"       # error mentions
+        r"|\bcommand\b"     # command references
+        r"|step\s+\d+)",    # numbered steps
+        re.IGNORECASE,
+    )
+    if not concrete_patterns.search(body):
+        flags.append(RedFlag(
+            code="QUALITY_GATE_SPECIFICITY",
+            message="No concrete examples (code, errors, steps) — may be too abstract to be actionable",
+            risk=RiskLevel.LOW,
+            line_hint="(body content)",
+        ))
+    return flags
+
+
+# ── All 16 checkers in order ───────────────────────────────────
 
 _ALL_CHECKS = [
     _check_prompt_injection,       # 1
@@ -313,6 +387,8 @@ _ALL_CHECKS = [
     _check_oversized,              # 12
     _check_hallucination_risk,     # 13
     _check_missing_identity,       # 14
+    _check_weak_description,       # 15  (Round 36c: description-as-retrieval-key)
+    _check_quality_gate,           # 16  (Round 36c: Claudeception 4-point gate)
 ]
 
 

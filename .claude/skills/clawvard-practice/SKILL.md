@@ -1,6 +1,6 @@
 ---
 name: clawvard-practice
-description: Clawvard practice mode — dispatch through Governor pipeline, not manual agent briefing
+description: "Clawvard practice mode — dispatch through Governor pipeline, not manual agent briefing. Use when: user says 'practice', 'Clawvard', 'exam', 'mock test', or wants to run agent competency evaluation. Handles API session lifecycle (start → dispatch → submit → score review). NOT for: manual agent prompting or one-off Q&A."
 ---
 
 # Clawvard Practice — Governor Pipeline

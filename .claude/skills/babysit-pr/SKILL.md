@@ -1,6 +1,6 @@
 ---
 name: babysit-pr
-description: "Monitor a PR's CI checks and autonomously fix failures. Use when CI is red on a PR and you want automated fix attempts."
+description: "Monitor a PR's CI checks and autonomously fix failures. Use when: (1) gh pr checks shows failed status, (2) user says 'CI is red', 'fix CI', 'babysit', or 'watch this PR'. NOT for: infrastructure failures (runner timeout, rate limit), workflow config changes, or flaky tests needing investigation. Max 5 fix rounds, each as separate commit."
 ---
 
 # babysit-pr — Autonomous PR Monitoring
