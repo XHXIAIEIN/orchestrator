@@ -8,12 +8,8 @@
 
 INPUT=$(head -c 65536)
 
-# Extract agent prompt (jq preferred, python3 fallback)
-if command -v jq &>/dev/null; then
-    PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty' 2>/dev/null)
-else
-    PROMPT=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null)
-fi
+# Extract agent prompt
+PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty' 2>/dev/null)
 
 # Explicit tag check — only [STEAL] triggers branch enforcement
 if echo "$PROMPT" | grep -qF '[STEAL]'; then

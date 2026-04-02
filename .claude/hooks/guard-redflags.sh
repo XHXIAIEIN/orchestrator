@@ -8,12 +8,7 @@
 
 INPUT=$(head -c 65536)
 
-# ── Guard clause: use jq if available, fall back to python3 ──
-if command -v jq &>/dev/null; then
-    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
-else
-    COMMAND=$(echo "$INPUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
-fi
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
 # Exit early if no command
 [ -z "$COMMAND" ] && echo '{"decision":"allow"}' && exit 0

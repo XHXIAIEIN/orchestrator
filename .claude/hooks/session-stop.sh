@@ -35,14 +35,7 @@ fi
 INPUT=$(cat)
 
 # Extract last assistant message (truncated to 500 chars for efficiency)
-LAST_MSG=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    msg = d.get('last_assistant_message', '') or ''
-    print(msg[:500])
-except: pass
-" 2>/dev/null)
+LAST_MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null | head -c 500)
 
 # Skip if message is too short (trivial conversation)
 if [ ${#LAST_MSG} -lt 50 ]; then
@@ -56,7 +49,7 @@ fi
     # Try local Ollama for fast classification
     RESULT=$(curl -s --max-time 10 "$OLLAMA_HOST/api/generate" \
         -d "{\"model\":\"qwen3:1.7b\",\"prompt\":\"Classify if this AI conversation excerpt contains a memorable shared experience worth recording. Types: bonding, humor, conflict, trust, discovery, limitation, milestone, lesson. If yes, respond with JSON: {\\\"type\\\":\\\"TYPE\\\",\\\"summary\\\":\\\"short title\\\",\\\"detail\\\":\\\"1 sentence\\\"}. If no (pure technical ops, trivial), respond: {\\\"skip\\\":true}. Excerpt: ${LAST_MSG//\"/\\\"}\" ,\"stream\":false,\"options\":{\"temperature\":0.3}}" 2>/dev/null \
-        | python3 -c "import sys,json;r=json.load(sys.stdin);print(r.get('response',''))" 2>/dev/null)
+        | jq -r '.response // ""' 2>/dev/null)
 
     # If Ollama unavailable, skip silently
     if [ -z "$RESULT" ]; then

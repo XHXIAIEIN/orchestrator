@@ -15,20 +15,8 @@
 
 INPUT=$(head -c 65536)
 
-# Extract file path from tool input (jq preferred, python3 fallback)
-if command -v jq &>/dev/null; then
-    FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
-else
-    FILE_PATH=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    ti = d.get('tool_input', {})
-    print(ti.get('file_path', ''))
-except:
-    print('')
-" 2>/dev/null)
-fi
+# Extract file path from tool input
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 
 [ -z "$FILE_PATH" ] && echo '{"decision":"allow"}' && exit 0
 
@@ -52,17 +40,7 @@ case "$BASENAME" in
         ;;
     pyproject.toml|setup.cfg)
         # Only protect if editing tool-config sections — check content
-        EDIT_CONTENT=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    ti = d.get('tool_input', {})
-    old = ti.get('old_string', '')
-    new = ti.get('new_string', ti.get('content', ''))
-    print(old + '\n' + new)
-except:
-    print('')
-" 2>/dev/null)
+        EDIT_CONTENT=$(echo "$INPUT" | jq -r '(.tool_input.old_string // "") + "\n" + (.tool_input.new_string // .tool_input.content // "")' 2>/dev/null)
         if echo "$EDIT_CONTENT" | grep -qiE '\[(tool\.|ruff|flake8|pylint|mypy|black|isort|pytest)'; then
             IS_CONFIG=true
         fi
@@ -75,17 +53,7 @@ if [ "$IS_CONFIG" = false ]; then
 fi
 
 # Detect if the change is RELAXING rules (disabling, ignoring, widening)
-CHANGE_CONTENT=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    ti = d.get('tool_input', {})
-    # For Edit: look at new_string; for Write: look at content
-    new = ti.get('new_string', ti.get('content', ''))
-    print(new)
-except:
-    print('')
-" 2>/dev/null)
+CHANGE_CONTENT=$(echo "$INPUT" | jq -r '.tool_input.new_string // .tool_input.content // ""' 2>/dev/null)
 
 # Relaxation indicators
 IS_RELAXING=false
