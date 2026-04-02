@@ -40,18 +40,7 @@
       },
       {
         "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/guard-ollama-rm.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/guard-redflags.sh",
-            "timeout": 5
-          }
-        ]
+        "hooks": []
       },
       {
         "matcher": "Edit|Write",

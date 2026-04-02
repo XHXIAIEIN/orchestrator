@@ -157,7 +157,7 @@ def update_codebase_map() -> str:
         "src/core/": "核心基础设施 (event_bus, llm_router, config)",
         "src/governance/": "治理管线 (executor, scrutiny, pipeline, safety, learning)",
         "src/gateway/": "前门路由 (intent, dispatcher, classifier)",
-        "src/storage/": "数据存储 (events_db, vector_db)",
+        "src/storage/": "数据存储 (events_db, qdrant_store)",
         "src/channels/": "通信通道 (telegram, wechat)",
         "src/collectors/": "数据采集器",
         "src/analysis/": "分析引擎 (daily_analyst, profile, performance)",
