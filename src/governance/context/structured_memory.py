@@ -30,6 +30,24 @@ while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_d
 _DEFAULT_DB = str(_REPO_ROOT / "data" / "memory.db")
 
 
+def _sync_memory_to_qdrant(row_id: int, dimension: str, text: str, metadata: dict):
+    import asyncio
+    try:
+        from src.storage.qdrant_store import QdrantStore
+        store = QdrantStore()
+        if not store.is_available():
+            return
+        store.ensure_collection("orch_memory")
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(
+            store.upsert("orch_memory", f"memory_{dimension}", row_id, text,
+                         {"dimension": dimension, **metadata})
+        )
+        loop.close()
+    except Exception:
+        pass
+
+
 # ── Dimensions ──────────────────────────────────────────────────────────
 
 class Dimension(str, Enum):
@@ -270,6 +288,15 @@ class StructuredMemoryStore:
             )
             row_id = cur.lastrowid
         log.debug(f"structured_memory: added {dim.value} entry (id={row_id})")
+        # Sync to Qdrant (fire-and-forget)
+        import threading
+        text_for_embed = " ".join(str(v) for v in data.values() if isinstance(v, str))
+        threading.Thread(
+            target=_sync_memory_to_qdrant,
+            args=(row_id, dim.value, text_for_embed,
+                  {"confidence": getattr(entry, 'confidence', 0.8)}),
+            daemon=True,
+        ).start()
         return row_id
 
     def add_batch(self, dimension: Dimension | str, entries: list[MemoryItem]) -> list[int]:
