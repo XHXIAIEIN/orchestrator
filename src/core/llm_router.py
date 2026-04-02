@@ -6,10 +6,17 @@ Ollama 失败自动 fallback 到 Claude。
 Engine Waterfall 模式（偷自 Firecrawl）：
 cascade 内的引擎并发竞速，第一个返回合格结果的赢。
 超时后自动 waterfall 到下一个引擎，而不是等前一个跑完。
+
+Cheap/Strong 消息级预分流（偷自 hermes-agent v0.6）：
+简单闲聊 → cheap model，复杂请求 → strong model。
+
+Ordered Fallback Chain（偷自 hermes-agent v0.6）：
+主 provider 失败 → 按配置顺序尝试下一个 provider。
 """
 import json
 import logging
 import os
+import re
 import time
 import urllib.request
 import urllib.error
@@ -29,6 +36,72 @@ from src.core.llm_backends import (
 from src.core.cost_tracking import CostTracker, CostLimitExceededError
 
 log = logging.getLogger(__name__)
+
+
+# ── Cheap/Strong 消息级预分流（偷自 hermes-agent v0.6）──
+# 简单闲聊用 cheap model（低延迟低成本），复杂请求走正常路由。
+CHEAP_MODEL = os.environ.get("LLM_CHEAP_MODEL", "haiku")
+
+# 触发 "strong" 判定的技术关键词
+_STRONG_KEYWORDS = re.compile(
+    r"\b(?:debug|refactor|implement|deploy|fix|error|traceback|exception|"
+    r"bug|crash|stack\s?trace|analyze|optimize|migrate|config|setup|install|"
+    r"dockerfile|docker|compose|kubernetes|k8s|nginx|sql|api|sdk|async|"
+    r"import|export|function|class|def|return|raise|try|except|catch|throw)\b",
+    re.IGNORECASE,
+)
+# URL 和文件路径模式
+_URL_PATTERN = re.compile(r"https?://\S+")
+_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:[/\\]|[~./])[^\s]+\.\w+")
+# 代码围栏
+_CODE_FENCE = re.compile(r"```")
+
+
+def classify_message_complexity(text: str) -> str:
+    """消息级复杂度分类，返回 "cheap" 或 "strong"。
+
+    "cheap": 短消息（<50 字符），无代码块、URL、文件路径、技术关键词。
+    "strong": 包含代码围栏、URL、文件路径、错误追踪或技术关键词。
+    默认保守，有疑问时归为 "strong"。
+
+    偷自 hermes-agent v0.6 的 cheap/strong 分流策略。
+    """
+    if not text or not text.strip():
+        return "cheap"
+
+    stripped = text.strip()
+
+    # 代码围栏 → strong
+    if _CODE_FENCE.search(stripped):
+        return "strong"
+
+    # URL → strong
+    if _URL_PATTERN.search(stripped):
+        return "strong"
+
+    # 文件路径 → strong
+    if _PATH_PATTERN.search(stripped):
+        return "strong"
+
+    # 技术关键词 → strong
+    if _STRONG_KEYWORDS.search(stripped):
+        return "strong"
+
+    # 短消息且无技术内容 → cheap
+    if len(stripped) < 50:
+        return "cheap"
+
+    # 默认保守 → strong
+    return "strong"
+
+
+# ── Ordered Fallback Provider Chain（偷自 hermes-agent v0.6）──
+# 主 provider 失败时按配置顺序尝试下一个 provider。
+# 格式: 逗号分隔，如 "ollama,claude,openrouter"
+FALLBACK_CHAIN: list[str] = [
+    p.strip() for p in os.environ.get("LLM_FALLBACK_CHAIN", "").split(",")
+    if p.strip()
+]
 
 
 # ── Schema Complexity → Model Tier（偷自 Firecrawl）──
@@ -216,11 +289,13 @@ class LLMRouter:
                  threshold: str = DEFAULT_THRESHOLD,
                  output_schema: dict | None = None,
                  features: dict | None = None,
-                 feature_preference: str = "cost") -> str:
+                 feature_preference: str = "cost",
+                 task_source: str = "") -> str:
         """统一入口（向后兼容，返回纯文本）。"""
         return self.generate_rich(prompt, task_type, max_tokens, temperature,
                                    images, depth, threshold, output_schema,
-                                   features, feature_preference).text
+                                   features, feature_preference,
+                                   task_source=task_source).text
 
     def generate_rich(self, prompt: str, task_type: str,
                       max_tokens: int = 1024, temperature: float = 0.3,
@@ -229,7 +304,8 @@ class LLMRouter:
                       threshold: str = DEFAULT_THRESHOLD,
                       output_schema: dict | None = None,
                       features: dict | None = None,
-                      feature_preference: str = "cost") -> GenerateResult:
+                      feature_preference: str = "cost",
+                      task_source: str = "") -> GenerateResult:
         """Rich 入口 — 返回 GenerateResult，附带成本和诊断元数据。
 
         偷自 Exa costDollars：每次调用精确告诉调用方花了多少钱。
@@ -246,6 +322,20 @@ class LLMRouter:
         warnings: list[str] = []
         model_used = ""
         attempts: list[dict] = []
+
+        # ── Cheap/Strong 消息级预分流（偷自 hermes-agent v0.6）──
+        # channel 闲聊 + 简单消息 → cheap model 直连，跳过正常路由
+        _CHAT_TASK_TYPES = {"chat", "chat_reason"}
+        _CHANNEL_SOURCES = {"telegram", "wechat", "channel", "fakechat"}
+        if (task_source.lower() in _CHANNEL_SOURCES
+                and task_type in _CHAT_TASK_TYPES
+                and CHEAP_MODEL
+                and classify_message_complexity(prompt) == "cheap"):
+            log.info(f"router: [cheap/strong] cheap message from {task_source}, "
+                     f"using {CHEAP_MODEL}")
+            warnings.append(f"cheap_model_route: {CHEAP_MODEL}")
+            # 用 cheap model 构建单引擎 cascade
+            route = {**route, "cascade": [CHEAP_MODEL]}
 
         # ── I12: ModelDegrader — 降级时用 fallback 模型覆盖 cascade ──
         if self._degrader.is_degraded and self._degrader._original_model:
@@ -331,6 +421,21 @@ class LLMRouter:
                 text = claude_generate(
                     prompt, route["model"], route["timeout"], max_tokens)
                 model_used = route["model"]
+
+        # ── Ordered Fallback Chain（偷自 hermes-agent v0.6）──
+        # 主路由失败后，按 FALLBACK_CHAIN 顺序尝试下一个 provider
+        if (not text or len(text.strip()) < MIN_RESPONSE_LEN) and FALLBACK_CHAIN:
+            already_tried = {a.get("model", "") for a in attempts}
+            if model_used:
+                already_tried.add(model_used)
+            fb_text, fb_model, attempts = self._try_fallback_chain(
+                prompt, route, max_tokens, temperature,
+                encode_images(images) if images else None,
+                get_min_response_len(threshold),
+                attempts, warnings, already_tried,
+            )
+            if fb_text:
+                text, model_used = fb_text, fb_model
 
         elapsed_ms = int((time.time() - t0) * 1000)
         cost = self._estimate_cost(model_used, text)
@@ -515,6 +620,53 @@ class LLMRouter:
         except Exception as e:
             attempts.append({"model": last_model, "reason": f"retry_failed: {e}"})
         log.warning(f"router: [waterfall] all engines failed after retry: {attempts}")
+        return "", "", attempts
+
+    def _try_fallback_chain(self, prompt: str, route: dict,
+                             max_tokens: int, temperature: float,
+                             images: list[str] | None,
+                             min_len: int,
+                             attempts: list[dict],
+                             warnings: list[str],
+                             already_tried: set[str],
+                             ) -> tuple[str, str, list[dict]]:
+        """Ordered Fallback Provider Chain（偷自 hermes-agent v0.6）。
+
+        主 provider 失败后，按 FALLBACK_CHAIN 配置顺序尝试下一个 provider。
+        跳过已经在 cascade 中尝试过的 provider。
+        """
+        if not FALLBACK_CHAIN:
+            return "", "", attempts
+
+        # provider 名 → 模型 ID 的映射
+        _PROVIDER_MODEL_MAP = {
+            "ollama": f"ollama/{route.get('model', 'qwen2.5:7b')}",
+            "claude": MODEL_HAIKU,
+            "openrouter": MODEL_HAIKU,  # 未来可扩展为 openrouter 后端
+        }
+
+        for provider in FALLBACK_CHAIN:
+            model_id = _PROVIDER_MODEL_MAP.get(provider)
+            if not model_id:
+                log.warning(f"router: [fallback_chain] unknown provider: {provider}")
+                continue
+            if model_id in already_tried:
+                continue
+
+            log.info(f"router: [fallback_chain] trying provider={provider} model={model_id}")
+            try:
+                text, mid = self._call_one_model(
+                    model_id, prompt, route, max_tokens, temperature, images)
+                if len(text.strip()) >= min_len:
+                    log.info(f"router: [fallback_chain] {provider}/{mid} succeeded "
+                             f"({len(text)} chars)")
+                    warnings.append(f"fallback_chain_used: {provider}/{mid}")
+                    return text, mid, attempts
+                attempts.append({"model": mid, "reason": f"fallback_low_quality ({len(text.strip())} chars)"})
+            except Exception as e:
+                attempts.append({"model": model_id, "reason": f"fallback_{provider}: {e}"})
+                log.warning(f"router: [fallback_chain] {provider} failed: {e}")
+
         return "", "", attempts
 
     # ── Async Waterfall（偷自 Firecrawl Engine Waterfall）──

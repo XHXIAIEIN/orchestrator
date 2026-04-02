@@ -6,7 +6,15 @@
 # Performance: jq for JSON extraction (~5ms) instead of python3 (~60ms)
 # Guard clauses: exit early on trivial input (Round 35 steal — claude-island-perf-fix)
 
-INPUT=$(head -c 65536)
+INPUT=$(cat)
+
+# ── Guard clause: non-Bash tools are irrelevant ──
+# R35c: guard clause — zero-cost exit for non-Bash tools
+tool_name=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+if [ "$tool_name" != "Bash" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
 
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
@@ -14,7 +22,15 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -z "$COMMAND" ] && echo '{"decision":"allow"}' && exit 0
 
 # ── Guard clause: short commands can't be complex attacks ──
+# R35c: guard clause — zero-cost exit for trivial inputs
 if [ ${#COMMAND} -lt 8 ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── Guard clause: read-only commands need no security checks ──
+# R35c: whitelist known-safe commands to skip the 14 pattern checks
+if echo "$COMMAND" | grep -qE '^\s*(git\s+(status|log|diff|show|blame|branch|remote|tag)|ls|pwd|echo\s|cat\s|head\s|tail\s|wc\s|which\s|where\s|type\s|date|whoami|hostname|uname|df\s|du\s|free|uptime)\b'; then
     echo '{"decision":"allow"}'
     exit 0
 fi

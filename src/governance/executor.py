@@ -70,6 +70,12 @@ except ImportError:
 # Conditions that warrant automatic retry
 RETRYABLE_CONDITIONS = {"timeout", "stuck", "unresponsive", "cost_limit", "rate_limited", "transient_server_error"}
 
+# ── 3-Fix Escalation Rule (stolen from Hermes Ecosystem, Round 35) ──
+# After N consecutive failed attempts on the same task, stop retrying and
+# escalate to human. Prevents infinite loops on architectural problems
+# that no amount of automated retries will fix.
+MAX_FIX_ATTEMPTS = 3
+
 @dataclass
 class RolloutConfig:
     """Per-task retry policy. Can be set in blueprint.yaml under `rollout:` key.
@@ -813,6 +819,42 @@ class TaskExecutor:
                     log.warning(f"TaskExecutor: task #{task_id} concurrency pool full, proceeding anyway")
             except Exception as e:
                 log.debug(f"TaskExecutor: concurrency pool acquire failed ({e})")
+
+        # ── 3-Fix Escalation Rule (Hermes Ecosystem, Round 35) ──
+        # Count prior failed sub_runs for this task. If we've already burned
+        # through MAX_FIX_ATTEMPTS, escalate to human instead of retrying.
+        try:
+            prior_sub_runs = self.db.get_sub_runs(task_id)
+            prior_failed = sum(1 for sr in prior_sub_runs if sr.get("status") == "failed")
+        except Exception:
+            prior_failed = 0
+
+        if prior_failed >= MAX_FIX_ATTEMPTS:
+            escalation_msg = (
+                f"3 次修复失败，怀疑架构问题，升级至人类介入 "
+                f"(task #{task_id}: {prior_failed} failed attempts on record)"
+            )
+            log.warning(f"TaskExecutor: {escalation_msg}")
+            self.db.update_task(task_id, status="escalated", output=escalation_msg)
+            self.db.write_log(escalation_msg, "WARN", "governor")
+            self._log_agent_event(task_id, "escalated", {
+                "reason": "max_fix_attempts_exceeded",
+                "prior_failed": prior_failed,
+                "max_fix_attempts": MAX_FIX_ATTEMPTS,
+            })
+            # Cleanup resources acquired above
+            if _pool_slot and get_concurrency_pool:
+                try:
+                    get_concurrency_pool().release(_pool_slot)
+                except Exception:
+                    pass
+            if self.punch_clock:
+                self.punch_clock.punch_out(task_id)
+            if self.semaphore:
+                self.semaphore.release(dept_key, task_id)
+            if worktree_path:
+                self._worktree.cleanup(task_id)
+            return {"task_id": task_id, "status": "escalated", "output": escalation_msg}
 
         while attempt < rollout_cfg.max_attempts:
             attempt += 1
