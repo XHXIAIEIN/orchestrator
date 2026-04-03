@@ -9,19 +9,40 @@ the gateway broadcasts an approval request to all available channels:
 
 First response wins. Timeout = auto-deny.
 
+## 5-Decision Model (R38 — stolen from Inspect AI)
+
+Decisions:
+  - approve   — proceed as-is
+  - modify    — change tool arguments, then execute
+  - reject    — deny this specific action, agent may try alternatives
+  - terminate — abort the entire task (not just this action)
+  - escalate  — pass to next approver in the chain (Claw → TG → human)
+
+## Approval Policies (YAML-configurable)
+
+Glob-match tool names to approver strategies:
+  - "read_file", "grep", "glob" → auto approve
+  - "bash*" → allowlist check
+  - "desktop_*", "send_*" → escalate to human
+
 Usage in executor:
     gateway = ApprovalGateway(broadcast_fn, channel_registry)
     decision = await gateway.request_approval(task_id, description, authority_level)
-    if decision == "approve":
+    if decision.action == "approve":
         ... proceed with elevated authority ...
+    elif decision.action == "modify":
+        ... apply decision.modifications, then proceed ...
 """
 import asyncio
+import fnmatch
 import hashlib
 import json
 import logging
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
 from typing import Callable, Optional
 
 from src.governance.trust_ladder import TrustLadder
@@ -42,17 +63,209 @@ DEFAULT_TIMEOUT = 300  # 5 minutes
 _last_approval_hash: str = ""
 
 
+# ── 5-Decision Model (R38: Inspect AI) ──────────────────────
+
+
+class ApprovalAction(str, Enum):
+    """Five possible approval decisions (stolen from Inspect AI, R38)."""
+    APPROVE = "approve"       # proceed as-is
+    MODIFY = "modify"         # change tool arguments, then execute
+    REJECT = "reject"         # deny this action, agent may try alternatives
+    TERMINATE = "terminate"   # abort the entire task
+    ESCALATE = "escalate"     # pass to next approver in chain
+
+
+@dataclass
+class ApprovalDecision:
+    """Structured approval decision with optional modifications."""
+    action: ApprovalAction
+    source: str = ""                     # who decided: "claw" / "telegram" / "auto" / ...
+    modifications: dict = field(default_factory=dict)  # for MODIFY: changed tool args
+    reason: str = ""                     # optional explanation
+    decided_at: str = ""
+
+    @property
+    def is_proceed(self) -> bool:
+        """Should the tool call proceed (approve or modify)?"""
+        return self.action in (ApprovalAction.APPROVE, ApprovalAction.MODIFY)
+
+    def to_legacy(self) -> str:
+        """Backward-compat: map to legacy 'approve'/'deny'/'timeout' strings."""
+        if self.action in (ApprovalAction.APPROVE, ApprovalAction.MODIFY):
+            return "approve"
+        return "deny"
+
+
+# ── Approval Policy (R38: Inspect AI glob matching) ────────
+
+
+@dataclass
+class ApprovalPolicy:
+    """One rule in the approval policy chain.
+
+    tools: glob pattern(s) to match tool names ("bash*", "desktop_*")
+    decision: default decision for matched tools (None = ask human)
+    allowed_args: optional allowlist for tool arguments (e.g. bash commands)
+    """
+    name: str
+    tools: list[str]                           # glob patterns
+    decision: Optional[ApprovalAction] = None  # None = human review
+    allowed_args: dict = field(default_factory=dict)  # e.g. {"allowed_commands": ["ls","cat"]}
+    priority: int = 100                        # lower = checked first
+
+    def matches(self, tool_name: str) -> bool:
+        return any(fnmatch.fnmatch(tool_name, pat) for pat in self.tools)
+
+
+# Default policies (overridden by YAML config if present)
+_DEFAULT_POLICIES: list[ApprovalPolicy] = [
+    ApprovalPolicy(
+        name="auto_safe",
+        tools=["read_file", "grep", "glob", "ls", "cat"],
+        decision=ApprovalAction.APPROVE,
+        priority=10,
+    ),
+    ApprovalPolicy(
+        name="bash_allowlist",
+        tools=["bash*"],
+        decision=None,  # needs review unless command is in allowlist
+        allowed_args={"allowed_commands": [
+            "ls", "cat", "grep", "git status", "git diff", "git log",
+            "docker ps", "docker logs", "nvidia-smi", "python -c",
+        ]},
+        priority=20,
+    ),
+    ApprovalPolicy(
+        name="escalate_dangerous",
+        tools=["desktop_*", "send_*", "wake_*", "push_*"],
+        decision=ApprovalAction.ESCALATE,
+        priority=30,
+    ),
+]
+
+
+def load_approval_policies(config_path: str | Path | None = None) -> list[ApprovalPolicy]:
+    """Load approval policies from YAML config, falling back to defaults.
+
+    Config format:
+        approvers:
+          - name: auto_safe
+            tools: ["read_file", "grep", "glob"]
+            decision: approve
+          - name: bash_allowlist
+            tools: ["bash*"]
+            allowed_commands: [ls, cat, grep, "git status"]
+          - name: escalate_dangerous
+            tools: ["desktop_*", "send_*"]
+            decision: escalate
+    """
+    if config_path is None:
+        # Look in standard locations
+        candidates = [
+            Path("config/approval_policies.yaml"),
+            Path("config/approval_policies.yml"),
+        ]
+        for c in candidates:
+            if c.exists():
+                config_path = c
+                break
+
+    if config_path is None:
+        return list(_DEFAULT_POLICIES)
+
+    try:
+        import yaml
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        policies = []
+        for i, entry in enumerate(data.get("approvers", [])):
+            tools = entry.get("tools", [])
+            if isinstance(tools, str):
+                tools = [tools]
+            decision_str = entry.get("decision")
+            decision = ApprovalAction(decision_str) if decision_str else None
+            allowed_args = {}
+            if "allowed_commands" in entry:
+                allowed_args["allowed_commands"] = entry["allowed_commands"]
+
+            policies.append(ApprovalPolicy(
+                name=entry.get("name", f"policy_{i}"),
+                tools=tools,
+                decision=decision,
+                allowed_args=allowed_args,
+                priority=entry.get("priority", (i + 1) * 10),
+            ))
+
+        policies.sort(key=lambda p: p.priority)
+        log.info(f"Loaded {len(policies)} approval policies from {config_path}")
+        return policies
+
+    except Exception as e:
+        log.warning(f"Failed to load approval policies from {config_path}: {e}, using defaults")
+        return list(_DEFAULT_POLICIES)
+
+
+def evaluate_tool_against_policies(
+    tool_name: str,
+    tool_args: dict,
+    policies: list[ApprovalPolicy],
+) -> ApprovalDecision | None:
+    """Check a tool call against policies. Returns decision or None (= ask human).
+
+    Walks policies in priority order. First match wins.
+    """
+    for policy in sorted(policies, key=lambda p: p.priority):
+        if not policy.matches(tool_name):
+            continue
+
+        # Policy has a fixed decision → return it
+        if policy.decision is not None:
+            return ApprovalDecision(
+                action=policy.decision,
+                source=f"policy:{policy.name}",
+                reason=f"matched policy '{policy.name}' for tool '{tool_name}'",
+                decided_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+        # Policy requires checking args (e.g. bash allowlist)
+        allowed_cmds = policy.allowed_args.get("allowed_commands", [])
+        if allowed_cmds:
+            cmd = tool_args.get("command", "")
+            # Check if command starts with any allowed command
+            for allowed in allowed_cmds:
+                if cmd.strip().startswith(allowed):
+                    return ApprovalDecision(
+                        action=ApprovalAction.APPROVE,
+                        source=f"policy:{policy.name}:allowlist",
+                        reason=f"command '{cmd[:50]}' matches allowlist entry '{allowed}'",
+                        decided_at=datetime.now(timezone.utc).isoformat(),
+                    )
+            # Command not in allowlist → needs human review
+            return None
+
+        # Policy matched but has no decision and no args check → ask human
+        return None
+
+    # No policy matched → default to human review
+    return None
+
+
 @dataclass
 class ApprovalRequest:
     task_id: str
     description: str
     authority_level: int
     requested_at: str
-    decision: Optional[str] = None  # "approve" / "deny" / "timeout"
+    decision: Optional[str] = None  # "approve" / "deny" / "timeout" (legacy compat)
     decided_by: Optional[str] = None  # "claw" / "telegram" / "wechat" / "api"
     decided_at: Optional[str] = None
     step_hash: str = ""       # SHA-256(prev_step_hash + canonical request)
     prev_step_hash: str = ""  # Previous step's hash, empty = chain start
+    # R38: structured decision (coexists with legacy fields for backward compat)
+    structured_decision: Optional[ApprovalDecision] = None
+    tool_name: str = ""       # tool being approved (for policy matching)
+    tool_args: dict = field(default_factory=dict)
 
 
 def _hash_approval_step(request: "ApprovalRequest", prev_hash: str = "") -> str:
@@ -69,12 +282,17 @@ def _hash_approval_step(request: "ApprovalRequest", prev_hash: str = "") -> str:
 
 
 class ApprovalGateway:
-    """Publish approval requests, wait for first response from any channel."""
+    """Publish approval requests, wait for first response from any channel.
+
+    R38: Supports 5-decision model (approve/modify/reject/terminate/escalate)
+    and YAML-configurable approval policies with glob tool matching.
+    """
 
     def __init__(
         self,
         broadcast_fn: Optional[Callable] = None,
         channel_registry=None,
+        policies: list[ApprovalPolicy] | None = None,
     ):
         self._broadcast = broadcast_fn  # server.js broadcast via WebSocket
         self._channels = channel_registry
@@ -84,6 +302,8 @@ class ApprovalGateway:
         self._yolo = False  # /yolo mode: auto-approve everything
         self._yolo_by: Optional[str] = None
         self._trust_ladder = TrustLadder()
+        # R38: approval policies (loaded from YAML or defaults)
+        self._policies = policies if policies is not None else load_approval_policies()
 
     def set_yolo(self, enabled: bool, source: str = "unknown"):
         """Toggle YOLO mode — auto-approve all requests without asking."""
@@ -109,6 +329,56 @@ class ApprovalGateway:
     def is_yolo(self) -> bool:
         return self._yolo
 
+    async def approve_tool_call(
+        self,
+        task_id: str,
+        tool_name: str,
+        tool_args: dict,
+        description: str = "",
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> ApprovalDecision:
+        """R38: Evaluate a tool call against policies, escalate to human if needed.
+
+        Returns ApprovalDecision with one of 5 actions.
+        This is the preferred entry point for tool-level approval.
+        """
+        # Check policies first (fast path, no human involvement)
+        policy_decision = evaluate_tool_against_policies(tool_name, tool_args, self._policies)
+        if policy_decision is not None:
+            log.info(f"policy_approval: {tool_name} → {policy_decision.action.value} ({policy_decision.source})")
+            return policy_decision
+
+        # No policy match → fall through to human approval
+        if not description:
+            args_preview = json.dumps(tool_args, ensure_ascii=False, default=str)[:100]
+            description = f"Tool: {tool_name}({args_preview})"
+
+        legacy_result = await self.request_approval(
+            task_id=task_id,
+            description=description,
+            authority_level=4,
+            timeout=timeout,
+        )
+
+        # Check if structured decision was captured
+        with self._lock:
+            req = self._requests.get(task_id)
+        if req and req.structured_decision:
+            return req.structured_decision
+
+        # Map legacy result to ApprovalDecision
+        action_map = {
+            "approve": ApprovalAction.APPROVE,
+            "deny": ApprovalAction.REJECT,
+            "timeout": ApprovalAction.REJECT,
+        }
+        return ApprovalDecision(
+            action=action_map.get(legacy_result, ApprovalAction.REJECT),
+            source=req.decided_by if req else "unknown",
+            reason=f"human decision: {legacy_result}",
+            decided_at=datetime.now(timezone.utc).isoformat(),
+        )
+
     async def request_approval(
         self,
         task_id: str,
@@ -116,7 +386,10 @@ class ApprovalGateway:
         authority_level: int = 4,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> str:
-        """Request human approval. Returns 'approve', 'deny', or 'timeout'."""
+        """Request human approval. Returns 'approve', 'deny', or 'timeout'.
+
+        Legacy interface — prefer approve_tool_call() for R38 5-decision model.
+        """
 
         # YOLO mode: instant approve, no notification
         if self._yolo:
@@ -175,8 +448,14 @@ class ApprovalGateway:
         log.info(f"approval for {task_id}: {decision} (by {req.decided_by})")
         return decision
 
-    def submit_decision(self, task_id: str, decision: str, source: str = "unknown"):
-        """Called when a channel receives an approval/denial response."""
+    def submit_decision(self, task_id: str, decision: str, source: str = "unknown",
+                        modifications: dict | None = None, reason: str = ""):
+        """Called when a channel receives an approval/denial response.
+
+        R38: decision can be any of the 5 ApprovalAction values.
+        For backward compat, "deny" maps to "reject".
+        modifications: for "modify" decisions, the changed tool args.
+        """
         with self._lock:
             req = self._requests.get(task_id)
             event = self._pending.get(task_id)
@@ -189,9 +468,30 @@ class ApprovalGateway:
             log.info(f"approval for {task_id} already decided, ignoring {source}")
             return
 
-        req.decision = decision
+        # R38: normalize decision string and build structured decision
+        decision_normalized = decision.lower().strip()
+        if decision_normalized == "deny":
+            decision_normalized = "reject"  # legacy compat
+
+        # Map to ApprovalAction (fallback to reject for unknown values)
+        try:
+            action = ApprovalAction(decision_normalized)
+        except ValueError:
+            log.warning(f"unknown approval action '{decision}', treating as reject")
+            action = ApprovalAction.REJECT
+
+        req.structured_decision = ApprovalDecision(
+            action=action,
+            source=source,
+            modifications=modifications or {},
+            reason=reason,
+            decided_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        # Legacy compat fields
+        req.decision = req.structured_decision.to_legacy()
         req.decided_by = source
-        req.decided_at = datetime.now(timezone.utc).isoformat()
+        req.decided_at = req.structured_decision.decided_at
 
         if event:
             event.set()
@@ -202,16 +502,16 @@ class ApprovalGateway:
         # Smart Approvals: record decision for learning (Hermes)
         if _smart_approvals and req.description:
             try:
-                _smart_approvals.record(req.description, decision)
+                _smart_approvals.record(req.description, req.decision)
             except Exception:
                 pass
 
         # Wake session callback — update session status on approve/deny
         try:
             from src.channels.wake import on_task_approved, on_task_denied
-            if decision == "approve":
+            if req.decision == "approve":
                 on_task_approved(task_id)
-            elif decision == "deny":
+            elif req.decision == "deny":
                 on_task_denied(task_id)
         except Exception:
             pass
@@ -222,11 +522,16 @@ class ApprovalGateway:
             return [r for r in self._requests.values() if r.decision is None]
 
     def _notify_all(self, req: ApprovalRequest):
-        """Push approval request to all channels."""
+        """Push approval request to all channels.
 
+        R38: notifications now include 5 decision options.
+        """
         risk = "LOW" if req.authority_level <= 3 else (
             "MEDIUM" if req.authority_level <= 6 else "HIGH"
         )
+
+        # R38: available actions for this request
+        actions = ["approve", "modify", "reject", "terminate", "escalate"]
 
         # 1. WebSocket broadcast (Claw picks this up)
         if self._broadcast:
@@ -237,6 +542,8 @@ class ApprovalGateway:
                     "description": req.description,
                     "authority_level": req.authority_level,
                     "risk": risk,
+                    "tool_name": req.tool_name,
+                    "actions": actions,
                 })
             except Exception as e:
                 log.debug(f"ws broadcast failed: {e}")
@@ -246,12 +553,14 @@ class ApprovalGateway:
             try:
                 from src.channels.base import ChannelMessage
                 risk_label = {"LOW": "低风险", "MEDIUM": "中风险", "HIGH": "高风险"}.get(risk, risk)
+                tool_line = f"\n工具: <code>{req.tool_name}</code>" if req.tool_name else ""
                 msg = ChannelMessage(
                     text=(
                         f"<b>需要审批</b> ({risk_label})\n\n"
-                        f"{req.description}\n\n"
+                        f"{req.description}{tool_line}\n\n"
                         f"权限等级: {req.authority_level}/4\n"
-                        f"Task: <code>{req.task_id}</code>"
+                        f"Task: <code>{req.task_id}</code>\n\n"
+                        f"操作: ✅approve | ✏️modify | ❌reject | 🛑terminate | ⬆️escalate"
                     ),
                     event_type="approval.request",
                     priority="CRITICAL",
@@ -265,9 +574,26 @@ class ApprovalGateway:
         if self._channels:
             try:
                 from src.channels.base import ChannelMessage
-                emoji = "Approved" if req.decision == "approve" else "Denied"
+                # R38: richer outcome labels
+                _labels = {
+                    "approve": "✅ Approved",
+                    "deny": "❌ Rejected",
+                    "reject": "❌ Rejected",
+                    "modify": "✏️ Modified",
+                    "terminate": "🛑 Terminated",
+                    "escalate": "⬆️ Escalated",
+                    "timeout": "⏰ Timeout",
+                }
+                sd = req.structured_decision
+                action_str = sd.action.value if sd else (req.decision or "unknown")
+                label = _labels.get(action_str, action_str)
+                extra = ""
+                if sd and sd.modifications:
+                    extra = f"\n修改: {json.dumps(sd.modifications, ensure_ascii=False, default=str)[:200]}"
+                if sd and sd.reason:
+                    extra += f"\n原因: {sd.reason[:200]}"
                 msg = ChannelMessage(
-                    text=f"*{emoji}* — {req.description}\n(by {req.decided_by})",
+                    text=f"*{label}* — {req.description}\n(by {req.decided_by}){extra}",
                     event_type="approval.result",
                     priority="HIGH",
                 )
@@ -288,7 +614,8 @@ def get_approval_gateway() -> ApprovalGateway:
     return _gateway
 
 
-def init_approval_gateway(broadcast_fn=None, channel_registry=None) -> ApprovalGateway:
+def init_approval_gateway(broadcast_fn=None, channel_registry=None,
+                          policies: list[ApprovalPolicy] | None = None) -> ApprovalGateway:
     global _gateway
-    _gateway = ApprovalGateway(broadcast_fn, channel_registry)
+    _gateway = ApprovalGateway(broadcast_fn, channel_registry, policies=policies)
     return _gateway

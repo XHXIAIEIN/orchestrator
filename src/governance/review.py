@@ -108,6 +108,13 @@ try:
 except ImportError:
     get_router = None
 
+# Production → Test Corpus (stolen from Braintrust, Round 38)
+try:
+    from src.governance.eval.corpus import capture_for_corpus, CAPTURABLE_STATUSES
+except ImportError:
+    capture_for_corpus = None
+    CAPTURABLE_STATUSES = set()
+
 # Cross-Model Review (stolen from gstack, Round 3-7)
 try:
     from src.governance.cross_review import CrossModelReviewer
@@ -344,6 +351,34 @@ class ReviewManager:
             log.error(f"ReviewManager: failed to update task #{task_id} status: {e}")
         self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
         log.info(f"ReviewManager: task #{task_id} {status}")
+
+        # ── Production → Test Corpus (R38: Braintrust feedback loop) ──
+        # Capture interesting failures as eval corpus entries for Clawvard
+        if capture_for_corpus and status in CAPTURABLE_STATUSES:
+            try:
+                trajectory_summary = {}
+                # Try to get trajectory from execution snapshot
+                try:
+                    from src.governance.audit.execution_snapshot import SnapshotStore
+                    store = SnapshotStore()
+                    snapshot = store.load_snapshot(task_id)
+                    trajectory_summary = snapshot.get_summary()
+                except Exception:
+                    pass
+                corpus_path = capture_for_corpus(
+                    task_id=task_id,
+                    task=task,
+                    output=output,
+                    status=status,
+                    trajectory_summary=trajectory_summary,
+                )
+                if corpus_path:
+                    self.db.add_agent_event(task_id, "corpus_captured", {
+                        "corpus_file": str(corpus_path.name),
+                        "status": status,
+                    })
+            except Exception as e:
+                log.debug(f"ReviewManager: corpus capture failed for task #{task_id}: {e}")
 
         # ── Dependency Chain: unblock downstream tasks (stolen from Cline Kanban) ──
         if status == "done":
