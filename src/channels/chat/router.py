@@ -12,6 +12,7 @@ _TOOL_SIGNALS = {
     "打开", "运行一下", "执行一下", "跑一下", "帮我改", "帮我修", "帮我写",
     "改代码", "写代码", "改文件", "写文件", "修一下", "修复",
     "呼叫外援", "wake claude", "叫claude",
+    "唤醒", "wake remote", "远程唤醒", "启动claude", "wake up",
     "部署", "deploy", "重启", "restart", "git push", "git commit",
     # 派单 → dispatch_task
     "跑场景", "run scenario", "审计一下", "扫描一下",

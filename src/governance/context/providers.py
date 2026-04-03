@@ -383,6 +383,132 @@ class StructuredMemoryProvider(BaseProvider):
         return lines
 
 
+class SystemSnapshotProvider(BaseProvider):
+    """系统快照注入 — Agent 不再冷启动。
+
+    偷师来源: AI Designer MCP (Round 37) — repo_context auto-injection 模式。
+    每次 Governor 派单自动附带系统状态快照：容器/DB/采集器/通道/任务。
+    Agent 立即获得全局视野，无需自己跑诊断。
+
+    Priority 20 — 高于 guidelines(30) 但低于 system_prompt(10)。
+    """
+    name = "system_snapshot"
+
+    def provide(self, ctx: TaskContext) -> list[ContextChunk]:
+        try:
+            snapshot = build_system_snapshot()
+        except Exception as e:
+            log.warning(f"SystemSnapshotProvider: snapshot failed: {e}")
+            return []
+
+        if not snapshot:
+            return []
+
+        return [ContextChunk(
+            source=self.name,
+            content=snapshot,
+            priority=20,
+        )]
+
+
+def build_system_snapshot() -> str:
+    """Build a compact system snapshot string (~200 tokens).
+
+    Designed to be injected into every agent dispatch as ambient context.
+    Reusable by Skills, Commands, and the chat channel.
+    """
+    from src.storage.events_db import EventsDB
+    from datetime import datetime, timezone, timedelta
+
+    db = EventsDB()
+    lines = ["[System Snapshot]"]
+
+    # ── Container status ──
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=orchestrator", "--format", "{{.Status}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        status = result.stdout.strip() or "not running"
+        lines.append(f"Container: {status}")
+    except Exception:
+        lines.append("Container: unknown (docker check failed)")
+
+    # ── DB size ──
+    try:
+        from pathlib import Path
+        db_path = Path(db.db_path)
+        if db_path.exists():
+            size_mb = db_path.stat().st_size / (1024 * 1024)
+            lines.append(f"DB: {size_mb:.0f}MB")
+    except Exception:
+        pass
+
+    # ── Recent errors (last 1h) ──
+    try:
+        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        with db._connect() as conn:
+            err_count = conn.execute(
+                "SELECT COUNT(*) FROM logs WHERE level IN ('ERROR','CRITICAL') AND created_at > ?",
+                (one_hour_ago,),
+            ).fetchone()[0]
+        lines.append(f"Errors (1h): {err_count}")
+    except Exception:
+        pass
+
+    # ── Collector health (compact) ──
+    try:
+        sources = ["claude", "browser", "git", "steam", "youtube_music"]
+        collector_parts = []
+        with db._connect() as conn:
+            for src in sources:
+                row = conn.execute(
+                    "SELECT occurred_at FROM events "
+                    "WHERE source = ? OR source LIKE ? || '_%' "
+                    "ORDER BY occurred_at DESC LIMIT 1",
+                    (src, src),
+                ).fetchone()
+                if row:
+                    hours_ago = (datetime.now(timezone.utc) -
+                                 datetime.fromisoformat(row[0].replace('Z', '+00:00'))
+                                 ).total_seconds() / 3600
+                    tag = "ok" if hours_ago < 24 else ("stale" if hours_ago < 72 else "dead")
+                    collector_parts.append(f"{src}:{tag}")
+                else:
+                    collector_parts.append(f"{src}:never")
+        lines.append(f"Collectors: {', '.join(collector_parts)}")
+    except Exception:
+        pass
+
+    # ── Active tasks ──
+    try:
+        with db._connect() as conn:
+            running = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE status = 'running'"
+            ).fetchone()[0]
+            pending = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE status = 'pending'"
+            ).fetchone()[0]
+        if running or pending:
+            lines.append(f"Tasks: {running} running, {pending} pending")
+    except Exception:
+        pass
+
+    # ── Active channels ──
+    try:
+        from src.channels.registry import get_channel_registry
+        reg = get_channel_registry()
+        active = [name for name, ch in reg._channels.items()
+                  if not getattr(getattr(ch, "_stop_event", None), "is_set", lambda: True)()]
+        if active:
+            lines.append(f"Channels: {', '.join(active)}")
+    except Exception:
+        pass
+
+    return "\n".join(lines)
+
+
 class HistoryProvider(BaseProvider):
     """从 run_logger 读取最近执行记录。
 
