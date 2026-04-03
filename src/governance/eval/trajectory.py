@@ -110,7 +110,8 @@ class TrajectoryScore:
 @dataclass
 class Trajectory:
     """Complete tool call trajectory for one task execution."""
-    task_id: int
+    schema_version: str = "orch-v1.0"  # R38 AutoAgent: versioned for future migration
+    task_id: int = 0
     steps: list[TrajectoryStep] = field(default_factory=list)
     started_at: str = ""
     finished_at: str = ""
@@ -131,6 +132,7 @@ class Trajectory:
 
     def to_dict(self) -> dict:
         return {
+            "schema_version": self.schema_version,
             "task_id": self.task_id,
             "steps": [s.to_dict() for s in self.steps],
             "started_at": self.started_at,

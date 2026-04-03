@@ -91,6 +91,15 @@ Before any dangerous operation, walk through the applicable gate. Do not skip st
 4. Proceed.
 ```
 
+**Gate: Agent Self-Modification (prompt, tools, config)** *(R38 — AutoAgent Editable/Fixed Boundary)*
+```
+1. Is there a baseline score for the current config?  → NO: Run eval first to establish baseline.
+2. Is the change in the EDITABLE zone (prompts, weights, tool descriptions)?  → NO: STOP. Fixed zones (core infra, DB schema, Gate Functions) require owner approval.
+3. After modification, did eval score improve or stay equal?  → NO: Revert to baseline.
+4. Is the new config simpler than the previous version?  → Track complexity. Same score + simpler = keep.
+5. Log to experiment ledger (src/governance/eval/experiment.py) and proceed.
+```
+
 ### Rationalization Immunity
 
 Before cutting corners, consult `SOUL/public/prompts/rationalization-immunity.md`.

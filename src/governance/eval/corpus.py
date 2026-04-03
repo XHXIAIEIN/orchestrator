@@ -175,11 +175,19 @@ def _extract_failure_reason(output: str, status: str) -> str:
 
 
 def _auto_tag(action: str, output: str, status: str, department: str) -> list[str]:
-    """Generate tags for corpus search/filtering."""
+    """Generate tags for corpus search/filtering.
+
+    Two tag dimensions (R38 — stolen from AutoAgent failure classification):
+      1. Symptom tags — WHAT went wrong (timeout, permission, import error...)
+      2. Root-cause tags — WHY it went wrong (misunderstanding, weak exploration...)
+    Both layers coexist so we can answer "what happened" and "how to fix the class".
+    """
     tags = [status, department]
 
-    # Tag by failure pattern
     lower_output = output.lower()
+    lower_action = action.lower()
+
+    # ── Symptom tags (what went wrong) ──────────────────────
     if "timeout" in lower_output:
         tags.append("timeout_related")
     if "permission" in lower_output or "denied" in lower_output:
@@ -193,8 +201,50 @@ def _auto_tag(action: str, output: str, status: str, department: str) -> list[st
     if "token" in lower_output and ("limit" in lower_output or "budget" in lower_output):
         tags.append("token_limit")
 
-    # Tag by task type
-    lower_action = action.lower()
+    # ── Root-cause tags (why it went wrong) — R38 AutoAgent ─
+    # misunderstanding: agent interpreted the task wrong
+    if any(kw in lower_output for kw in [
+        "误解", "wrong interpretation", "不是要求的", "misunderstood",
+        "that's not what", "off-topic", "偏题",
+    ]):
+        tags.append("rc:misunderstanding")
+
+    # missing_tool: agent needed a capability it didn't have
+    if any(kw in lower_output for kw in [
+        "no tool", "not available", "不支持", "missing tool",
+        "no such command", "command not found", "未安装",
+    ]):
+        tags.append("rc:missing_tool")
+
+    # weak_exploration: didn't read enough / assumed too much
+    if any(kw in lower_output for kw in [
+        "didn't read", "没检查", "assumed", "should have checked",
+        "没看", "didn't check", "skipped reading",
+    ]):
+        tags.append("rc:weak_exploration")
+
+    # strategy_error: wrong approach / methodology
+    if any(kw in lower_output for kw in [
+        "wrong approach", "应该用", "更好的方式", "better approach",
+        "should have used", "方法不对",
+    ]):
+        tags.append("rc:strategy_error")
+
+    # silent_failure: agent claimed success but actually failed
+    if any(kw in lower_output for kw in [
+        "以为成功", "actually failed", "output mismatch",
+        "claimed complete", "but the test", "looks correct but",
+    ]):
+        tags.append("rc:silent_failure")
+
+    # verification_gap: didn't verify results before declaring done
+    if any(kw in lower_output for kw in [
+        "没验证", "didn't verify", "claimed complete",
+        "should have tested", "没测试", "no verification",
+    ]):
+        tags.append("rc:verification_gap")
+
+    # ── Task-type tags ──────────────────────────────────────
     if any(kw in lower_action for kw in ["fix", "bug", "修"]):
         tags.append("bugfix")
     if any(kw in lower_action for kw in ["refactor", "重构"]):
