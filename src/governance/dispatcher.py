@@ -250,6 +250,42 @@ class TaskDispatcher:
 
         return False
 
+    def _get_semantic_context(self, spec: dict, action: str) -> str:
+        """Retrieve relevant learnings and run history via Qdrant. Sync wrapper."""
+        import asyncio
+        try:
+            from src.storage.qdrant_store import QdrantStore
+            store = QdrantStore()
+            if not store.is_available():
+                return ""
+
+            query = f"{action} {spec.get('summary', '')} {spec.get('problem', '')}"
+
+            loop = asyncio.new_event_loop()
+            parts = []
+
+            # Relevant learnings
+            learnings = loop.run_until_complete(
+                store.search_with_fallback("orch_learnings", query, top_k=3)
+            )
+            if learnings:
+                items = [f"- {l['text'][:200]} (area={l['metadata'].get('area', '?')})" for l in learnings]
+                parts.append("**Relevant learnings:**\n" + "\n".join(items))
+
+            # Similar past runs
+            runs = loop.run_until_complete(
+                store.search_with_fallback("orch_runs", query, top_k=3)
+            )
+            if runs:
+                items = [f"- [{r['metadata'].get('department', '?')}] {r['text'][:150]}" for r in runs]
+                parts.append("**Similar past runs:**\n" + "\n".join(items))
+
+            loop.close()
+            return "\n\n".join(parts)
+        except Exception as e:
+            log.debug(f"Semantic context retrieval failed: {e}")
+            return ""
+
     def dispatch_task(self, spec: dict, action: str, reason: str,
                       priority: str = "high", source: str = "auto") -> int | None:
         """Atomic dispatch pipeline: create → classify → preflight → scrutinize.
@@ -308,6 +344,15 @@ class TaskDispatcher:
             extra = spec.get("extra_instructions", "")
             spec["extra_instructions"] = f"{extra}\n{_SYNTHESIS_GUIDANCE}".strip()
             self.db.update_task(task_id, spec=json.dumps(spec, ensure_ascii=False, default=str))
+
+        # ── Semantic Context from Qdrant ──
+        try:
+            semantic_ctx = self._get_semantic_context(spec, action)
+            if semantic_ctx:
+                spec["semantic_context"] = semantic_ctx
+                log.info(f"TaskDispatcher: injected semantic context for task #{task_id}")
+        except Exception:
+            pass
 
         # Cognitive mode
         task_dict = self.db.get_task(task_id)

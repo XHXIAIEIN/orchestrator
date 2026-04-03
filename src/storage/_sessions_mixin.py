@@ -199,6 +199,19 @@ class SessionsMixin:
             )
             exp_id = cur.lastrowid
 
+        # Sync to Qdrant (fire-and-forget)
+        try:
+            import threading
+            from src.storage._runs_mixin import _sync_experience_to_qdrant
+            threading.Thread(
+                target=_sync_experience_to_qdrant,
+                args=(exp_id, f"{summary}\n{detail}",
+                      {"date": date, "type": etype, "instance": instance or ""}),
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
+
         # Write to structured_memory (6-dimensional store)
         try:
             from src.governance.context.structured_memory import (

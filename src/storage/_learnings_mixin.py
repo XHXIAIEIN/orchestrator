@@ -1,9 +1,39 @@
 """Learnings-related methods for EventsDB — DB is the single source of truth."""
 import json
 import logging
+import threading
 from datetime import datetime, timezone, timedelta
 
 log = logging.getLogger(__name__)
+
+_qdrant_store = None
+
+def _get_qdrant():
+    global _qdrant_store
+    if _qdrant_store is None:
+        try:
+            from src.storage.qdrant_store import QdrantStore
+            s = QdrantStore()
+            if s.is_available():
+                s.ensure_collection("orch_learnings")
+                _qdrant_store = s
+        except Exception:
+            pass
+    return _qdrant_store
+
+def _sync_learning_to_qdrant(learning_id: int, rule: str, metadata: dict):
+    import asyncio
+    try:
+        store = _get_qdrant()
+        if store is None:
+            return
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(
+            store.upsert("orch_learnings", "learnings", learning_id, rule, metadata)
+        )
+        loop.close()
+    except Exception:
+        pass
 
 
 class LearningsMixin:
@@ -47,6 +77,14 @@ class LearningsMixin:
                     "WHERE id = ?",
                     (new_count, merged_detail, now, context, context, existing["id"]),
                 )
+                # Sync to Qdrant (fire-and-forget)
+                threading.Thread(
+                    target=_sync_learning_to_qdrant,
+                    args=(existing["id"], rule, {"area": area, "department": department or "",
+                                                 "source_type": source_type, "pattern_key": pattern_key,
+                                                 "status": "pending"}),
+                    daemon=True,
+                ).start()
                 return existing["id"]
 
             # Contradiction check
@@ -72,7 +110,16 @@ class LearningsMixin:
                  entry_type, related_json, department, task_id,
                  now, now, now, ttl_days, expires_at),
             )
-            return cursor.lastrowid
+            new_id = cursor.lastrowid
+            # Sync to Qdrant (fire-and-forget)
+            threading.Thread(
+                target=_sync_learning_to_qdrant,
+                args=(new_id, rule, {"area": area, "department": department or "",
+                                     "source_type": source_type, "pattern_key": pattern_key,
+                                     "status": "pending"}),
+                daemon=True,
+            ).start()
+            return new_id
 
     def promote_learning(self, learning_id: int) -> None:
         """Promote a learning to boot.md-eligible status."""

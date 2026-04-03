@@ -12,6 +12,7 @@ from src.jobs.periodic import (
     policy_suggestions, weekly_audit,
     skill_vetting,
 )
+from src.jobs.sync_vectors import sync_vectors
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ def start():
     s.add_job(lambda: run_job("weekly_audit", weekly_audit, db), "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")
     s.add_job(lambda: run_job("skill_vetting", skill_vetting, db), "cron", day_of_week="sat", hour=9, timezone="Asia/Shanghai", id="skill_vetting")
     s.add_job(lambda: run_job("hotness_sweep", hotness_sweep, db), "cron", hour=5, timezone="Asia/Shanghai", id="hotness_sweep")
+    s.add_job(lambda: run_job("sync_vectors", sync_vectors, db), "interval", hours=1, id="sync_vectors")
 
     # ── Agent Cron: 部门级定时任务 (Round 16 LobeHub) ──
     try:

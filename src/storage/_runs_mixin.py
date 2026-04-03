@@ -1,6 +1,40 @@
 """Runs, logs, sub-runs, sessions, heartbeats, file-index, experiences, agent-events methods for EventsDB."""
 import json
+import threading
 from datetime import datetime, timezone
+
+
+def _sync_experience_to_qdrant(exp_id: int, text: str, metadata: dict):
+    import asyncio
+    try:
+        from src.storage.qdrant_store import QdrantStore
+        store = QdrantStore()
+        if not store.is_available():
+            return
+        store.ensure_collection("orch_experiences")
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(
+            store.upsert("orch_experiences", "experiences", exp_id, text, metadata)
+        )
+        loop.close()
+    except Exception:
+        pass
+
+def _sync_run_to_qdrant(run_id: int, text: str, metadata: dict):
+    import asyncio
+    try:
+        from src.storage.qdrant_store import QdrantStore
+        store = QdrantStore()
+        if not store.is_available():
+            return
+        store.ensure_collection("orch_runs")
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(
+            store.upsert("orch_runs", "runs", run_id, text, metadata)
+        )
+        loop.close()
+    except Exception:
+        pass
 
 
 class RunsMixin:
@@ -52,7 +86,14 @@ class RunsMixin:
                  commit_hash, status, duration_s, notes,
                  entry_hash, prev_hash, ts)
             )
-            return cursor.lastrowid
+            run_id = cursor.lastrowid
+        threading.Thread(
+            target=_sync_run_to_qdrant,
+            args=(run_id, f"[{department}] {summary}\n{notes}",
+                  {"department": department, "status": status, "duration_s": duration_s}),
+            daemon=True,
+        ).start()
+        return run_id
 
     def get_recent_run_logs(self, department: str, n: int = 5) -> list:
         with self._connect() as conn:
@@ -164,7 +205,14 @@ class RunsMixin:
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (date, type, summary, detail, instance, now)
             )
-            return cursor.lastrowid
+            exp_id = cursor.lastrowid
+        threading.Thread(
+            target=_sync_experience_to_qdrant,
+            args=(exp_id, f"{summary}\n{detail}",
+                  {"date": date, "type": type, "instance": instance or ""}),
+            daemon=True,
+        ).start()
+        return exp_id
 
     def get_recent_experiences(self, n: int = 10) -> list:
         with self._connect() as conn:

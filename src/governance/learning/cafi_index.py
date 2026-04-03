@@ -42,7 +42,7 @@ _ROUTING_RULES: list[tuple[str, str, list[str]]] = [
     ("src/governance/task_lifecycle", "Task Lifecycle：状态机", ["engineering", "governance"]),
     ("src/gateway/", "Gateway：请求分类和路由", ["engineering", "gateway"]),
     ("src/storage/events_db", "EventsDB：中央数据库", ["operations", "storage"]),
-    ("src/storage/vector_db", "VectorDB：向量存储", ["engineering", "storage"]),
+    ("src/storage/qdrant_store", "QdrantStore：Qdrant 向量记忆层", ["engineering", "storage"]),
     ("src/core/llm_router", "LLM Router：模型选择和级联", ["operations", "llm"]),
     ("src/core/event_bus", "Event Bus：事件总线", ["operations", "events"]),
     ("src/analysis/", "Analysis：数据分析引擎", ["protocol", "analysis"]),

@@ -91,6 +91,49 @@ def check_duplicate(new_rule: str, new_area: str, existing_learnings: list[dict]
     return DedupDecision(action="create", similarity=best_sim, reason="no close match found")
 
 
+async def check_duplicate_semantic(
+    new_rule: str,
+    new_area: str,
+    threshold: float = 0.85,
+) -> DedupDecision | None:
+    """Check for duplicates using Qdrant embedding similarity.
+
+    Returns DedupDecision if a match is found, None if Qdrant unavailable or no match.
+    Falls back gracefully — caller should use check_duplicate() as backup.
+    """
+    try:
+        from src.storage.qdrant_store import QdrantStore
+        store = QdrantStore()
+        if not store.is_available():
+            return None
+
+        filters = {"area": new_area} if new_area else None
+        results = await store.search_with_fallback(
+            "orch_learnings", new_rule, top_k=3, filters=filters,
+        )
+        if not results:
+            return None
+
+        top = results[0]
+        if top["score"] >= 0.95:
+            return DedupDecision(
+                action="skip",
+                existing_id=top.get("sqlite_id"),
+                similarity=top["score"],
+                reason=f"embedding near-identical (score={top['score']:.3f})",
+            )
+        if top["score"] >= threshold:
+            return DedupDecision(
+                action="merge",
+                existing_id=top.get("sqlite_id"),
+                similarity=top["score"],
+                reason=f"embedding similar (score={top['score']:.3f})",
+            )
+    except Exception as e:
+        log.debug(f"Semantic dedup unavailable: {e}")
+    return None
+
+
 class DedupPipeline:
     """Wrap dedup check into a reusable pipeline."""
 

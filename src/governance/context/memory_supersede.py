@@ -4,7 +4,7 @@ Memory Supersede — 新记忆自动替代旧记忆。
 Lucentia 启发：新记忆与旧记忆相似度 > 0.90 → 旧的标记 superseded。
 半衰期 90 天。
 
-使用 vector_db 做相似度比较，无向量时 fallback 到 SequenceMatcher。
+使用 SequenceMatcher 做相似度比较。
 """
 import json
 import logging
@@ -73,20 +73,7 @@ def check_supersede(new_content: str, memory_dir: Path,
 
 
 def _compute_similarity(text_a: str, text_b: str) -> float:
-    """计算两段文本的相似度。优先用向量相似度，fallback 到 SequenceMatcher。"""
-    # 尝试向量相似度
-    try:
-        from src.storage.vector_db import VectorDB, cosine_similarity
-        import numpy as np
-
-        vdb = VectorDB.__new__(VectorDB)
-        vec_a = np.array(vdb._simple_embed(text_a))
-        vec_b = np.array(vdb._simple_embed(text_b))
-        return cosine_similarity(vec_a, vec_b)
-    except Exception:
-        pass
-
-    # Fallback: SequenceMatcher
+    """计算两段文本的相似度。"""
     return SequenceMatcher(None, text_a[:2000], text_b[:2000]).ratio()
 
 

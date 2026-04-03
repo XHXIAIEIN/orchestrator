@@ -17,8 +17,9 @@ pytest>=8.0.0
 # Optional: system monitoring backpressure (src/core/system_monitor.py)
 psutil>=5.9.0
 
-# Optional: vector search (only used by src/storage/vector_db.py)
-# numpy
+# Vector memory layer (Qdrant + Ollama embedding)
+qdrant-client>=1.9.0
+httpx>=0.27.0
 
 # GUI Engine (src/desktop_use/) — Windows only, not installed in Docker
 # Install separately: pip install -r requirements-gui.txt
