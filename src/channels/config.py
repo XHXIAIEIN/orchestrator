@@ -83,7 +83,7 @@ if not any(uid for uid in ALLOWED_USERS if not uid.endswith("@im.wechat")):
 
 # Role permissions
 ROLE_PERMISSIONS: dict[str, set[str]] = {
-    "admin": {"chat", "query_status", "dispatch_task", "read_file", "wake_claude", "react"},
+    "admin": {"chat", "query_status", "dispatch_task", "read_file", "wake_claude", "wake_remote", "react"},
     "viewer": {"chat", "query_status", "react"},
 }
 

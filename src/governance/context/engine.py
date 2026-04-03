@@ -174,6 +174,7 @@ class ContextEngine:
         from src.governance.context.providers import (
             SystemPromptProvider, GuidelinesProvider,
             MemoryProvider, HistoryProvider, TwoStageRAGProvider,
+            SystemSnapshotProvider,
         )
         from src.governance.context.processors import (
             PriorityProcessor, TruncateProcessor,
@@ -184,6 +185,8 @@ class ContextEngine:
         engine.register_provider(MemoryProvider())
         engine.register_provider(TwoStageRAGProvider())  # Two-Stage RAG (Round 16 P1)
         engine.register_provider(HistoryProvider())
+        # System Snapshot (Round 37 AI Designer MCP — repo_context auto-injection)
+        engine.register_provider(SystemSnapshotProvider())
         # Structured Memory (Round 16 LobeHub P0 #1 — 6-dimensional memory)
         try:
             from src.governance.context.providers import StructuredMemoryProvider

@@ -26,6 +26,15 @@ CHAT_TOOLS = [
                 "action": {"type": "string", "description": "Task description or scenario name"},
                 "department": {"type": "string", "description": "Target department. Empty = auto-route.", "default": ""},
                 "priority": {"type": "string", "enum": ["low", "medium", "high"], "default": "medium"},
+                "mode": {
+                    "type": "string",
+                    "enum": ["quick", "deep", "compare", "fix"],
+                    "description": (
+                        "Operation mode. quick=fast scan 2min; deep=full audit chain; "
+                        "compare=diff against last run; fix=auto-repair issues found. "
+                        "Default: auto (inferred from action)."
+                    ),
+                },
             },
             "required": ["action"],
         },
@@ -88,6 +97,23 @@ CHAT_TOOLS = [
         },
     },
     {
+        "name": "wake_remote",
+        "description": (
+            "Launch a new Claude Code remote session on the host machine. "
+            "This creates an isolated session via Remote Trigger with /persona loaded."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Why waking up, e.g. '帮我看看 TG bot 日志'",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "react",
         "description": (
             "Add an emoji reaction to the user's message. Use this to express "
@@ -114,6 +140,42 @@ CHAT_TOOLS = [
 ]
 
 
+# ── Operation Modes (stolen from AI Designer MCP, Round 37) ──
+# Maps mode name → tier override + behavioral instructions.
+# Tier controls resources (tokens/model/turns), instructions control behavior.
+_OPERATION_MODES: dict[str, dict] = {
+    "quick": {
+        "tier": "light",
+        "extra_instructions": (
+            "[Mode: Quick Scan] Deliver results within 2 minutes. Check key metrics only, "
+            "skip deep analysis. Output: one-paragraph summary + issues found (if any). No long reports."
+        ),
+    },
+    "deep": {
+        "tier": "heavy",
+        "extra_instructions": (
+            "[Mode: Deep Audit] Full analysis chain, leave nothing unchecked. Examine all dimensions, "
+            "cross-validate findings. Output: structured report + evidence + recommendations. Take your time."
+        ),
+    },
+    "compare": {
+        "tier": "standard",
+        "extra_instructions": (
+            "[Mode: Compare] Find the previous run result for this department/domain (via ctx_read --list), "
+            "and diff against current analysis. Output: diff summary — what improved, what degraded, what unchanged."
+        ),
+    },
+    "fix": {
+        "tier": "standard",
+        "extra_instructions": (
+            "[Mode: Auto-Fix] When issues are found, fix them directly instead of just reporting. "
+            "For each fix: describe the problem → execute repair command → verify success. "
+            "Output: fix summary (N issues found, M fixed, K require manual intervention)."
+        ),
+    },
+}
+
+
 def execute_tool(tool_name: str, tool_input: dict, chat_id: str = "",
                  reply_fn=None, channel_source: str = "channel",
                  react_fn=None) -> str:
@@ -128,6 +190,8 @@ def execute_tool(tool_name: str, tool_input: dict, chat_id: str = "",
         return _tool_wake_claude(tool_input, chat_id, channel_source)
     elif tool_name == "wake_interact":
         return _tool_wake_interact(tool_input, chat_id)
+    elif tool_name == "wake_remote":
+        return _tool_wake_remote(tool_input, chat_id)
     elif tool_name == "react":
         emoji = tool_input.get("emoji", "")
         if react_fn and emoji:
@@ -172,6 +236,7 @@ def _tool_read_file(params: dict) -> str:
 def _tool_dispatch_task(params: dict, chat_id: str, reply_fn, channel_source: str) -> str:
     action = params.get("action", "")
     priority = params.get("priority", "medium")
+    mode = params.get("mode", "")  # Operation Mode (R37 AI Designer steal)
     if not action:
         return "action 不能为空"
 
@@ -183,24 +248,39 @@ def _tool_dispatch_task(params: dict, chat_id: str, reply_fn, channel_source: st
             bus = get_event_bus()
             bus.publish(Event(
                 event_type="channel.command.run",
-                payload={"scenario": action, "source": f"{channel_source}_chat"},
+                payload={"scenario": action, "source": f"{channel_source}_chat", "mode": mode},
                 priority=EvPriority.HIGH,
                 source=f"channel:{channel_source}:chat",
             ))
-            return f"已提交预定义场景: {action}"
+            return f"已提交预定义场景: {action}" + (f" (mode={mode})" if mode else "")
 
         from src.storage.events_db import EventsDB
         db = EventsDB()
+
+        # ── Operation Mode → tier + extra_instructions mapping ──
+        # quick → light tier, "2 分钟内出结果，只看关键指标"
+        # deep  → heavy tier, "完整分析链，不遗漏"
+        # compare → standard tier, "和上次 run 结果对比，输出 diff"
+        # fix   → standard tier, "发现问题直接修复，输出修复摘要"
+        mode_config = _OPERATION_MODES.get(mode, {})
+        spec = {
+            "summary": action,
+            "department": params.get("department", ""),
+            "problem": action,
+            "source": f"{channel_source}_chat",
+        }
+        if mode_config:
+            if mode_config.get("tier"):
+                spec["tier"] = mode_config["tier"]
+            if mode_config.get("extra_instructions"):
+                spec["extra_instructions"] = mode_config["extra_instructions"]
+            spec["mode"] = mode
+
         task_id = db.create_task(
             action=action,
             reason=f"{channel_source} 对话触发",
             priority=priority,
-            spec={
-                "summary": action,
-                "department": params.get("department", ""),
-                "problem": action,
-                "source": f"{channel_source}_chat",
-            },
+            spec=spec,
             source="channel",
         )
 
@@ -302,6 +382,40 @@ def _tool_wake_claude(params: dict, chat_id: str, channel_source: str = "channel
         f"Wake session #{result['session_id']} created (task #{result['task_id']}). "
         f"Waiting for Governor approval."
     )
+
+
+def _tool_wake_remote(params: dict, chat_id: str) -> str:
+    """Run the Orchestrator Remote trigger via Agent SDK."""
+    import subprocess
+    trigger_id = "trig_01KgvqPcZv7SZAK5kRAZWsZZ"
+    reason = params.get("reason", "")
+
+    try:
+        # Use claude CLI to run the trigger — it handles OAuth internally.
+        # --print for non-interactive, --model haiku for speed (just one API call).
+        cmd = [
+            "claude", "-p",
+            f'Use the RemoteTrigger tool: action="run", trigger_id="{trigger_id}". '
+            f'Just run it and report the result.',
+            "--allowedTools", "RemoteTrigger",
+            "--model", "haiku",
+            "--dangerously-skip-permissions",
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            output = result.stdout.strip()[-300:]
+            log.info(f"wake_remote: trigger run success: {output[:100]}")
+            return f"Remote session launched. {output}"
+        else:
+            err = result.stderr.strip()[-200:]
+            log.warning(f"wake_remote: trigger run failed: {err}")
+            return f"Remote trigger failed: {err}"
+    except subprocess.TimeoutExpired:
+        return "Remote trigger timed out (30s)"
+    except Exception as e:
+        return f"Remote trigger error: {e}"
 
 
 def _tool_wake_interact(params: dict, chat_id: str) -> str:
