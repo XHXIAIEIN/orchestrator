@@ -281,6 +281,79 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON checkpoints(task_id);
+
+CREATE TABLE IF NOT EXISTS growth_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '',
+    alternatives TEXT NOT NULL DEFAULT '[]',
+    followup_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    outcome TEXT NOT NULL DEFAULT '',
+    source_session TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    followed_up_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_growth_decisions_status ON growth_decisions(status);
+CREATE INDEX IF NOT EXISTS idx_growth_decisions_followup ON growth_decisions(followup_at);
+
+CREATE TABLE IF NOT EXISTS growth_curiosity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    domain TEXT NOT NULL DEFAULT 'general',
+    answer TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    asked_at TEXT,
+    answered_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(question)
+);
+CREATE INDEX IF NOT EXISTS idx_growth_curiosity_status ON growth_curiosity(status);
+
+-- ── Ontology Graph (R23 steal — cross-department knowledge graph) ──
+
+CREATE TABLE IF NOT EXISTS ontology_entities (
+    id          TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    properties  TEXT NOT NULL DEFAULT '{}',
+    source_table TEXT,
+    source_id   INTEGER,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_onto_ent_type ON ontology_entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_onto_ent_source ON ontology_entities(source_table, source_id);
+
+CREATE TABLE IF NOT EXISTS ontology_relations (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_id       TEXT NOT NULL,
+    relation_type TEXT NOT NULL,
+    to_id         TEXT NOT NULL,
+    properties    TEXT NOT NULL DEFAULT '{}',
+    weight        REAL DEFAULT 1.0,
+    created_at    TEXT NOT NULL,
+    UNIQUE(from_id, relation_type, to_id)
+);
+CREATE INDEX IF NOT EXISTS idx_onto_rel_from ON ontology_relations(from_id);
+CREATE INDEX IF NOT EXISTS idx_onto_rel_to ON ontology_relations(to_id);
+CREATE INDEX IF NOT EXISTS idx_onto_rel_type ON ontology_relations(relation_type);
+
+CREATE TABLE IF NOT EXISTS ontology_ops (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    op         TEXT NOT NULL,
+    entity_id  TEXT,
+    relation_id INTEGER,
+    data       TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_onto_ops_entity ON ontology_ops(entity_id);
+
+CREATE TABLE IF NOT EXISTS ontology_type_schema (
+    entity_type TEXT PRIMARY KEY,
+    constraints TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 """
 
 # Migrations: (table, column, type)

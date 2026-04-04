@@ -40,11 +40,82 @@ if [ -f "$LEARNINGS_DB" ]; then
     fi
 fi
 
-# Read stdin (hook arguments JSON)
+# ── Growth Loops: capture decisions + patterns (synchronous, fast) ──
+# Read stdin early so we can use it for both growth loops and experience extraction
 INPUT=$(cat)
 
 # Extract last assistant message (truncated to 500 chars for efficiency)
 LAST_MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null | head -c 500)
+
+# ── Growth Loops: extract decisions + patterns from conversation ──
+python3 -c "
+import sys, json, os
+sys.path.insert(0, '$SCRIPT_DIR')
+
+last_msg = '''${LAST_MSG//\'/\'\\\'\'}'''
+if len(last_msg) < 30:
+    sys.exit(0)
+
+try:
+    OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+    import urllib.request
+
+    prompt = (
+        'Analyze this AI conversation excerpt. Extract:\\n'
+        '1. Any significant DECISIONS made (architecture, tool choices, strategy changes)\\n'
+        '2. Any REPEATED REQUEST PATTERNS (same type of task being done)\\n\\n'
+        'Respond with JSON only:\\n'
+        '{\"decisions\": [{\"decision\": \"what\", \"context\": \"why\", \"alternatives\": [\"rejected options\"]}], '
+        '\"patterns\": [{\"key\": \"short-kebab-key\", \"description\": \"what repeats\"}]}\\n'
+        'If nothing found: {\"decisions\": [], \"patterns\": []}\\n\\n'
+        'Excerpt: ' + last_msg.replace('\"', '\\\\\"')[:400]
+    )
+
+    payload = json.dumps({
+        'model': 'qwen3:1.7b',
+        'prompt': prompt,
+        'stream': False,
+        'options': {'temperature': 0.3}
+    }).encode()
+
+    req = urllib.request.Request(
+        f'{OLLAMA_HOST}/api/generate',
+        data=payload,
+        headers={'Content-Type': 'application/json'}
+    )
+    resp = urllib.request.urlopen(req, timeout=10)
+    result = json.loads(resp.read()).get('response', '')
+
+    import re
+    m = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', result)
+    if not m:
+        sys.exit(0)
+
+    data = json.loads(m.group())
+
+    from src.governance.growth_loops import GrowthLoops
+    from src.storage.events_db import EventsDB
+    db = EventsDB('$DB_PATH')
+    gl = GrowthLoops(db)
+
+    for d in data.get('decisions', [])[:3]:
+        if d.get('decision'):
+            gl.outcomes.record_decision(
+                decision=d['decision'][:200],
+                context=d.get('context', '')[:200],
+                alternatives=d.get('alternatives', [])[:5],
+            )
+
+    for p in data.get('patterns', [])[:5]:
+        if p.get('key') and p.get('description'):
+            gl.patterns.record_request(
+                pattern_key=p['key'][:50],
+                description=p['description'][:200],
+            )
+
+except Exception:
+    pass  # non-critical — growth loops are best-effort
+" 2>/dev/null
 
 # Skip if message is too short (trivial conversation)
 if [ ${#LAST_MSG} -lt 50 ]; then

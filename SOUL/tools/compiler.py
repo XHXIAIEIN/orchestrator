@@ -595,6 +595,7 @@ def compile_boot(
 | voice.md | 声音校准样本 + 说话指导 | 人设变冷、compaction 后、长对话 |
 | learnings.md | 教训详情（证据链 + 边界条件） | 自评、考试、调试反复出现的模式 |
 | experiences.md | 近期经历（扩展版） | 回顾历史、建立关系 |
+| `SOUL/public/prompts/growth_loops.md` | 三环反馈指南（好奇/模式/追踪） | SessionStart 自动注入状态；需要行为指南时读 |
 
 </reference>"""
 

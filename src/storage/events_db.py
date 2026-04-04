@@ -10,6 +10,7 @@ from src.storage._runs_mixin import RunsMixin
 from src.storage._sessions_mixin import SessionsMixin
 from src.storage._wake_mixin import WakeMixin
 from src.storage._context_mixin import ContextMixin
+from src.storage._growth_mixin import GrowthMixin
 from src.storage.pool import get_pool
 
 log = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ log = logging.getLogger(__name__)
 _DEFAULT_DB = str(Path(__file__).resolve().parent.parent.parent / "data" / "events.db")
 
 
-class EventsDB(TasksMixin, ProfileMixin, LearningsMixin, RunsMixin, SessionsMixin, WakeMixin, ContextMixin):
+class EventsDB(TasksMixin, ProfileMixin, LearningsMixin, RunsMixin, SessionsMixin, WakeMixin, ContextMixin, GrowthMixin):
     def __init__(self, db_path: str = _DEFAULT_DB):
         self.db_path = db_path
         self._pool = get_pool(

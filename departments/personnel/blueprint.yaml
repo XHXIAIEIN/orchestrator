@@ -34,3 +34,25 @@ timeout_s: 180
 
 on_done: ""
 on_fail: log_only
+
+cron_jobs:
+  - name: growth_pattern_scan
+    cron: "0 10 * * *"
+    payload:
+      action: "growth_pattern_scan"
+      description: "Scan task history for repeated request patterns, suggest automation for ≥3 occurrences"
+    enabled: true
+
+  - name: growth_outcome_followup
+    cron: "0 11 * * *"
+    payload:
+      action: "growth_outcome_followup"
+      description: "Check for decisions due for 7-day follow-up, generate review prompts"
+    enabled: true
+
+  - name: growth_curiosity_seed
+    cron: "0 9 * * 1"
+    payload:
+      action: "growth_curiosity_seed"
+      description: "Seed curiosity queue with questions for under-covered knowledge domains"
+    enabled: true

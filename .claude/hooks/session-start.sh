@@ -69,6 +69,27 @@ if [ -n "$OUTPUT" ]; then
     echo -e "--- Orchestrator Wake ---\n$OUTPUT---"
 fi
 
+# ── 2. Growth Loops status injection ──
+GROWTH=$(python3 -c "
+import sys
+sys.path.insert(0, '$PROJECT_DIR')
+try:
+    from src.governance.growth_loops import GrowthLoops
+    from src.storage.events_db import EventsDB
+    db = EventsDB('$DB_PATH')
+    gl = GrowthLoops(db)
+    gl.seed_if_empty()
+    injection = gl.session_start_injection()
+    if injection:
+        print(injection)
+except Exception:
+    pass
+" 2>/dev/null)
+
+if [ -n "$GROWTH" ]; then
+    echo "$GROWTH"
+fi
+
 
 
 # ── Compaction Recovery ──
