@@ -1,8 +1,9 @@
 """Tests for Signal dataclass and SignalDetector framework."""
 from __future__ import annotations
 
+import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -228,15 +229,204 @@ def test_s9_returns_signal_when_active_steal_branch(detector):
     assert "steal/test-topic" in result.data["active_branches"]
 
 
-# ── placeholder detectors ─────────────────────────────────────────────────────
+# ── S7: repeated patterns ────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("method_name", [
-    "_check_repeated_patterns",
-    "_check_batch_completion",
-    "_check_defer_overdue",
-    "_check_github_activity",
-    "_check_dependency_vulns",
-])
-def test_placeholder_detectors_return_none(detector, method_name):
-    result = getattr(detector, method_name)()
+def test_s7_returns_none_when_no_errors(db, detector):
+    result = detector._check_repeated_patterns()
     assert result is None
+
+
+def test_s7_returns_none_when_errors_below_threshold(db, detector):
+    now = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        for i in range(2):  # threshold is 3
+            conn.execute(
+                "INSERT INTO logs (level, source, message, created_at) VALUES (?,?,?,?)",
+                ("ERROR", "system", "same error", now),
+            )
+    result = detector._check_repeated_patterns()
+    assert result is None
+
+
+def test_s7_returns_signal_on_repeated_errors(db, detector):
+    now = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        for i in range(5):
+            conn.execute(
+                "INSERT INTO logs (level, source, message, created_at) VALUES (?,?,?,?)",
+                ("ERROR", "system", "connection refused", now),
+            )
+    result = detector._check_repeated_patterns()
+    assert result is not None
+    assert result.id == "S7"
+    assert result.data["count"] >= 3
+    assert "connection refused" in result.data["top_message"]
+
+
+def test_s7_ignores_old_errors(db, detector):
+    old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+    with db._connect() as conn:
+        for i in range(5):
+            conn.execute(
+                "INSERT INTO logs (level, source, message, created_at) VALUES (?,?,?,?)",
+                ("ERROR", "system", "old error", old),
+            )
+    result = detector._check_repeated_patterns()
+    assert result is None
+
+
+# ── S8: batch completion ─────────────────────────────────────────────────────
+
+def test_s8_returns_none_when_no_batches(db, detector):
+    result = detector._check_batch_completion()
+    assert result is None
+
+
+def test_s8_returns_none_when_batch_incomplete(db, detector):
+    now = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        conn.execute(
+            "INSERT INTO tasks (action, status, parent_task_id, created_at, finished_at) VALUES (?,?,?,?,?)",
+            ("subtask 1", "done", 1, now, now),
+        )
+        conn.execute(
+            "INSERT INTO tasks (action, status, parent_task_id, created_at) VALUES (?,?,?,?)",
+            ("subtask 2", "pending", 1, now),
+        )
+    result = detector._check_batch_completion()
+    assert result is None
+
+
+def test_s8_returns_signal_when_batch_done(db, detector):
+    now = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        conn.execute(
+            "INSERT INTO tasks (action, status, parent_task_id, created_at, finished_at) VALUES (?,?,?,?,?)",
+            ("subtask 1", "done", 100, now, now),
+        )
+        conn.execute(
+            "INSERT INTO tasks (action, status, parent_task_id, created_at, finished_at) VALUES (?,?,?,?,?)",
+            ("subtask 2", "done", 100, now, now),
+        )
+    result = detector._check_batch_completion()
+    assert result is not None
+    assert isinstance(result, list)
+    assert result[0].id == "S8"
+    assert result[0].data["total"] == 2
+
+
+# ── S10: defer overdue ───────────────────────────────────────────────────────
+
+def test_s10_returns_none_when_no_decisions(db, detector):
+    result = detector._check_defer_overdue()
+    assert result is None
+
+
+def test_s10_returns_none_when_followup_in_future(db, detector):
+    future = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        conn.execute(
+            "INSERT INTO growth_decisions (decision, followup_at, status, created_at) VALUES (?,?,?,?)",
+            ("try new approach", future, "pending", now),
+        )
+    result = detector._check_defer_overdue()
+    assert result is None
+
+
+def test_s10_returns_signal_when_overdue(db, detector):
+    past = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        conn.execute(
+            "INSERT INTO growth_decisions (decision, followup_at, status, created_at) VALUES (?,?,?,?)",
+            ("revisit caching strategy", past, "pending", now),
+        )
+    result = detector._check_defer_overdue()
+    assert result is not None
+    assert isinstance(result, list)
+    assert result[0].id == "S10"
+    assert result[0].data["overdue_days"] >= 2
+    assert "caching strategy" in result[0].data["decision"]
+
+
+def test_s10_ignores_resolved_decisions(db, detector):
+    past = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        conn.execute(
+            "INSERT INTO growth_decisions (decision, followup_at, status, created_at) VALUES (?,?,?,?)",
+            ("already done", past, "resolved", now),
+        )
+    result = detector._check_defer_overdue()
+    assert result is None
+
+
+# ── S11: GitHub activity ─────────────────────────────────────────────────────
+
+def test_s11_returns_none_when_gh_missing(detector):
+    with patch("src.proactive.signals.subprocess.run", side_effect=FileNotFoundError):
+        result = detector._check_github_activity()
+    assert result is None
+
+
+def test_s11_returns_none_when_no_notifications(detector):
+    with patch("src.proactive.signals.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        result = detector._check_github_activity()
+    assert result is None
+
+
+def test_s11_returns_signals_from_notifications(detector):
+    fake_output = (
+        '{"repo":"user/repo","type":"Issue","title":"Bug report"}\n'
+        '{"repo":"user/repo2","type":"PullRequest","title":"Add feature"}\n'
+    )
+    with patch("src.proactive.signals.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout=fake_output)
+        result = detector._check_github_activity()
+
+    assert result is not None
+    assert len(result) == 2
+    assert result[0].id == "S11"
+    assert result[0].data["repo"] == "user/repo"
+    assert result[1].data["event_type"] == "PullRequest"
+
+
+# ── S12: dependency vulns ────────────────────────────────────────────────────
+
+def test_s12_returns_none_when_pip_audit_missing(detector):
+    with patch("src.proactive.signals.subprocess.run", side_effect=FileNotFoundError):
+        result = detector._check_dependency_vulns()
+    assert result is None
+
+
+def test_s12_returns_none_when_no_vulns(detector):
+    clean_output = json.dumps({"dependencies": []})
+    with patch("src.proactive.signals.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout=clean_output)
+        result = detector._check_dependency_vulns()
+    assert result is None
+
+
+def test_s12_returns_signals_for_vulnerabilities(detector):
+    vuln_output = json.dumps({
+        "dependencies": [{
+            "name": "cryptography",
+            "version": "41.0.0",
+            "vulns": [{
+                "id": "PYSEC-2024-001",
+                "aliases": ["CVE-2024-12345"],
+                "fix_versions": ["42.0.0"],
+            }],
+        }],
+    })
+    with patch("src.proactive.signals.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout=vuln_output)
+        result = detector._check_dependency_vulns()
+
+    assert result is not None
+    assert len(result) == 1
+    assert result[0].id == "S12"
+    assert result[0].data["package"] == "cryptography"
+    assert result[0].data["cve_id"] == "CVE-2024-12345"

@@ -1,10 +1,11 @@
 """Proactive push engine — Signal dataclass + SignalDetector framework."""
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -55,12 +56,12 @@ class SignalDetector:
             self._check_governor_failures,     # S4
             self._check_project_silence,       # S5
             self._check_late_night_activity,   # S6
-            self._check_repeated_patterns,     # S7  placeholder
-            self._check_batch_completion,      # S8  placeholder
+            self._check_repeated_patterns,     # S7
+            self._check_batch_completion,      # S8
             self._check_steal_progress,        # S9
-            self._check_defer_overdue,         # S10 placeholder
-            self._check_github_activity,       # S11 placeholder
-            self._check_dependency_vulns,      # S12 placeholder
+            self._check_defer_overdue,         # S10
+            self._check_github_activity,       # S11
+            self._check_dependency_vulns,      # S12
         ]
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -259,15 +260,82 @@ class SignalDetector:
             )
         return None
 
-    # ── S7: repeated patterns (placeholder) ──────────────────────────────────
+    # ── S7: repeated patterns ─────────────────────────────────────────────────
 
     def _check_repeated_patterns(self) -> Optional[Signal]:
-        return None
+        """Detect recurring error patterns in recent logs."""
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=cfg.REPEAT_PATTERN_WINDOW_HOURS)
+        ).isoformat()
 
-    # ── S8: batch completion (placeholder) ───────────────────────────────────
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT message, COUNT(*) as cnt "
+                "FROM logs WHERE level = 'ERROR' AND created_at >= ? "
+                "GROUP BY message HAVING cnt >= ? "
+                "ORDER BY cnt DESC LIMIT 5",
+                (cutoff, cfg.REPEAT_PATTERN_THRESHOLD),
+            ).fetchall()
 
-    def _check_batch_completion(self) -> Optional[Signal]:
-        return None
+        if not rows:
+            return None
+
+        top = rows[0]
+        return Signal(
+            id="S7",
+            tier="B",
+            title="重复错误模式",
+            severity="medium",
+            data={
+                "top_message": top["message"][:200],
+                "count": top["cnt"],
+                "distinct_patterns": len(rows),
+                "window_hours": cfg.REPEAT_PATTERN_WINDOW_HOURS,
+            },
+        )
+
+    # ── S8: batch completion ──────────────────────────────────────────────────
+
+    def _check_batch_completion(self) -> Optional[list[Signal]]:
+        """Notify when all sub-tasks in a parent batch have completed."""
+        with self.db._connect() as conn:
+            batches = conn.execute(
+                "SELECT parent_task_id, COUNT(*) as total, "
+                "  SUM(CASE WHEN status IN ('done', 'completed', 'success') "
+                "       THEN 1 ELSE 0 END) as done_count, "
+                "  MAX(finished_at) as last_finished "
+                "FROM tasks "
+                "WHERE parent_task_id IS NOT NULL "
+                "GROUP BY parent_task_id "
+                "HAVING total = done_count AND total > 1",
+            ).fetchall()
+
+        if not batches:
+            return None
+
+        # Only report batches completed within the last 2 scan intervals
+        cutoff = (
+            datetime.now(timezone.utc)
+            - timedelta(minutes=cfg.SCAN_INTERVAL_MINUTES * 2)
+        ).isoformat()
+
+        signals = []
+        for batch in batches:
+            last = batch["last_finished"]
+            if last and last >= cutoff:
+                signals.append(Signal(
+                    id="S8",
+                    tier="C",
+                    title=f"批量任务完成 ({batch['total']} 个)",
+                    severity="low",
+                    data={
+                        "parent_task_id": batch["parent_task_id"],
+                        "total": batch["total"],
+                        "last_finished": last,
+                    },
+                ))
+
+        return signals if signals else None
 
     # ── S9: steal progress ────────────────────────────────────────────────────
 
@@ -309,17 +377,136 @@ class SignalDetector:
             )
         return None
 
-    # ── S10: DEFER overdue (placeholder) ─────────────────────────────────────
+    # ── S10: DEFER overdue ───────────────────────────────────────────────────
 
-    def _check_defer_overdue(self) -> Optional[Signal]:
-        return None
+    def _check_defer_overdue(self) -> Optional[list[Signal]]:
+        """Check for growth decisions past their follow-up date."""
+        now_str = datetime.now(timezone.utc).isoformat()
 
-    # ── S11: GitHub activity (placeholder) ───────────────────────────────────
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, decision, followup_at FROM growth_decisions "
+                "WHERE followup_at IS NOT NULL AND followup_at < ? "
+                "AND status = 'pending' "
+                "ORDER BY followup_at ASC LIMIT 10",
+                (now_str,),
+            ).fetchall()
 
-    def _check_github_activity(self) -> Optional[Signal]:
-        return None
+        if not rows:
+            return None
 
-    # ── S12: dependency vulns (placeholder) ──────────────────────────────────
+        signals = []
+        for row in rows:
+            try:
+                fu = datetime.fromisoformat(
+                    row["followup_at"].replace("Z", "+00:00")
+                )
+                overdue_days = (datetime.now(timezone.utc) - fu).days
+            except (ValueError, AttributeError):
+                overdue_days = -1
 
-    def _check_dependency_vulns(self) -> Optional[Signal]:
-        return None
+            signals.append(Signal(
+                id="S10",
+                tier="B",
+                title="待跟进决策已过期",
+                severity="medium",
+                data={
+                    "decision_id": row["id"],
+                    "decision": (row["decision"] or "")[:200],
+                    "followup_at": row["followup_at"],
+                    "overdue_days": overdue_days,
+                },
+            ))
+
+        return signals if signals else None
+
+    # ── S11: GitHub activity ──────────────────────────────────────────────────
+
+    def _check_github_activity(self) -> Optional[list[Signal]]:
+        """Fetch recent GitHub notifications via ``gh`` CLI."""
+        try:
+            result = subprocess.run(
+                [
+                    "gh", "api", "/notifications",
+                    "--jq",
+                    ".[:{}] | .[] | {{repo: .repository.full_name, "
+                    "type: .subject.type, title: .subject.title}}".format(
+                        cfg.GITHUB_NOTIFICATION_LIMIT
+                    ),
+                ],
+                capture_output=True, text=True, timeout=15,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+
+        signals: list[Signal] = []
+        for line in result.stdout.strip().splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            signals.append(Signal(
+                id="S11",
+                tier="D",
+                title="GitHub: " + (item.get("title") or "")[:80],
+                severity="low",
+                data={
+                    "repo": item.get("repo", "unknown"),
+                    "event_type": item.get("type", "unknown"),
+                    "title": (item.get("title") or "")[:120],
+                },
+            ))
+
+        return signals if signals else None
+
+    # ── S12: dependency vulns ─────────────────────────────────────────────────
+
+    def _check_dependency_vulns(self) -> Optional[list[Signal]]:
+        """Scan Python dependencies for known vulnerabilities via pip-audit."""
+        req_path = BASE_DIR / "requirements.txt"
+        if not req_path.exists():
+            return None
+
+        try:
+            result = subprocess.run(
+                [
+                    "pip-audit", "-r", str(req_path),
+                    "--format", "json", "--progress-spinner", "off",
+                ],
+                capture_output=True, text=True, timeout=120,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            # pip-audit not installed or timed out — skip silently
+            return None
+
+        if not result.stdout.strip():
+            return None
+
+        try:
+            audit = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return None
+
+        signals: list[Signal] = []
+        for dep in audit.get("dependencies", []):
+            for vuln in dep.get("vulns", []):
+                aliases = vuln.get("aliases", [])
+                cve_id = aliases[0] if aliases else vuln.get("id", "N/A")
+                signals.append(Signal(
+                    id="S12",
+                    tier="D",
+                    title=f"依赖漏洞: {dep.get('name', '?')}",
+                    severity="high",
+                    data={
+                        "package": dep.get("name", "unknown"),
+                        "version": dep.get("version", "unknown"),
+                        "severity": "high",
+                        "cve_id": cve_id,
+                        "fix_versions": vuln.get("fix_versions", []),
+                    },
+                ))
+
+        return signals if signals else None
