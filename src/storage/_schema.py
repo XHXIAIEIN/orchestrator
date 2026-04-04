@@ -354,6 +354,20 @@ CREATE TABLE IF NOT EXISTS ontology_type_schema (
     constraints TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS proactive_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_id   TEXT NOT NULL,
+    tier        TEXT NOT NULL,
+    severity    TEXT NOT NULL,
+    data        TEXT,
+    message     TEXT,
+    action      TEXT NOT NULL,
+    reason      TEXT,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_proactive_signal ON proactive_log(signal_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_proactive_action ON proactive_log(action, created_at);
 """
 
 # Migrations: (table, column, type)
