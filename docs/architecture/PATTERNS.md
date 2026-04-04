@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 35 轮偷师，90+ 项目，149 模式。按主题域组织，不按来源。
+> 38 轮偷师，100+ 项目，174 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 149 |
-| ✅ Implemented | 124 |
+| Total patterns | 174 |
+| ✅ Implemented | 149 |
 | 📐 Designed (spec exists) | 2 |
 | 🔲 Pending (cvui only) | 6 |
 | ⏸️ Shelved | 17 |
@@ -43,6 +43,8 @@
 | S21 | Exec Policy Rule Engine | Codex CLI (R28c) | ✅ | `config/exec-policy.yaml` + `scripts/exec_policy_loader.py` | YAML-configurable guard rules with bash fallback |
 | S22 | Guardian Risk Assessment | Codex (R28c) | ✅ | `SOUL/public/prompts/guardian_assessment.md` | Semantic risk eval prompt for sub-agent modifications |
 | S23 | Sub-Agent Behavioral Norms Injection | PUA (R35) | ✅ | `.claude/hooks/dispatch-gate.sh` | Auto-inject verification discipline + diagnostic norms into sub-agent context |
+| S24 | VBR Gate (Verify Before Reporting) | proactive-agent (R23) | ✅ | `.claude/hooks/vbr-gate.sh` | Stop hook: detect completion claims without verification evidence |
+| S25 | Self-Modification Gate (Editable/Fixed) | AutoAgent (R38b) | ✅ | `CLAUDE.md` Gate Functions | Eval baseline required before config change; editable/fixed boundary enforced |
 
 ---
 
@@ -68,6 +70,7 @@
 | R16 | Checkpoint-Restart Recovery | Codex CLI (R28c) | ✅ | `src/governance/checkpoint_recovery.py` | Resume interrupted sub-agents from checkpoint |
 | R17 | Deterministic Pressure Escalation | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` | Shell counter drives L1-L4 escalation on consecutive Bash failures; success resets to 0. LLM cannot opt out |
 | R18 | PreCompact Behavioral Checkpoint | PUA (R35) | ✅ | `.claude/hooks/pre-compact.sh` | Before compaction: dump tried approaches, eliminated hypotheses, failure count to disk. Bridges memory gap |
+| R19 | Hook Self-Check Bypass Prevention | Claudeception (R36c) | ✅ | `.claude/hooks/dispatch-gate.sh` | Force self-check hooks cannot be bypassed by passive matching |
 
 ---
 
@@ -89,6 +92,8 @@
 | P12 | Shared Memory IPC (zero-copy frames) | Carbonyl (R9) | ✅ | `desktop_use/screen.py` | SharedFrameBuffer: zero-copy frame buffer via shared_memory |
 | P13 | CDP Screencast Frame Stream | Carbonyl (R9) | ✅ | `core/browser_cdp.py` | `take_screenshot()` + `enable/disable_screencast()` + `recv_screencast_frame()` with ack |
 | P14 | Multi-Pass Model Normalization | CC (R28a) | ✅ | `src/core/model_normalize.py` | 4-pass: exact/prefix/date/fuzzy model name resolution |
+| P15 | Configurable Summarization Triggers | DeerFlow (R29) | ✅ | `governance/condenser/configurable.py` | OR-logic triggers (token/message/fraction) + configurable retention policies |
+| P16 | Upload Mention Stripping | DeerFlow (R29) | ✅ | `governance/condenser/upload_stripper.py` | Strip ephemeral file paths (/tmp, uploads, AppData) from memory |
 
 ---
 
@@ -106,7 +111,7 @@
 | I8 | Citation Scoring (memory retrieval) | OpenAkita (R4) | ⏸️ | — | Write-back effectiveness score on memory retrieval. Needs usage data first |
 | I9 | Personality Preference Auto-Promotion | OpenAkita (R4) | ⏸️ | — | High-confidence memory → identity file → prompt recompile. SOUL already handles manually |
 | I10 | Memory Supersede Chain | OpenAkita (R4) + context | ✅ | `governance/context/memory_supersede.py` | `superseded_by` links; new memory links old, preserving audit trail |
-| I11 | Three-Layer Memory (Semantic+Episode+Scratch) | OpenAkita (R4) | ✅ | `governance/context/memory_tier.py` | 3-tier loading (L0/L1/L2) with token budgets, hot/extended tiers |
+| I11 | Three-Layer Memory (Semantic+Episode+Scratch) | OpenAkita (R4) + ClawHub (R14) | ✅ | `governance/context/memory_tier.py` | 3-tier loading (L0/L1/L2). Upgraded to HOT/WARM/COLD with auto-promotion/demotion (R14 steal) |
 | I12 | Sliding Window Auto-Degradation | OpenAkita (R4) | ✅ | `core/llm_router.py` | ModelDegrader: 3 failures→downgrade, 1 success→restore |
 | I13 | Dual-Track Extraction (profile vs task) | OpenAkita (R4) | ⏸️ | — | Separate user profile extraction from task experience extraction. Low priority |
 | I14 | A/B Testing Framework (model/engine) | Firecrawl (R5) | ✅ | `core/ab_testing.py` | Experiment/ABTestManager: split assignment, result tracking, winner detection |
@@ -116,6 +121,13 @@
 | I18 | Memory No-Op Gate | Codex CLI (R28c) | ✅ | `SOUL/tools/memory_noop_gate.py` | Reject low-value memories before storage |
 | I19 | Memory Staleness Annotator | CC (R29) | ✅ | `SOUL/tools/memory_staleness.py` | Tag stale memories for refresh or removal |
 | I20 | Disposition Parameterization | hindsight (R28e) | ✅ | `config/disposition.yaml` | Configurable personality tuning parameters |
+| I21 | Skill Extraction Pipeline | self-improving-agent (R23) | ✅ | `governance/learning/skill_extractor.py` | Auto-extract skills from clustered learnings (≥5 entries + recurrence ≥2) |
+| I22 | Fact Confidence Ranking | DeerFlow (R29) | ✅ | `governance/context/confidence_ranker.py` | Token-budgeted injection sorted by confidence (apply_count × recurrence × recency) |
+| I23 | Per-Agent Memory Isolation | DeerFlow (R29) | ✅ | `governance/context/memory_tier.py` | Department-scoped memory namespaces with partition_by_agent |
+| I24 | Feature Request Auto-Capture | self-improving-agent (R23) | ✅ | `.claude/hooks/correction-detector.sh` | Detect "I wish"/"能不能" patterns, log as feature_request area |
+| I25 | Periodic Review Trigger | self-improving-agent (R23) | ✅ | `.claude/hooks/session-stop.sh` | Check pending learnings count at session end, remind if >10 |
+| I26 | Negative Feedback Tracker | ClawHub (R14) | ✅ | `governance/stuck_detector.py` | Track failed approaches, force strategy switch after 3 repeated failures |
+| I27 | ExperimentLedger (Keep/Discard) | AutoAgent (R38b) | ✅ | `governance/eval/experiment.py` | Score-driven config experiments with simplicity tiebreaker |
 
 ---
 
@@ -187,6 +199,9 @@
 | O25 | SSE Progress Streaming | CC (R28a) | ✅ | `dashboard/server.js` | Server-Sent Events for collector progress |
 | O26 | Subagent Limit Middleware | CC (R28a) | ✅ | `src/governance/dispatcher.py` | Hard cap on concurrent sub-agents |
 | O27 | Methodology Router | PUA (R35) | ✅ | `src/governance/executor_prompt.py` + `SOUL/public/prompts/methodology_router.md` | Task type → thinking framework (RCA/FirstPrinciples/WorkingBackwards/etc). Cognitive mode overrides keyword match |
+| O28 | Doctor Self-Diagnostic | AI Designer MCP (R37) | ✅ | `.claude/skills/doctor/SKILL.md` | Container/DB/collector/channel/GPU structured pass/warn/fail diagnosis |
+| O29 | System Snapshot Injection | AI Designer MCP (R37) | ✅ | `.claude/hooks/session-start.sh` | Inject container/DB/uncommitted status at session start |
+| O30 | Dedup Decision Matrix | Claudeception (R36c) | ✅ | implicit in skill management | 6-scenario dedup for pattern/skill installation |
 
 ---
 
@@ -229,6 +244,22 @@
 
 ---
 
+## 10. Eval & Testing
+
+| # | Pattern | Source | Status | Location | Notes |
+|---|---------|--------|--------|----------|-------|
+| E1 | LLM-as-Judge + Rubric Scoring | R38 Inspect AI/promptfoo | ✅ | `governance/eval/scoring.py` | Three-level rubric (Satisfied/Partial/Not) + DimensionAwareFilter + evidence-anchored (RULERS) |
+| E2 | Agent Trajectory Capture + Scoring | R38 promptfoo/AgentEvals | ✅ | `governance/eval/trajectory.py` | TrajectoryTracker + 3 matching modes (strict/unordered/subset) + efficiency/correctness metrics |
+| E3 | Production→Test Corpus | R38 Braintrust | ✅ | `governance/eval/corpus.py` | Failed dispatches auto-feed into eval corpus for regression testing |
+| E4 | Approval 5-Decision Chain | R38 Inspect AI | ✅ | `governance/approval.py` | approve/modify/reject/terminate/escalate with glob-based tool matching |
+| E5 | Epochs + ScoreReducer | R38 Inspect AI | ✅ | `governance/eval/epochs.py` | Multi-run eval with mean/mode/max/pass_at_k aggregation + variance tracking |
+| E6 | EarlyStopping Protocol | R38 Inspect AI | ✅ | `governance/eval/early_stopping.py` | Per-category adaptive stopping on 3 consecutive correct; min_samples guard |
+| E7 | Regression Detection (Bootstrap CI) | R38 Braintrust | ✅ | `governance/eval/regression.py` | Bootstrap 10K samples, percentile CI, direction classification (improved/regressed/stable) |
+| E8 | Decorator-Registry System | R38 Inspect AI | ✅ | `governance/eval/registry.py` | @register_eval decorator for task/scorer/reducer component discovery |
+| E9 | Failure Root-Cause Classification | AutoAgent (R38b) | ✅ | `governance/eval/corpus.py` | Auto-tag rc:* root-cause tags (rc:stuck, rc:gate_failed, rc:doom_loop, etc.) |
+
+---
+
 ## Cross-Reference: Source → Patterns
 
 | Source Project | Stars | Round | Pattern IDs |
@@ -257,6 +288,14 @@
 | hindsight | — | 28e | I20 |
 | CC (R29) | — | 29 | I16, I19 |
 | tanweai/pua | 14K+ | 35 | S23, R17, R18, O27, H14, H15 |
+| aresbit/skill-gov | 34 | 36a | R19 |
+| blader/Claudeception | 2.2K | 36c | R19, O30 |
+| AI Designer MCP | N/A | 37 | O28, O29 |
+| Inspect AI / promptfoo / Braintrust | 19.2K | 38 | E1, E2, E3, E4, E5, E6, E7, E8 |
+| kevinrgu/autoagent | ~0 | 38b | I27, E9, S25 |
+| self-improving-agent (ClawHub) | — | 23 | I21, I24, I25, S24 |
+| DeerFlow 2.0 | 55.2K | 29 | P15, P16, I22, I23 |
+| ClawHub elite-longterm-memory | 305K | 14 | I26 |
 
 ---
 
@@ -286,7 +325,7 @@ These patterns appeared across multiple rounds and are consolidated above:
 |----|---------|-------------|
 | V1 | VLM Zone Stage (cvui) | Medium |
 
-### P1 — Near Term (all cvui)
+### P1 — Near Term (cvui)
 
 | ID | Pattern | Est. Effort |
 |----|---------|-------------|
@@ -294,3 +333,23 @@ These patterns appeared across multiple rounds and are consolidated above:
 | V2 | CNN ClassifyStage (cvui) | Medium |
 | V4 | Format Converter to_coco/yolo (cvui) | Low |
 | V7 | Image Tiling (cvui) | Medium |
+
+### P1 — Near Term (Orchestrator)
+
+| Pattern | Source | Est. Effort |
+|---------|--------|-------------|
+| WAL Buffer (context danger zone log) | ClawHub (R14) | Low |
+| Anti-Degradation Protocol | ClawHub (R14) | Low |
+| MCP Server Health Check | entrix (R15) | Low |
+| Agent Builder Meta-Tool | LobeHub (R16) | High |
+| Skill CAS Distribution | LobeHub (R16) | Medium |
+
+### DEFER (assigned to separate sessions)
+
+| Pattern | Source | Notes |
+|---------|--------|-------|
+| Reverse Prompting + Proactive Tracker | R23 | TG bot proactive mode |
+| Growth Loops (Curiosity/Pattern/Outcome) | R23 | Three feedback cycles |
+| Ontology Graph Layer | R14 P2 | Cross-department knowledge graph |
+| Clarification-First Workflow | R29 | Prompt engineering refactor |
+| Hooks 16-Event Lifecycle Extension | R38 | Hook system architecture upgrade |
