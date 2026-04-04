@@ -46,7 +46,7 @@
 | 24 | Unicode Pixel Grid Visualization | V15 | Carbonyl (R9) | ✅ | `src/tui/` |
 | 25 | MCP Endpoint Exposure | O17 | bytebot (R10) | ✅ | `desktop_use/mcp_server.py` |
 | 26 | Store Collections Abstraction | O9 | Agent Lightning (R8) | ✅ | `core/registry.py` |
-| 27 | Hook Lifecycle (4 hooks) | R12 | Agent Lightning (R8) | ✅ | `core/plugin_lifecycle.py` |
+| 27 | Hook Lifecycle (16 events) | R12 | Agent Lightning (R8) + Inspect AI (R38) | ✅ | `core/lifecycle_hooks.py` |
 | 28 | Graceful Shutdown | R10 | Agent Lightning (R8) | ✅ | entrypoint |
 | 29 | Channel 5-Level Routing | O16 | OpenFang (R6) | ✅ | `channels/` |
 | 30 | Format Converter (to_coco/yolo) | V4 | labelU (R7) | 🔲 | cvui |

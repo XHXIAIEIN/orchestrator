@@ -121,35 +121,10 @@ if RetryPolicy is not None:
     )
 
 
-# ── Lifecycle Hooks (stolen from agent-lightning R12) ──
-# Four hooks fire at key boundaries of the Rollout-Attempt lifecycle.
-# Fire-and-forget: exceptions are logged but never block execution.
-
-HookFn = Callable[[dict], None]
-
-
-@dataclass
-class LifecycleHooks:
-    """Lifecycle hooks for execution rollouts.
-
-    Each hook receives a context dict with relevant state.
-    Hooks are fire-and-forget — exceptions are logged but don't block execution.
-    """
-    on_rollout_start: list[HookFn] = field(default_factory=list)
-    on_attempt_start: list[HookFn] = field(default_factory=list)
-    on_attempt_end: list[HookFn] = field(default_factory=list)
-    on_rollout_end: list[HookFn] = field(default_factory=list)
-
-    def fire(self, hook_name: str, context: dict):
-        """Fire all registered hooks for the given lifecycle event."""
-        hooks = getattr(self, hook_name, [])
-        for hook in hooks:
-            try:
-                hook(context)
-            except Exception as e:
-                logging.getLogger(__name__).warning(
-                    f"Hook {hook_name}/{getattr(hook, '__name__', repr(hook))} failed: {e}"
-                )
+# ── Lifecycle Hooks (R38: 16-event unified registry, stolen from Inspect AI) ──
+# All lifecycle events now route through the global LifecycleHookRegistry
+# in src/core/lifecycle_hooks.py. The old per-executor LifecycleHooks
+# dataclass has been replaced.
 
 
 def _classify_failure(output: str, exc: BaseException | None = None) -> str:
@@ -393,10 +368,7 @@ except (ImportError, Exception):
     ExecutionSnapshot = None
     _snapshot_store = None
 
-# Global Lifecycle Hook Registry (stolen from Hermes, Round 3-7)
-# System-wide hooks (pre_llm_call, on_session_start, etc.) complement
-# the rollout-specific LifecycleHooks above. Rollout events are bridged
-# to the global registry via on_task_dispatch and on_session_start/end.
+# Global Lifecycle Hook Registry (R38: unified 16-event system)
 try:
     from src.core.lifecycle_hooks import get_lifecycle_hooks as _get_global_hooks
 except ImportError:
@@ -431,8 +403,7 @@ class TaskExecutor:
     """Execute tasks via Agent SDK with Blueprint-aware policy resolution."""
 
     def __init__(self, db: EventsDB, on_finalize: Callable | None = None,
-                 strategy: ExecutionStrategy | None = None,
-                 hooks: LifecycleHooks | None = None):
+                 strategy: ExecutionStrategy | None = None):
         self.db = db
         self.on_finalize = on_finalize
         self.accountant = TokenAccountant(db=self.db) if TokenAccountant else None
@@ -440,10 +411,15 @@ class TaskExecutor:
         self.punch_clock = get_punch_clock() if get_punch_clock else None
         self._session_runner = AgentSessionRunner(db=self.db, log_event_fn=self._log_agent_event)
         self._strategy = strategy or ProductionStrategy()
-        self._hooks = hooks or LifecycleHooks()
+        self._hooks = _get_global_hooks() if _get_global_hooks else None
         self._plan_executor = PlanExecutor() if PlanExecutor else None
         self._worktree = WorktreeManager()
         self._patches = PatchManager()
+
+    def _fire(self, point: str, **kwargs):
+        """Fire a lifecycle hook. Safe no-op if registry unavailable."""
+        if self._hooks:
+            self._hooks.fire(point, **kwargs)
 
     def execute_task_async(self, task_id: int):
         """在线程池中执行任务，不阻塞调用方。"""
@@ -784,26 +760,15 @@ class TaskExecutor:
                 log.debug(f"TaskExecutor: snapshot init failed ({e})")
                 snapshot = None
 
-        # ── Lifecycle: rollout_start ──
-        self._hooks.fire("on_rollout_start", {
-            "task_id": task_id,
-            "task": task,
-            "spec": spec,
-            "dept_key": dept_key,
-            "max_attempts": rollout_cfg.max_attempts,
-            "strategy": self._strategy.get_mode(),
-        })
-        # Bridge to global lifecycle registry (Hermes)
-        if _get_global_hooks:
-            try:
-                _get_global_hooks().fire("on_task_dispatch",
-                    task_id=task_id, department=dept_key,
-                    intent=spec.get("intent", ""), priority=spec.get("priority", "medium"))
-                _get_global_hooks().fire("on_session_start",
-                    task_id=task_id, department=dept_key,
-                    strategy=self._strategy.get_mode())
-            except Exception:
-                pass
+        # ── Lifecycle: task_start + rollout_start (unified registry) ──
+        self._fire("on_task_start",
+            task_id=task_id, department=dept_key,
+            intent=spec.get("intent", ""), priority=spec.get("priority", "medium"),
+            strategy=self._strategy.get_mode())
+        self._fire("on_rollout_start",
+            task_id=task_id, task=task, spec=spec, dept_key=dept_key,
+            max_attempts=rollout_cfg.max_attempts,
+            strategy=self._strategy.get_mode())
 
         # ── Concurrency Pool: acquire slot before execution (Firecrawl) ──
         _pool_slot = None
@@ -861,12 +826,9 @@ class TaskExecutor:
             attempt_label = f"attempt_{attempt}" if rollout_cfg.max_attempts > 1 else "execute"
 
             # ── Lifecycle: attempt_start ──
-            self._hooks.fire("on_attempt_start", {
-                "task_id": task_id,
-                "task": task,
-                "attempt": attempt,
-                "max_attempts": rollout_cfg.max_attempts,
-            })
+            self._fire("on_attempt_start",
+                task_id=task_id, task=task, attempt=attempt,
+                max_attempts=rollout_cfg.max_attempts)
 
             # ── Sub-run: 每个 Attempt 独立记录 ──
             sub_run_id = None
@@ -980,14 +942,10 @@ class TaskExecutor:
                     pass
 
             # ── Lifecycle: attempt_end ──
-            self._hooks.fire("on_attempt_end", {
-                "task_id": task_id,
-                "task": task,
-                "attempt": attempt,
-                "success": status == "done",
-                "status": status,
-                "result": output[:500],
-            })
+            self._fire("on_attempt_end",
+                task_id=task_id, task=task, attempt=attempt,
+                success=(status == "done"), status=status,
+                result=output[:500])
 
             # ── Retry Decision ──
             if status == "done":
@@ -1038,28 +996,19 @@ class TaskExecutor:
             except Exception as e:
                 log.debug(f"TaskExecutor: snapshot save failed ({e})")
 
-        # ── Lifecycle: rollout_end ──
-        self._hooks.fire("on_rollout_end", {
-            "task_id": task_id,
-            "task": task,
-            "total_attempts": attempt,
-            "max_attempts": rollout_cfg.max_attempts,
-            "final_success": status == "done",
-            "final_status": status,
-            "final_result": output[:500],
-        })
-        # Bridge to global lifecycle registry (Hermes)
-        if _get_global_hooks:
-            try:
-                _get_global_hooks().fire("on_session_end",
-                    task_id=task_id, department=dept_key,
-                    status=status, attempts=attempt)
-                if status != "done":
-                    _get_global_hooks().fire("on_error",
-                        task_id=task_id, department=dept_key,
-                        error=output[:200], status=status)
-            except Exception:
-                pass
+        # ── Lifecycle: rollout_end + task_end (unified registry) ──
+        self._fire("on_rollout_end",
+            task_id=task_id, task=task, total_attempts=attempt,
+            max_attempts=rollout_cfg.max_attempts,
+            final_success=(status == "done"), final_status=status,
+            final_result=output[:500])
+        self._fire("on_task_end",
+            task_id=task_id, department=dept_key,
+            status=status, attempts=attempt)
+        if status != "done":
+            self._fire("on_error",
+                task_id=task_id, department=dept_key,
+                error=output[:200], status=status)
 
         # ── DriftDetector: post-execution drift check ──
         if drift_detector:

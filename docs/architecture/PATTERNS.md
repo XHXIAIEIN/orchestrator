@@ -61,7 +61,7 @@
 | R9 | Heartbeat Producer-Consumer | Agent Lightning (R8) | ✅ | `core/system_monitor.py` | HeartbeatMonitor: background collector thread + cached reads, zero blocking |
 | R10 | Graceful Shutdown | Agent Lightning (R8) | ✅ | `core/graceful_shutdown.py` | SIGINT/SIGTERM handler, cleanup stack, zombie thread detection |
 | R11 | Rollout-Attempt Retry Model | Agent Lightning (R8) | ✅ | `governance/executor.py` | Rollout wraps Attempt loop; `RolloutConfig(max_attempts, retry_conditions, backoff_seconds)`; sub_runs table |
-| R12 | Hook Lifecycle (4 hooks) | Agent Lightning (R8) | ✅ | `governance/executor.py` | LifecycleHooks: on_rollout_start/attempt_start/attempt_end/rollout_end |
+| R12 | Hook Lifecycle (16 events) | Agent Lightning (R8) + Inspect AI (R38) | ✅ | `core/lifecycle_hooks.py` | Unified 16-event registry: batch/task/rollout/attempt/context/llm/review/error layers. LimitExceededError pierces isolation. HookEntry: enabled()+priority. Aliases for backwards compat |
 | R13 | Heartbeat + Lock Renewal | Firecrawl (R5) | ✅ | `core/system_monitor.py` | TTL-based heartbeat with death callback + lock renewal |
 | R14 | Audit Hash Chain (Merkle) | Round 1 + OpenFang (R6) | ✅ | `governance/audit/run_logger.py` | SHA-256 hash chain JSONL. Confirmed equivalent to OpenFang's Merkle chain |
 | R15 | Loop Detection Hook | DeerFlow 2.0 (R28) | ✅ | `.claude/hooks/loop-detector.sh` | Detect repeated tool calls, inject break prompt |
