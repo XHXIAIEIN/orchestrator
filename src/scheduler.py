@@ -13,6 +13,7 @@ from src.jobs.periodic import (
     skill_vetting,
 )
 from src.jobs.sync_vectors import sync_vectors
+from src.jobs.proactive_jobs import proactive_scan, proactive_daily_digest, proactive_weekly_digest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -55,6 +56,11 @@ def start():
     s.add_job(lambda: run_job("skill_vetting", skill_vetting, db), "cron", day_of_week="sat", hour=9, timezone="Asia/Shanghai", id="skill_vetting")
     s.add_job(lambda: run_job("hotness_sweep", hotness_sweep, db), "cron", hour=5, timezone="Asia/Shanghai", id="hotness_sweep")
     s.add_job(lambda: run_job("sync_vectors", sync_vectors, db), "interval", hours=1, id="sync_vectors")
+
+    # ── Proactive push engine ──
+    s.add_job(lambda: run_job("proactive_scan", proactive_scan, db), "interval", minutes=5, id="proactive_scan")
+    s.add_job(lambda: run_job("proactive_daily", proactive_daily_digest, db), "cron", hour=9, timezone="Asia/Shanghai", id="proactive_daily")
+    s.add_job(lambda: run_job("proactive_weekly", proactive_weekly_digest, db), "cron", day_of_week="mon", hour=9, minute=30, timezone="Asia/Shanghai", id="proactive_weekly")
 
     # ── Agent Cron: 部门级定时任务 (Round 16 LobeHub) ──
     try:
@@ -126,7 +132,7 @@ def start():
     except Exception as e:
         log.warning(f"BrowserRuntime init failed (non-fatal): {e}")
 
-    db.write_log("调度器已启动，采集：每小时，日报：每日04:00，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00，策略建议：每日07:00，每周审计(兵部+吏部+礼部)：每周三10:00", "INFO", "scheduler")
+    db.write_log("调度器已启动，采集：每小时，日报：每日04:00，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00，策略建议：每日07:00，每周审计(兵部+吏部+礼部)：每周三10:00，主动推送：每5分钟扫描+每日09:00日报+每周一09:30周报", "INFO", "scheduler")
     log.info("Scheduler started. Collectors: hourly. Analysis: daily 04:00 CST. Debt scan: every 12 hours.")
 
     # 启动后跑一次初始采集 + 债务扫描
