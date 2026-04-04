@@ -358,6 +358,57 @@ class StuckDetector:
         }
 
 
+class NegativeFeedbackTracker:
+    """Track failed approaches and apply negative weights (R14 steal).
+
+    When the same error path repeats 3+ times, force strategy switch.
+    Maintains a dict of approach_key -> failure_count.
+    """
+
+    def __init__(self, force_switch_threshold: int = 3):
+        self._threshold = force_switch_threshold
+        self._failures: dict[str, int] = {}
+        self._error_summaries: dict[str, str] = {}
+
+    def record_failure(self, approach_key: str, error_summary: str = "") -> int:
+        """Record a failure for an approach. Returns new failure count."""
+        self._failures[approach_key] = self._failures.get(approach_key, 0) + 1
+        if error_summary:
+            self._error_summaries[approach_key] = error_summary
+        count = self._failures[approach_key]
+        if count >= self._threshold:
+            log.warning("negative_feedback: %s failed %d× (threshold=%d) — force switch",
+                        approach_key, count, self._threshold)
+        return count
+
+    def record_success(self, approach_key: str) -> None:
+        """Reset failure count for a successful approach."""
+        self._failures.pop(approach_key, None)
+        self._error_summaries.pop(approach_key, None)
+
+    def should_force_switch(self, approach_key: str) -> bool:
+        """True if failure count >= threshold."""
+        return self._failures.get(approach_key, 0) >= self._threshold
+
+    def get_failed_approaches(self) -> dict[str, int]:
+        """Return all tracked failures {approach_key: count}."""
+        return dict(self._failures)
+
+    def suggest_alternative(self, current_approach: str) -> str:
+        """Return a text suggestion for switching strategy."""
+        approach_lower = current_approach.lower()
+        if any(kw in approach_lower for kw in ("edit", "file", "write", "patch")):
+            return "Try a different file or approach"
+        if any(kw in approach_lower for kw in ("command", "cmd", "run", "exec", "bash")):
+            return "Try a different command or tool"
+        return "Switch to a fundamentally different strategy"
+
+    def reset(self) -> None:
+        """Clear all tracking."""
+        self._failures.clear()
+        self._error_summaries.clear()
+
+
 def _hash_sig(text: str) -> str:
     """SHA-256 短哈希，用于去重比较。"""
     return hashlib.sha256(text.encode()).hexdigest()[:16]

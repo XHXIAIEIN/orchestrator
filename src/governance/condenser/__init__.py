@@ -6,6 +6,8 @@ from .llm_summarizing import LLMSummarizingCondenser
 from .water_level import WaterLevelCondenser
 from .pipeline import CondenserPipeline
 from .context_condenser import condense_context
+from .configurable import ConfigurableCondenser, ConfigurableTrigger, RetentionPolicy
+from .upload_stripper import UploadStripper
 
 # Ratio-Based Compression adapter (stolen from Hermes)
 # Wraps governance.compression.ContextCompressor as a Condenser so it can
@@ -23,5 +25,9 @@ __all__ = [
     "WaterLevelCondenser",
     "CondenserPipeline",
     "condense_context",
+    "ConfigurableCondenser",
+    "ConfigurableTrigger",
+    "RetentionPolicy",
+    "UploadStripper",
     "RatioCompressionCondenser",
 ]

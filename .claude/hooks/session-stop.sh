@@ -31,6 +31,15 @@ if git rev-parse --is-inside-work-tree &>/dev/null; then
     fi
 fi
 
+# ── Pending learnings check — suggest review if accumulated ──
+LEARNINGS_DB="$SCRIPT_DIR/data/events.db"
+if [ -f "$LEARNINGS_DB" ]; then
+    PENDING_COUNT=$(sqlite3 "$LEARNINGS_DB" "SELECT COUNT(*) FROM learnings WHERE promoted = 0;" 2>/dev/null || echo "0")
+    if [ "$PENDING_COUNT" -gt 10 ] 2>/dev/null; then
+        echo "[review-trigger] ${PENDING_COUNT} pending learnings accumulated. Consider reviewing and promoting patterns." >&2
+    fi
+fi
+
 # Read stdin (hook arguments JSON)
 INPUT=$(cat)
 

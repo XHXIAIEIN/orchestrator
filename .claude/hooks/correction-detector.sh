@@ -112,4 +112,90 @@ except Exception:
 print(json.dumps({'additionalContext': f'[correction-detector] User correction detected — logged as {pattern_key}. Reflect on what you did wrong before proceeding.'}))
 " 2>/dev/null
 
+# ── Feature request detection (separate classifier) ──
+echo "$INPUT" | python3 -c "
+import sys, json, os, re
+
+try:
+    data = json.load(sys.stdin)
+except:
+    sys.exit(0)
+
+prompt = data.get('prompt', '') or ''
+
+# Skip very short messages
+if len(prompt.strip()) < 5:
+    sys.exit(0)
+
+# ── Feature request signal patterns (Chinese + English) ──
+# Each pattern has a weight. Total weight >= 2 = feature request detected.
+feature_signals = [
+    # Chinese — feature wishes
+    (r'要是有.*就好了', 3),
+    (r'能不能', 2),
+    (r'希望有', 2),
+    (r'如果能', 2),
+    (r'最好能', 2),
+    (r'可不可以加', 3),
+    (r'要是能', 2),
+    # English — feature wishes
+    (r'\bI wish\b', 2),
+    (r'would be nice if', 3),
+    (r'it\'d be great if', 3),
+    (r'\bcan you add\b', 2),
+    (r'\bfeature request\b', 3),
+    (r'how about adding', 2),
+]
+
+total_weight = 0
+matched_signals = []
+prompt_lower = prompt.lower()
+
+for pattern, weight in feature_signals:
+    if re.search(pattern, prompt_lower):
+        total_weight += weight
+        matched_signals.append(pattern)
+
+# Threshold: need strong signal (weight >= 2)
+if total_weight < 2:
+    sys.exit(0)
+
+# ── Log the feature request to learnings DB ──
+project_root = os.environ.get('ORCHESTRATOR_ROOT', '$PROJECT_ROOT')
+sys.path.insert(0, project_root)
+
+# Derive a short slug from prompt content
+words = re.findall(r'[a-zA-Z\u4e00-\u9fff]+', prompt[:100])[:5]
+slug = '-'.join(words)[:40] if words else 'unspecified'
+pattern_key = f'feat-{slug}'
+
+try:
+    from src.storage.events_db import EventsDB
+    from src.governance.audit.learnings import append_learning
+    db = EventsDB()
+    append_learning(
+        pattern_key=pattern_key,
+        summary=f'Feature request: {prompt[:120]}',
+        detail=f'Feature signal weight: {total_weight}\nMatched: {matched_signals}\nFull prompt: {prompt[:500]}',
+        area='feature_request',
+        db=db,
+    )
+except Exception:
+    # Fallback: write to flat JSONL log
+    from datetime import datetime, timezone
+    log_dir = os.path.join(project_root, '.remember', 'feature_requests')
+    os.makedirs(log_dir, exist_ok=True)
+    entry = {
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'prompt': prompt[:500],
+        'signals': matched_signals,
+        'weight': total_weight,
+    }
+    log_file = os.path.join(log_dir, datetime.now().strftime('%Y-%m') + '.jsonl')
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
+print(json.dumps({'additionalContext': f'[feature-detector] Feature request detected — logged as {pattern_key}'}))
+" 2>/dev/null
+
 exit 0

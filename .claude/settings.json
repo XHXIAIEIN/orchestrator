@@ -73,6 +73,11 @@
           },
           {
             "type": "command",
+            "command": "bash .claude/hooks/vbr-gate.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/session-stop.sh",
             "timeout": 5
           }
