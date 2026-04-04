@@ -117,17 +117,16 @@ class ModelGradedScore:
 
 ### P1 — 中期建设
 
-#### 5. Hooks 16-Event Lifecycle + Fault Isolation
+#### 5. ✅ Hooks 16-Event Lifecycle + Fault Isolation
 **来源**: Inspect AI `src/inspect_ai/hooks/_hooks.py`
-**当前差距**: 三省六部的 dispatch/audit 是硬编码调用链
-**偷什么**:
-- 16 个生命周期钩子（eval_set_start → run → task → sample_init → attempt → scoring → model_usage）
-- 每个 hook 独立 try/except 故障隔离 — hook 挂了不影响主流程
-- `LimitExceededError` 是唯一允许穿透的异常（限制必须被执行）
-- `enabled()` 方法让 hook 自己判断是否启用
-- SampleEvent 用 anyio 内存通道异步 drain — 高频事件不阻塞执行
-
-**实施路径**: 三省六部 dispatch → 用事件驱动重构，吏部绩效 = hook subscriber
+**状态**: 已实施 — `src/core/lifecycle_hooks.py` (统一 16 事件注册表)
+**实施内容**:
+- 16 hook points: batch/task/rollout/attempt/context/llm/review/error 七层
+- `LimitExceededError` 唯一穿透异常
+- `HookEntry` with `enabled()` + `priority` 排序
+- 向后兼容别名 (pre_llm_call → on_pre_llm etc.)
+- executor.py 旧 LifecycleHooks dataclass + bridge 代码已移除
+- **待定**: SampleEvent anyio 异步 drain (当前同步足够，高频场景再加)
 
 #### 6. Multi-Evaluator Consensus (CourtEval 模式)
 **来源**: CourtEval (ACL 2025) + Inspect AI multi_scorer

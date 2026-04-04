@@ -111,44 +111,55 @@ class TestCrossReviewIntegration:
 # ═══════════════════════════════════════════════════════════════
 
 class TestLifecycleHooksIntegration:
-    """Test that executor.py bridges to the global Hermes lifecycle registry."""
+    """Test that executor.py uses the unified 16-event lifecycle registry."""
 
     def test_global_hooks_imported_in_executor(self):
         import src.governance.executor as exe
         assert hasattr(exe, '_get_global_hooks')
 
-    def test_hermes_registry_basic(self):
-        from src.core.lifecycle_hooks import LifecycleHookRegistry, HOOK_POINTS
+    def test_registry_basic_with_alias(self):
+        """Old hook name on_task_dispatch resolves to on_task_start."""
+        from src.core.lifecycle_hooks import LifecycleHookRegistry
         reg = LifecycleHookRegistry()
         results = []
         reg.register("on_task_dispatch", lambda **kw: results.append(kw), name="test")
-        reg.fire("on_task_dispatch", task_id=1, department="eng")
+        reg.fire("on_task_start", task_id=1, department="eng")
         assert len(results) == 1
         assert results[0]["task_id"] == 1
 
-    def test_hermes_registry_fire_and_forget(self):
+    def test_registry_fire_and_forget(self):
         """Failing hooks should not raise."""
         from src.core.lifecycle_hooks import LifecycleHookRegistry
         reg = LifecycleHookRegistry()
         reg.register("on_error", lambda **kw: 1/0, name="bad_hook")
-        # Should not raise
         reg.fire("on_error", task_id=1)
         assert reg.get_stats()["total_errors"] == 1
 
-    def test_hermes_singleton(self):
-        from src.core.lifecycle_hooks import get_lifecycle_hooks
+    def test_singleton(self):
+        from src.core.lifecycle_hooks import get_lifecycle_hooks, reset_lifecycle_hooks
+        reset_lifecycle_hooks()
         h1 = get_lifecycle_hooks()
         h2 = get_lifecycle_hooks()
         assert h1 is h2
+        reset_lifecycle_hooks()
 
-    def test_hermes_hook_points(self):
+    def test_16_hook_points(self):
         from src.core.lifecycle_hooks import HOOK_POINTS
-        assert "pre_llm_call" in HOOK_POINTS
-        assert "post_llm_call" in HOOK_POINTS
-        assert "on_task_dispatch" in HOOK_POINTS
-        assert "on_session_start" in HOOK_POINTS
-        assert "on_session_end" in HOOK_POINTS
+        assert len(HOOK_POINTS) == 16
+        assert "on_pre_llm" in HOOK_POINTS
+        assert "on_post_llm" in HOOK_POINTS
+        assert "on_task_start" in HOOK_POINTS
+        assert "on_task_end" in HOOK_POINTS
         assert "on_error" in HOOK_POINTS
+        assert "on_limit_exceeded" in HOOK_POINTS
+
+    def test_aliases_resolve(self):
+        from src.core.lifecycle_hooks import LifecycleHookRegistry
+        reg = LifecycleHookRegistry()
+        calls = []
+        reg.register("pre_llm_call", lambda **kw: calls.append("alias"), name="old")
+        reg.fire("on_pre_llm")
+        assert calls == ["alias"]
 
     def test_invalid_hook_point_raises(self):
         from src.core.lifecycle_hooks import LifecycleHookRegistry

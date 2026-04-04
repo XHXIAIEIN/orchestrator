@@ -119,15 +119,10 @@ class ExecutionStream:
         stop_flag = asyncio.Event()
         loop = asyncio.get_running_loop()
 
-        # ── Hook registration ──
-        # We inject lifecycle hooks that push events into the queue.
-        # Original hooks are preserved and restored after execution.
-        original_hooks = self._executor._hooks
-        patched_hooks = self._build_hooks(task_id, queue, loop)
-
-        # Merge: patched hooks fire *after* any existing hooks.
-        merged = _merge_hooks(original_hooks, patched_hooks)
-        self._executor._hooks = merged
+        # ── Hook registration (R38: unified registry, no swap) ──
+        # Register streaming hooks on the global lifecycle registry.
+        # No more swapping executor._hooks — thread-safe by design.
+        registered_hooks = self._register_stream_hooks(task_id, queue, loop)
 
         checkpoint("stream_setup", task_id, queue)
 
@@ -162,8 +157,8 @@ class ExecutionStream:
                 except asyncio.QueueEmpty:
                     break
         finally:
-            # Restore original hooks
-            self._executor._hooks = original_hooks
+            # Unregister streaming hooks
+            self._unregister_stream_hooks(registered_hooks)
 
     # ── Internals ──
 
@@ -194,23 +189,47 @@ class ExecutionStream:
             # Signal end-of-stream
             _put_safe(queue, _STREAM_END)
 
-    def _build_hooks(self, task_id: int, queue: asyncio.Queue,
-                     loop: asyncio.AbstractEventLoop):
-        """Build LifecycleHooks that push events to the queue."""
-        from src.governance.executor import LifecycleHooks
+    def _register_stream_hooks(self, task_id: int, queue: asyncio.Queue,
+                               loop: asyncio.AbstractEventLoop) -> list[tuple[str, str]]:
+        """Register streaming hooks on the global lifecycle registry.
 
-        def _push(event_type: str):
-            def hook(ctx: dict):
-                _put_safe(queue, _make_event(event_type, task_id, ctx))
-            hook.__name__ = f"stream_{event_type}"
-            return hook
+        Returns list of (point, name) tuples for cleanup via unregister.
+        """
+        try:
+            from src.core.lifecycle_hooks import get_lifecycle_hooks
+            hooks = get_lifecycle_hooks()
+        except ImportError:
+            return []
 
-        return LifecycleHooks(
-            on_rollout_start=[_push("rollout_start")],
-            on_attempt_start=[_push("attempt_start")],
-            on_attempt_end=[_push("attempt_end")],
-            on_rollout_end=[_push("rollout_end")],
-        )
+        registered = []
+        stream_id = f"stream_{task_id}"
+
+        for point, event_type in [
+            ("on_rollout_start", "rollout_start"),
+            ("on_attempt_start", "attempt_start"),
+            ("on_attempt_end", "attempt_end"),
+            ("on_rollout_end", "rollout_end"),
+        ]:
+            def _make_push(evt=event_type):
+                def hook(**kwargs):
+                    _put_safe(queue, _make_event(evt, task_id, kwargs))
+                return hook
+
+            hook_name = f"{stream_id}_{event_type}"
+            hooks.register(point, _make_push(), name=hook_name)
+            registered.append((point, hook_name))
+
+        return registered
+
+    def _unregister_stream_hooks(self, registered: list[tuple[str, str]]):
+        """Unregister streaming hooks after execution completes."""
+        try:
+            from src.core.lifecycle_hooks import get_lifecycle_hooks
+            hooks = get_lifecycle_hooks()
+        except ImportError:
+            return
+        for point, name in registered:
+            hooks.unregister(point, name)
 
 
 # ── Utilities ──
@@ -222,15 +241,3 @@ def _put_safe(queue: asyncio.Queue, item) -> None:
     except asyncio.QueueFull:
         if isinstance(item, ExecutionEvent):
             log.warning(f"ExecutionStream: queue full, dropped {item.event_type} for task #{item.task_id}")
-
-
-def _merge_hooks(original, additional):
-    """Merge two LifecycleHooks instances — additional hooks fire after originals."""
-    from src.governance.executor import LifecycleHooks
-
-    return LifecycleHooks(
-        on_rollout_start=original.on_rollout_start + additional.on_rollout_start,
-        on_attempt_start=original.on_attempt_start + additional.on_attempt_start,
-        on_attempt_end=original.on_attempt_end + additional.on_attempt_end,
-        on_rollout_end=original.on_rollout_end + additional.on_rollout_end,
-    )
