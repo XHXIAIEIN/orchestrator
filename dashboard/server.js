@@ -1758,6 +1758,26 @@ app.get('/api/collect/stream', (req, res) => {
     });
 });
 
+// ── Evolution Loop history ──
+app.get('/api/evolution', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  const limit = parseInt(req.query.limit) || 50;
+  try {
+    const rows = dbAll(db,
+      'SELECT * FROM evolution_log ORDER BY created_at DESC LIMIT ?',
+      [limit]
+    );
+    res.json(rows.map(r => {
+      let detail = {};
+      try { detail = JSON.parse(r.detail || '{}'); } catch {}
+      return { ...r, detail };
+    }));
+  } catch (e) {
+    res.json([]);
+  }
+});
+
 // ── WebSocket 增强：session ID + 断线消息补发 ──
 const crypto = require('crypto');
 const WS_BUFFER_MAX = 200;  // 最多缓存 200 条消息
@@ -2034,6 +2054,19 @@ app.post('/mcp', (req, res) => {
   }
 
   return res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } });
+});
+
+// ── Evolution Loop API ──
+
+app.get('/api/evolution', (req, res) => {
+  const db = getDb();
+  if (!db) return res.json([]);
+  const limit = parseInt(req.query.limit) || 50;
+  const rows = dbAll(db,
+    'SELECT * FROM evolution_log ORDER BY created_at DESC LIMIT ?',
+    [limit]
+  );
+  res.json(rows.map(r => ({ ...r, detail: JSON.parse(r.detail || '{}') })));
 });
 
 // Graceful shutdown: close DB connection on exit
