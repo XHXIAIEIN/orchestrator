@@ -1,4 +1,4 @@
-"""TaskDispatcher — dispatch pipeline: create → classify → preflight → scrutinize → queue."""
+"""TaskDispatcher — dispatch pipeline: create → clarify → classify → preflight → scrutinize → queue."""
 import json
 import logging
 import os
@@ -13,6 +13,13 @@ from src.governance.policy.deterministic_resolver import get_deterministic_fallb
 from src.governance.safety.agent_semaphore import AgentSemaphore
 from src.gateway.complexity import classify_complexity, should_skip_scrutiny
 from src.governance.department_fsm import fsm as dept_fsm
+
+# Clarification Gate (DeerFlow P1-5: CLARIFY → PLAN → ACT)
+try:
+    from src.governance.clarification import ClarificationGate
+    _clarification_gate = ClarificationGate.with_prompt()
+except Exception:
+    _clarification_gate = None
 
 try:
     from src.governance.pipeline.scout import ScoutMission, create_scout_spec, build_scout_prompt
@@ -331,6 +338,28 @@ class TaskDispatcher:
             log.info(f"TaskDispatcher: task #{task_id} blocked on dependencies: {dep_str}")
             return task_id
         log.info(f"TaskDispatcher: created task #{task_id}: {summary} [{dept}]")
+
+        # ── Clarification Gate (DeerFlow P1-5: CLARIFY → PLAN → ACT) ──
+        if _clarification_gate:
+            try:
+                clarity = _clarification_gate.evaluate(spec, action, source=source)
+                if clarity.needs_clarification:
+                    self.db.update_task(
+                        task_id, status="needs_clarification",
+                        scrutiny_note=json.dumps(clarity.to_dict(), ensure_ascii=False),
+                        finished_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                    self.db.write_log(
+                        f"任务 #{task_id} 需要澄清 ({clarity.type}): {clarity.question}",
+                        "INFO", "governor",
+                    )
+                    log.info(f"TaskDispatcher: task #{task_id} needs clarification "
+                             f"type={clarity.type} q={clarity.question}")
+                    return task_id  # Return task_id so caller can retrieve the question
+                log.debug(f"TaskDispatcher: task #{task_id} clarification passed "
+                          f"(conf={clarity.confidence:.2f})")
+            except Exception as e:
+                log.warning(f"TaskDispatcher: clarification gate failed ({e}), continuing")
 
         # ── Synthesis Quality Check ──
         is_specific, synth_warning = _check_synthesis_quality(spec, action)

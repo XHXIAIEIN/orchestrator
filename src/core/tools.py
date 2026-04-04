@@ -150,13 +150,31 @@ TOOL_HANDLERS = {
 
 CLARIFY_TOOL = {
     "name": "clarify",
-    "description": "评估问题清晰度，若不清晰则追问，若清晰则输出正式定义",
+    "description": "评估问题清晰度。若不清晰，按类型追问；若清晰，输出正式定义。调用此工具将中断当前执行流程。",
     "input_schema": {
         "type": "object",
         "properties": {
             "is_clear": {
                 "type": "boolean",
-                "description": "问题是否已经足够清晰"
+                "description": "问题是否已经足够清晰，可以直接执行"
+            },
+            "clarification_type": {
+                "type": "string",
+                "enum": [
+                    "missing_info",
+                    "ambiguous_requirement",
+                    "approach_choice",
+                    "risk_confirmation",
+                    "suggestion"
+                ],
+                "description": (
+                    "澄清类型（优先级排序）："
+                    "missing_info=缺少必要信息, "
+                    "ambiguous_requirement=需求有多种解读, "
+                    "approach_choice=需要用户选择方案, "
+                    "risk_confirmation=高风险操作需确认, "
+                    "suggestion=有更好的替代方案"
+                )
             },
             "question": {
                 "type": "string",
