@@ -1,22 +1,28 @@
 """
-两级记忆系统 — hot / extended。
+三级记忆系统 — hot / warm / cold（R14 upgrade from 2-tier to 3-tier）。
 
 Artemis 启发：hot memory（~70 行，每次加载）+ extended memory（按需加载）。
 workflow-orchestration 启发：条件式 prompt 注入，不一股脑加载所有 system prompt。
+R14 ClawHub elite-longterm-memory 启发：三层自动晋降 + per-agent namespace。
 
-Hot memory: 编入 boot.md，每个实例启动时自动加载
-Extended memory: 按任务/部门/项目按需注入到 agent prompt
+Hot memory: 编入 boot.md，每个实例启动时自动加载（≤100 lines, ~2000 tokens）
+Warm memory: 按任务/部门/项目按需注入到 agent prompt（≤200 lines）
+Cold memory: 归档，仅通过显式搜索加载
 
 Memory 分类规则：
   - hot: 身份、关系、性格、核心规则（~2000 tokens 预算）
-  - extended: 项目细节、参考资料、历史偷师笔记、归档项目
+  - warm: 项目细节、近期偷师笔记（按需加载）
+  - cold: 参考资料、归档项目、历史偷师笔记
 
 与 SOUL compiler 的关系：
   compiler 从源文件编译 boot.md（hot memory 的载体）
-  这个模块在运行时做 extended memory 的按需加载
+  这个模块在运行时做 warm/cold memory 的按需加载
 """
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +39,23 @@ except ImportError:
 HOT_BUDGET_CHARS = 8000    # ~2000 tokens
 EXTENDED_MAX_CHARS = 4000  # 单次注入上限 ~1000 tokens
 
+# ── Three-tier auto-promotion/demotion (R14 steal) ──
+# HOT: ≤100 lines, loaded every session via boot.md (~2000 tokens)
+# WARM: ≤200 lines, loaded on-demand per department/task
+# COLD: archived, only loaded via explicit search
+TIER_HOT = "hot"
+TIER_WARM = "warm"
+TIER_COLD = "cold"
+
+# Promotion rules
+PROMOTE_TO_HOT_THRESHOLD = 3      # applied 3+ times → promote to hot
+PROMOTE_TO_WARM_THRESHOLD = 1     # applied 1+ time → promote to warm
+PROMOTE_TIME_DAYS = 7             # OR: referenced within 7 days → promote
+
+# Demotion rules
+DEMOTE_TO_WARM_DAYS = 14          # hot → warm if unused for 14 days
+DEMOTE_TO_COLD_DAYS = 30          # warm → cold if unused for 30 days
+
 _REPO_ROOT = Path(__file__).resolve().parent
 while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_dir() and (_REPO_ROOT / "src").is_dir()):
     _REPO_ROOT = _REPO_ROOT.parent
@@ -40,13 +63,19 @@ while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_d
 
 @dataclass
 class MemoryEntry:
-    """单条记忆，支持 L0/L1/L2 三层加载（stolen from OpenViking）。"""
+    """单条记忆，支持 L0/L1/L2 三层加载（stolen from OpenViking）。
+
+    R14 additions: apply_count, last_accessed, created_at for auto-promotion/demotion.
+    """
     name: str
     content: str           # L2: full content
-    tier: str              # "hot" | "extended"
+    tier: str              # "hot" | "warm" | "cold"
     tags: list = field(default_factory=list)
     l0: str = ""           # ~100 tokens: one-line summary for search ranking
     l1: str = ""           # ~1000 tokens: structural overview for navigation
+    apply_count: int = 0        # how many times this memory was applied (R14)
+    last_accessed: str = ""     # ISO date of last access (R14)
+    created_at: str = ""        # ISO date of creation (R14)
 
     @property
     def char_count(self) -> int:
@@ -289,6 +318,106 @@ def classify_learning_tier(hit_count: int, last_hit_at: str | None,
     elif hit_count >= 1:
         return "warm"
     return "cold"
+
+
+# ── Three-tier auto-promotion/demotion (R14 steal) ──────────────────────
+
+
+def _days_since(iso_date: str) -> int:
+    """Return days since an ISO date string. Returns 9999 on parse failure."""
+    if not iso_date:
+        return 9999
+    try:
+        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        # Make dt offset-aware if naive
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0, (now - dt).days)
+    except (ValueError, TypeError):
+        return 9999
+
+
+def classify_tier(entry: MemoryEntry) -> str:
+    """Determine tier based on apply_count + last_accessed (R14).
+
+    - apply_count >= 3 OR accessed within 7 days → hot
+    - apply_count >= 1 OR accessed within 14 days → warm
+    - otherwise → cold
+    """
+    days = _days_since(entry.last_accessed)
+
+    if entry.apply_count >= PROMOTE_TO_HOT_THRESHOLD or days <= PROMOTE_TIME_DAYS:
+        return TIER_HOT
+    if entry.apply_count >= PROMOTE_TO_WARM_THRESHOLD or days <= DEMOTE_TO_WARM_DAYS:
+        return TIER_WARM
+    return TIER_COLD
+
+
+def auto_promote_demote(
+    entries: list[MemoryEntry],
+) -> list[tuple[MemoryEntry, str, str]]:
+    """Return list of (entry, old_tier, new_tier) for entries whose tier changed.
+
+    Does NOT modify entries in place — caller decides whether to apply.
+    """
+    changes: list[tuple[MemoryEntry, str, str]] = []
+    for entry in entries:
+        new_tier = classify_tier(entry)
+        if new_tier != entry.tier:
+            changes.append((entry, entry.tier, new_tier))
+    if changes:
+        log.info("memory_tier: %d tier changes detected", len(changes))
+    return changes
+
+
+def record_access(entry: MemoryEntry) -> None:
+    """Increment apply_count and update last_accessed to today (R14)."""
+    entry.apply_count += 1
+    entry.last_accessed = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+# ── Per-Agent Memory Isolation (R29 steal — DeerFlow) ────────────────────
+
+
+@dataclass
+class AgentMemoryNamespace:
+    """Independent memory namespace for a specific agent/department."""
+    agent_name: str
+    entries: list[MemoryEntry] = field(default_factory=list)
+    token_budget: int = 2000
+
+
+def get_agent_memory(
+    agent_name: str,
+    all_entries: list[MemoryEntry],
+) -> list[MemoryEntry]:
+    """Filter entries by tag matching agent_name.
+
+    If no agent-specific entries found, return shared/global entries
+    (those with no agent-specific tag).
+    """
+    agent_lower = agent_name.lower()
+    agent_specific = [
+        e for e in all_entries
+        if any(t.lower() == agent_lower for t in e.tags)
+    ]
+    if agent_specific:
+        return agent_specific
+
+    # Fallback: return global entries (no tags or generic tags only)
+    return [e for e in all_entries if not e.tags]
+
+
+def partition_by_agent(
+    entries: list[MemoryEntry],
+) -> dict[str, list[MemoryEntry]]:
+    """Group entries by their first tag. Untagged entries go to '_global'."""
+    partitions: dict[str, list[MemoryEntry]] = {}
+    for entry in entries:
+        key = entry.tags[0] if entry.tags else "_global"
+        partitions.setdefault(key, []).append(entry)
+    return partitions
 
 
 def _find_memory_dir() -> Optional[Path]:
