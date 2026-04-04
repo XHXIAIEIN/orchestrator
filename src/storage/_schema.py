@@ -368,6 +368,20 @@ CREATE TABLE IF NOT EXISTS proactive_log (
 );
 CREATE INDEX IF NOT EXISTS idx_proactive_signal ON proactive_log(signal_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_proactive_action ON proactive_log(action, created_at);
+
+CREATE TABLE IF NOT EXISTS evolution_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_id   TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    risk_level  TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    detail      TEXT DEFAULT '{}',
+    score_before REAL,
+    score_after  REAL,
+    created_at  TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_evo_action ON evolution_log(action_type);
+CREATE INDEX IF NOT EXISTS idx_evo_created ON evolution_log(created_at);
 """
 
 # Migrations: (table, column, type)
