@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 38 轮偷师，100+ 项目，174 模式。按主题域组织，不按来源。
+> 38 轮偷师，100+ 项目，179 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 174 |
-| ✅ Implemented | 149 |
+| Total patterns | 179 |
+| ✅ Implemented | 154 |
 | 📐 Designed (spec exists) | 2 |
 | 🔲 Pending (cvui only) | 6 |
 | ⏸️ Shelved | 17 |
@@ -45,6 +45,7 @@
 | S23 | Sub-Agent Behavioral Norms Injection | PUA (R35) | ✅ | `.claude/hooks/dispatch-gate.sh` | Auto-inject verification discipline + diagnostic norms into sub-agent context |
 | S24 | VBR Gate (Verify Before Reporting) | proactive-agent (R23) | ✅ | `.claude/hooks/vbr-gate.sh` | Stop hook: detect completion claims without verification evidence |
 | S25 | Self-Modification Gate (Editable/Fixed) | AutoAgent (R38b) | ✅ | `CLAUDE.md` Gate Functions | Eval baseline required before config change; editable/fixed boundary enforced |
+| S26 | Anti-Degradation Protocol | ClawHub (R14) | ✅ | `governance/safety/anti_degradation.py` | Pre-modification scoring gate: 4-dim weighted (freq×3/fail×3/burden×2/token×2), gate<50=reject, forbidden justifications |
 
 ---
 
@@ -71,6 +72,7 @@
 | R17 | Deterministic Pressure Escalation | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` | Shell counter drives L1-L4 escalation on consecutive Bash failures; success resets to 0. LLM cannot opt out |
 | R18 | PreCompact Behavioral Checkpoint | PUA (R35) | ✅ | `.claude/hooks/pre-compact.sh` | Before compaction: dump tried approaches, eliminated hypotheses, failure count to disk. Bridges memory gap |
 | R19 | Hook Self-Check Bypass Prevention | Claudeception (R36c) | ✅ | `.claude/hooks/dispatch-gate.sh` | Force self-check hooks cannot be bypassed by passive matching |
+| R20 | MCP Server Health Check | entrix (R15) | ✅ | `src/core/mcp_health.py` | 3-state (healthy/degraded/unhealthy) + exponential backoff + auto-recovery |
 
 ---
 
@@ -94,6 +96,7 @@
 | P14 | Multi-Pass Model Normalization | CC (R28a) | ✅ | `src/core/model_normalize.py` | 4-pass: exact/prefix/date/fuzzy model name resolution |
 | P15 | Configurable Summarization Triggers | DeerFlow (R29) | ✅ | `governance/condenser/configurable.py` | OR-logic triggers (token/message/fraction) + configurable retention policies |
 | P16 | Upload Mention Stripping | DeerFlow (R29) | ✅ | `governance/condenser/upload_stripper.py` | Strip ephemeral file paths (/tmp, uploads, AppData) from memory |
+| P17 | WAL Buffer (Context Danger Zone) | ClawHub (R14) | ✅ | `governance/context/wal_buffer.py` | At 60% context, log human+agent summaries; recover after compaction |
 
 ---
 
@@ -202,6 +205,8 @@
 | O28 | Doctor Self-Diagnostic | AI Designer MCP (R37) | ✅ | `.claude/skills/doctor/SKILL.md` | Container/DB/collector/channel/GPU structured pass/warn/fail diagnosis |
 | O29 | System Snapshot Injection | AI Designer MCP (R37) | ✅ | `.claude/hooks/session-start.sh` | Inject container/DB/uncommitted status at session start |
 | O30 | Dedup Decision Matrix | Claudeception (R36c) | ✅ | implicit in skill management | 6-scenario dedup for pattern/skill installation |
+| O31 | Agent Builder Meta-Tool | LobeHub (R16) | ✅ | `governance/agent_builder.py` | NL description → AgentSpec → blueprint.yaml + SKILL.md; keyword-based capability/authority detection |
+| O32 | Skill CAS Distribution | LobeHub (R16) | ✅ | `governance/skill_cas.py` | SHA-256 content hash dedup, version history, rollback, transitive dependency resolution |
 
 ---
 
@@ -295,7 +300,9 @@
 | kevinrgu/autoagent | ~0 | 38b | I27, E9, S25 |
 | self-improving-agent (ClawHub) | — | 23 | I21, I24, I25, S24 |
 | DeerFlow 2.0 | 55.2K | 29 | P15, P16, I22, I23 |
-| ClawHub elite-longterm-memory | 305K | 14 | I26 |
+| ClawHub elite-longterm-memory | 305K | 14 | I26, P17, S26 |
+| entrix | — | 15 | R20 |
+| LobeHub | — | 16 | O31, O32 |
 
 ---
 
@@ -336,20 +343,19 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 ### P1 — Near Term (Orchestrator)
 
-| Pattern | Source | Est. Effort |
-|---------|--------|-------------|
-| WAL Buffer (context danger zone log) | ClawHub (R14) | Low |
-| Anti-Degradation Protocol | ClawHub (R14) | Low |
-| MCP Server Health Check | entrix (R15) | Low |
-| Agent Builder Meta-Tool | LobeHub (R16) | High |
-| Skill CAS Distribution | LobeHub (R16) | Medium |
+All 5 patterns implemented ✅ (2026-04-04 steal/p1-cleanup branch)
 
 ### DEFER (assigned to separate sessions)
 
 | Pattern | Source | Notes |
 |---------|--------|-------|
-| Reverse Prompting + Proactive Tracker | R23 | TG bot proactive mode |
-| Growth Loops (Curiosity/Pattern/Outcome) | R23 | Three feedback cycles |
-| Ontology Graph Layer | R14 P2 | Cross-department knowledge graph |
+| Reverse Prompting + Proactive Tracker | R23 | TG bot proactive mode — spec exists (📐) |
 | Clarification-First Workflow | R29 | Prompt engineering refactor |
-| Hooks 16-Event Lifecycle Extension | R38 | Hook system architecture upgrade |
+
+### Previously Deferred → Now Done
+
+| Pattern | Source | Completed |
+|---------|--------|-----------|
+| Growth Loops (Curiosity/Pattern/Outcome) | R23 | ✅ d050fb6 |
+| Ontology Graph Layer | R14 P2 | ✅ 13ab426 |
+| Hooks 16-Event Lifecycle Extension | R38 | ✅ ef9bcc8 |
