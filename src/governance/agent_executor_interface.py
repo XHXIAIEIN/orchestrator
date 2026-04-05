@@ -43,6 +43,30 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
+class EphemeralSpec:
+    """Inline agent spec — no disk, no department directory required (H8).
+
+    Construct this in-memory and pass to TaskExecutor.run_ephemeral().
+    The agent runs through AgentSessionRunner with full quality controls
+    (stuck detection, doom loop, supervisor) but skips department resolution,
+    blueprint loading, worktree isolation, and approval gates.
+
+    After execution, only a lightweight event trail remains in the DB
+    (task row + agent_events). No files are written to disk.
+    """
+    prompt: str                                    # task prompt
+    system_prompt: str = ""                        # inline system prompt (replaces SKILL.md)
+    model: str = "claude-sonnet-4-6"
+    max_turns: int = 10                            # conservative default for ephemeral work
+    timeout_s: int = 120                           # shorter timeout — ephemeral = quick
+    allowed_tools: tuple[str, ...] = ("Read", "Grep", "Glob", "Bash", "WebFetch")
+    cwd: str | None = None                         # working directory override
+    parent_task_id: int | None = None              # for delegation tracking (H7)
+    persist: bool = True                           # write task+events to DB (False = fully volatile)
+    tag: str = "ephemeral"                         # label for audit trail
+
+
+@dataclass(frozen=True)
 class AgentHandle:
     """Handle to a running agent. Frozen — state queries go through executor."""
     agent_id: str

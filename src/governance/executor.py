@@ -1136,3 +1136,21 @@ class TaskExecutor:
         except Exception as e:
             log.warning(f"TaskExecutor: visual verify failed: {e}")
             return ""
+
+    # ── Ephemeral Agent (H8) ──────────────────────────────────────────
+
+    def run_ephemeral(self, spec) -> ExecutionResponse:
+        """Run an ephemeral agent — no disk, no department directory (H8).
+
+        Args:
+            spec: EphemeralSpec instance with inline config.
+
+        Returns:
+            ExecutionResponse from the ephemeral run.
+        """
+        from src.governance.ephemeral import run_ephemeral as _run
+        return _run(spec=spec, db=self.db)
+
+    def run_ephemeral_async(self, spec):
+        """Submit an ephemeral agent to the thread pool (non-blocking)."""
+        return _task_pool.submit(self.run_ephemeral, spec)
