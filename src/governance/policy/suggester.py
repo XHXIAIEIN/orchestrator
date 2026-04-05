@@ -18,7 +18,7 @@ _DEPT_ROOT = _REPO_ROOT / "departments"
 def generate_suggestions(department: str) -> str:
     """Generate human-readable policy suggestions based on accumulated denials.
 
-    Returns markdown text. Also writes to departments/{dept}/policy-suggestions.md.
+    Returns markdown text. Also writes to data/suggestions/{dept}/policy-suggestions.md.
     """
     from src.governance.policy.blueprint import load_blueprint
 

@@ -35,7 +35,9 @@ def _denials_path(department: str) -> Path:
 
 
 def _suggestions_path(department: str) -> Path:
-    return _DEPT_ROOT / department / "policy-suggestions.md"
+    d = _REPO_ROOT / "data" / "suggestions" / department
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "policy-suggestions.md"
 
 
 # ── Observe: record denials ──────────────────────────────────────

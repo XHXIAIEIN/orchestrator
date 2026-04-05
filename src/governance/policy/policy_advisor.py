@@ -12,7 +12,7 @@ during task execution and generate data-driven suggestions:
   - Read-only departments that attempted writes
 
 Denials are stored in departments/{dept}/policy-denials.jsonl
-Suggestions are written to departments/{dept}/policy-suggestions.md
+Suggestions are written to data/suggestions/{dept}/policy-suggestions.md
 """
 import json
 import logging

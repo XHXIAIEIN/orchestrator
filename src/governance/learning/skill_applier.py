@@ -58,7 +58,7 @@ def apply_suggestions(department: str, dry_run: bool = False) -> dict:
         dict with keys: applied (bool), patch (str), backup_path (str), reason (str)
     """
     dept_dir = _REPO_ROOT / "departments" / department
-    suggestions_path = dept_dir / "skill-suggestions.md"
+    suggestions_path = _REPO_ROOT / "data" / "suggestions" / department / "skill-suggestions.md"
     skill_path = dept_dir / "SKILL.md"
 
     result = {"applied": False, "patch": "", "backup_path": "", "reason": ""}

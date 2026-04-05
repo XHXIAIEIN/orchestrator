@@ -99,7 +99,7 @@ class PromptTuneAction(BaseAction):
         if not department:
             return ActionResult(status=ActionStatus.SKIPPED, detail={"reason": "no department in signal"})
 
-        suggestion_path = Path(f"departments/{department}/skill-suggestions.md")
+        suggestion_path = Path(f"data/suggestions/{department}/skill-suggestions.md")
         skill_path = Path(f"departments/{department}/SKILL.md")
 
         if not suggestion_path.exists():

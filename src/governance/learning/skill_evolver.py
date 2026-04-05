@@ -1,6 +1,6 @@
 """
 Skill Evolution: 分析部门 run-log，发现重复模式，生成 SKILL.md 改善建议。
-不自动修改 SKILL.md —— 所有建议写入 skill-suggestions.md 等待审批。
+不自动修改 SKILL.md —— 所有建议写入 data/suggestions/{dept}/skill-suggestions.md 等待审批。
 """
 import json
 import logging
@@ -120,8 +120,10 @@ def run_evolution():
         analysis = analyze_department(dept_dir.name)
 
         if analysis and "暂无建议" not in analysis:
-            # 写入 skill-suggestions.md
-            suggestions_path = dept_dir / "skill-suggestions.md"
+            # 写入 data/suggestions/{dept}/skill-suggestions.md
+            suggestions_dir = Path("data") / "suggestions" / dept_dir.name
+            suggestions_dir.mkdir(parents=True, exist_ok=True)
+            suggestions_path = suggestions_dir / "skill-suggestions.md"
             header = f"# Skill 改善建议 — {dept_dir.name}\n"
             header += f"生成时间: {datetime.now(timezone.utc).isoformat()}\n"
             header += f"状态: 待审核\n\n"
