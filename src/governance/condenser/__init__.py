@@ -8,6 +8,7 @@ from .pipeline import CondenserPipeline
 from .context_condenser import condense_context
 from .configurable import ConfigurableCondenser, ConfigurableTrigger, RetentionPolicy
 from .upload_stripper import UploadStripper
+from .tool_output_pruner import ToolOutputPruner, PruneConfig
 
 # Ratio-Based Compression adapter (stolen from Hermes)
 # Wraps governance.compression.ContextCompressor as a Condenser so it can
@@ -29,5 +30,7 @@ __all__ = [
     "ConfigurableTrigger",
     "RetentionPolicy",
     "UploadStripper",
+    "ToolOutputPruner",
+    "PruneConfig",
     "RatioCompressionCondenser",
 ]
