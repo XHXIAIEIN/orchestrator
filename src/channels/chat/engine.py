@@ -117,9 +117,9 @@ def do_chat(chat_id: str, text: str, original_text: str,
                 messages.append({"role": "user", "content": doc_content})
 
         # ── Intent classification → model routing ──
+        from src.channels.media import is_image_file
         has_images = bool(_media_paths and any(
-            p.endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif'))
-            for p in _media_paths
+            is_image_file(p) for p in _media_paths
         ))
         intent = _classify_intent(text, has_images, chat_id)
         log.info(f"chat: intent={intent} for {chat_id[:16]}")

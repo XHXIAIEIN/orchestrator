@@ -84,6 +84,11 @@ def download_url(url: str, subdir: str = "inbound", timeout: int = 30) -> str:
         if len(buf) > MEDIA_MAX_BYTES:
             raise ValueError(f"Media too large (>{MEDIA_MAX_BYTES} bytes)")
     ext = _ext_from_mime(content_type) or _ext_from_url(url)
+    # When MIME/URL give .bin, try magic bytes on the downloaded buffer
+    if ext == ".bin" and len(buf) >= 16:
+        mime_detected = _detect_mime_from_header(buf[:16])
+        if mime_detected and mime_detected in _MIME_TO_EXT:
+            ext = _MIME_TO_EXT[mime_detected]
     h = hashlib.md5(buf[:4096]).hexdigest()[:8]
     path = d / f"{h}{ext}"
     path.write_bytes(buf)
@@ -101,6 +106,66 @@ def _ext_from_mime(mime: str) -> str:
         if mime.startswith(prefix):
             return ext
     return ".bin"
+
+
+# ── Magic-bytes image detection ──────────────────────────────────────────
+
+# Signatures: (offset, magic_bytes, mime_type)
+_IMAGE_SIGNATURES: list[tuple[int, bytes, str]] = [
+    (0, b"\xff\xd8\xff",       "image/jpeg"),
+    (0, b"\x89PNG\r\n\x1a\n",  "image/png"),
+    (0, b"GIF87a",             "image/gif"),
+    (0, b"GIF89a",             "image/gif"),
+    (0, b"RIFF",               "image/webp"),  # RIFF....WEBP — extra check below
+]
+
+
+def _detect_mime_from_header(header: bytes) -> str:
+    """Detect image MIME from raw header bytes (>= 16 bytes recommended).
+
+    Returns mime string ("image/jpeg" etc.) or empty string.
+    """
+    if len(header) < 4:
+        return ""
+    for offset, magic, mime in _IMAGE_SIGNATURES:
+        end = offset + len(magic)
+        if header[offset:end] == magic:
+            if magic == b"RIFF":
+                if len(header) >= 12 and header[8:12] == b"WEBP":
+                    return "image/webp"
+                continue
+            return mime
+    return ""
+
+
+def detect_image_mime(path: str) -> str:
+    """Detect image MIME type from file magic bytes.
+
+    Returns mime string ("image/jpeg" etc.) or empty string if not a
+    recognised image format.  Never raises.
+    """
+    try:
+        with open(path, "rb") as f:
+            header = f.read(16)
+    except Exception:
+        return ""
+    return _detect_mime_from_header(header)
+
+
+_MIME_TO_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png":  ".png",
+    "image/gif":  ".gif",
+    "image/webp": ".webp",
+}
+
+
+def is_image_file(path: str) -> bool:
+    """Check if *path* is a recognisable image (by extension OR magic bytes)."""
+    ext = Path(path).suffix.lower()
+    if ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        return True
+    return bool(detect_image_mime(path))
 
 
 # ── Document text extraction (stolen from MarkItDown patterns) ──────────

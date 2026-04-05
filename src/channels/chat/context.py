@@ -41,18 +41,23 @@ def build_context(db_path: str, chat_id: str) -> list[dict]:
         paths = m.pop("media_paths", None)
         if paths and i in media_indices and m["role"] == "user":
             # Build multimodal content with inlined images
+            from src.channels.media import is_image_file, detect_image_mime
             content_parts = []
             for p in paths:
                 try:
                     from pathlib import Path
                     pp = Path(p)
                     if pp.exists() and pp.stat().st_size < 5 * 1024 * 1024:  # <5MB
-                        suffix = pp.suffix.lower()
-                        if suffix in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+                        if is_image_file(p):
                             b64 = b64mod.b64encode(pp.read_bytes()).decode()
-                            mime = "image/jpeg"
-                            if suffix == ".png": mime = "image/png"
-                            elif suffix == ".webp": mime = "image/webp"
+                            # Detect MIME from magic bytes first, fall back to extension
+                            mime = detect_image_mime(p)
+                            if not mime:
+                                suffix = pp.suffix.lower()
+                                mime = "image/jpeg"
+                                if suffix == ".png": mime = "image/png"
+                                elif suffix == ".webp": mime = "image/webp"
+                                elif suffix == ".gif": mime = "image/gif"
                             content_parts.append({
                                 "type": "image",
                                 "source": {"type": "base64", "media_type": mime, "data": b64},
