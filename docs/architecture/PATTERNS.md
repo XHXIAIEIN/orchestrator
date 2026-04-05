@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | Total patterns | 191 |
-| ✅ Implemented | 167 |
+| ✅ Implemented | 168 |
 | → Moved to other projects | 12 |
-| ⏸️ Shelved | 12 |
+| ⏸️ Shelved | 11 |
 
 ---
 
@@ -31,7 +31,7 @@
 | S10 | 4-Gate Verification Framework | Round 2 | ✅ | `governance/safety/verify_gate.py` | 4 verification gates before action |
 | S11 | Tool Policy (deny-wins + glob + depth limit) | OpenFang (R6) | ✅ | `governance/policy/tool_policy.py` | ToolPolicy class with deny-wins, glob matching, depth limits |
 | S12 | Hallucinated Action Detection | OpenFang (R6) | ✅ | `governance/executor_session.py` | Regex scan for action claims without tool calls; log-only, no blocking |
-| S13 | SSRF Protection | Firecrawl (R5) | ⏸️ | — | `assertSafeTargetUrl()` — not needed until we do external fetches |
+| S13 | SSRF Protection | Firecrawl (R5) | ✅ | `governance/safety/ssrf.py` | `assert_safe_url()`: scheme whitelist + DNS resolve → private IP block + domain allowlist; integrated in `channels/media.py::download_url()` |
 | S14 | Secret Zeroization | OpenFang (R6) | ⏸️ | — | Rust `Zeroizing<String>` has no reliable Python equivalent; use `SecretStr` + env cleanup |
 | S15 | Zero Data Retention (ZDR) | Firecrawl (R5) | ⏸️ | — | Full-chain data scrubbing flag. Needed for multi-tenant, not now |
 | S16 | Fact-Expression Split (anti-sycophancy) | Research (R-) | ✅ | `governance/dispatcher.py` + `departments/quality/SKILL.md` + `departments/protocol/SKILL.md` | 2-step pipeline: Fact Layer (刑部) → Expression Layer (礼部). Auto-detect via intent |
@@ -110,7 +110,7 @@
 | I5 | Critic Auto-Scoring | Round 2 | ✅ | `governance/quality/critic.py` | Automated quality scoring interface |
 | I6 | APO (Automatic Prompt Optimization) | Agent Lightning (R8) | ✅ | `governance/apo.py` | APOOptimizer: beam search + textual gradient + rule mutations + early stopping |
 | I7 | Self-Evolution (3-phase) | OpenAkita (R4) | ✅ | `src/evolution/loop.py` | Originally shelved; now implemented as EvolutionEngine (I32) with detect→classify→act→evaluate→learn closed loop |
-| I8 | Citation Scoring (memory retrieval) | OpenAkita (R4) | ⏸️ | — | Write-back effectiveness score on memory retrieval. Needs usage data first |
+| I8 | Citation Scoring (memory retrieval) | OpenAkita (R4) | ✅ | `governance/context/citation.py` | CitationTracker: unified write-back log + cite_count on learnings & structured memory. Feeds confidence_ranker via cite_count weight |
 | I9 | Personality Preference Auto-Promotion | OpenAkita (R4) | ⏸️ | — | High-confidence memory → identity file → prompt recompile. SOUL already handles manually |
 | I10 | Memory Supersede Chain | OpenAkita (R4) + context | ✅ | `governance/context/memory_supersede.py` | `superseded_by` links; new memory links old, preserving audit trail |
 | I11 | Three-Layer Memory (Semantic+Episode+Scratch) | OpenAkita (R4) + ClawHub (R14) | ✅ | `governance/context/memory_tier.py` | 3-tier loading (L0/L1/L2). Upgraded to HOT/WARM/COLD with auto-promotion/demotion (R14 steal) |
@@ -226,7 +226,7 @@
 | H5 | Terminal as First-Class Display | Carbonyl (R9) | ✅ | `channels/terminal_display.py` | TerminalDisplay: ANSI panels, tables, progress bars |
 | H6 | Input Event Backflow | Carbonyl (R9) | ✅ | `channels/event_backflow.py` | EventDispatcher: unified InputEvent model, middleware chain, pattern-based routing |
 | H7 | Delegation Span (DELEGATION tracking) | OpenAkita (R4) | ✅ | `governance/audit/delegation_span.py` | DelegationTracker: parent→child chain, depth limits, token aggregation |
-| H8 | Ephemeral Agent (temp profile, no disk) | OpenAkita (R4) | ⏸️ | — | Low value for current use case |
+| H8 | Ephemeral Agent (temp profile, no disk) | OpenAkita (R4) | ✅ | `governance/ephemeral.py` | EphemeralSpec inline config → AgentSessionRunner, NullDB for volatile mode |
 | H9 | Task Scheduling (sub-tasks) | bytebot (R10) | ✅ | `governance/task_scheduler.py` | TaskScheduler: priority queue + IMMEDIATE/SCHEDULED + poll loop |
 | H10 | Synthesis Discipline | CC System Prompts (R28b) | ✅ | `SOUL/public/prompts/synthesis_discipline.md` | Never delegate understanding; prove comprehension before delegating |
 | H11 | Collaboration Mode Switching | Codex CLI (R28c) | ✅ | `SOUL/public/prompts/collaboration_modes.md` | Suggest/auto-edit/full-auto mode switching |

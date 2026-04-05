@@ -72,6 +72,10 @@ def save_media_buffer(buf: bytes, mime: str = "", subdir: str = "inbound",
 
 
 def download_url(url: str, subdir: str = "inbound", timeout: int = 30) -> str:
+    # SSRF gate — validate URL before fetching (S13)
+    from src.governance.safety.ssrf import assert_safe_url
+    assert_safe_url(url)
+
     d = ensure_media_dir(subdir)
     req = urllib.request.Request(url, method="GET")
     with urllib.request.urlopen(req, timeout=timeout) as resp:

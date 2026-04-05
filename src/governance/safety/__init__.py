@@ -26,3 +26,8 @@ try:
     from .injection_scanner import scan_text, scan_context_file, scan_agent_output, has_high_severity
 except ImportError:
     pass
+
+try:
+    from .ssrf import assert_safe_url, is_safe_url, SSRFError
+except ImportError:
+    pass
