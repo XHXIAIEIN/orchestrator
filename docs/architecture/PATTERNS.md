@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 38 轮偷师，100+ 项目，179 模式。按主题域组织，不按来源。
+> 38 轮偷师，100+ 项目，191 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,11 +8,11 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 179 |
-| ✅ Implemented | 154 |
+| Total patterns | 191 |
+| ✅ Implemented | 167 |
 | 📐 Designed (spec exists) | 2 |
 | 🔲 Pending (cvui only) | 6 |
-| ⏸️ Shelved | 17 |
+| ⏸️ Shelved | 16 |
 
 ---
 
@@ -110,7 +110,7 @@
 | I4 | 5-Dimension Confidence Scoring | Round 2 | ✅ | `governance/preflight/confidence.py` | 5 axes of confidence evaluation |
 | I5 | Critic Auto-Scoring | Round 2 | ✅ | `governance/quality/critic.py` | Automated quality scoring interface |
 | I6 | APO (Automatic Prompt Optimization) | Agent Lightning (R8) | ✅ | `governance/apo.py` | APOOptimizer: beam search + textual gradient + rule mutations + early stopping |
-| I7 | Self-Evolution (3-phase) | OpenAkita (R4) | ⏸️ | — | Log+review+history → LLM analysis → graded self-repair (tools only, not core). Too ambitious for now |
+| I7 | Self-Evolution (3-phase) | OpenAkita (R4) | ✅ | `src/evolution/loop.py` | Originally shelved; now implemented as EvolutionEngine (I32) with detect→classify→act→evaluate→learn closed loop |
 | I8 | Citation Scoring (memory retrieval) | OpenAkita (R4) | ⏸️ | — | Write-back effectiveness score on memory retrieval. Needs usage data first |
 | I9 | Personality Preference Auto-Promotion | OpenAkita (R4) | ⏸️ | — | High-confidence memory → identity file → prompt recompile. SOUL already handles manually |
 | I10 | Memory Supersede Chain | OpenAkita (R4) + context | ✅ | `governance/context/memory_supersede.py` | `superseded_by` links; new memory links old, preserving audit trail |
@@ -131,6 +131,11 @@
 | I25 | Periodic Review Trigger | self-improving-agent (R23) | ✅ | `.claude/hooks/session-stop.sh` | Check pending learnings count at session end, remind if >10 |
 | I26 | Negative Feedback Tracker | ClawHub (R14) | ✅ | `governance/stuck_detector.py` | Track failed approaches, force strategy switch after 3 repeated failures |
 | I27 | ExperimentLedger (Keep/Discard) | AutoAgent (R38b) | ✅ | `governance/eval/experiment.py` | Score-driven config experiments with simplicity tiebreaker |
+| I28 | Growth Loops (3-ring feedback) | proactive-agent (R23) | ✅ | `src/proactive/` | Curiosity (user profiling) + Pattern Recognition (≥3 triggers auto) + Outcome Tracking (7-day follow-up) |
+| I29 | Proactive Signal Detection | proactive-agent (R23) | ✅ | `src/proactive/signals.py` | 12 signal detectors (S1-S12), Tier A/B/C/D priority, scan every 5min |
+| I30 | Proactive ThrottleGate | proactive-agent (R23) | ✅ | `src/proactive/throttle.py` | 4-layer filter (cooldown/budget/quiet/queue) with /quiet /loud TG commands |
+| I31 | Proactive DigestBuilder | proactive-agent (R23) | ✅ | `src/proactive/digest.py` | Daily/weekly HTML digest from proactive_log, delivered via TG |
+| I32 | Evolution Engine (closed loop) | ClawHub (R14) + R23 | ✅ | `src/evolution/loop.py` | Detect → RiskClassify → Act → Evaluate → Learn; 6 action types with rollback |
 
 ---
 
@@ -207,6 +212,7 @@
 | O30 | Dedup Decision Matrix | Claudeception (R36c) | ✅ | implicit in skill management | 6-scenario dedup for pattern/skill installation |
 | O31 | Agent Builder Meta-Tool | LobeHub (R16) | ✅ | `governance/agent_builder.py` | NL description → AgentSpec → blueprint.yaml + SKILL.md; keyword-based capability/authority detection |
 | O32 | Skill CAS Distribution | LobeHub (R16) | ✅ | `governance/skill_cas.py` | SHA-256 content hash dedup, version history, rollback, transitive dependency resolution |
+| O33 | Clarification-First Gate | DeerFlow (R29) | ✅ | `governance/clarification.py` | CLARIFY→PLAN→ACT workflow; 5 clarification types; deterministic + LLM 2-tier check |
 
 ---
 
@@ -246,6 +252,7 @@
 | D8 | Deep Research Multi-Round Loop | Firecrawl (R5) | ✅ | `core/deep_research.py` | ResearchSession: multi-round with dedup, finding cap, status FSM |
 | D9 | Index Cache (quality-scored) | Firecrawl (R5) | ⏸️ | — | Quality=1000 highest priority; cache miss → real fetch. Scale concern |
 | D10 | Text Tool Call Recovery (6 formats) | OpenFang (R6) | ✅ | `core/tool_call_recovery.py` | JSON block, XML, ReAct, function call, bare JSON, YAML-ish |
+| D11 | Ontology Graph (cross-department) | ClawHub (R14) | ✅ | `governance/knowledge_graph.py` | Entity-Relation on SQLite; typed knowledge graph for cross-department communication |
 
 ---
 
@@ -345,17 +352,14 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 All 5 patterns implemented ✅ (2026-04-04 steal/p1-cleanup branch)
 
-### DEFER (assigned to separate sessions)
+### DEFER → All Done ✅ (2026-04-04 ~ 2026-04-05)
 
-| Pattern | Source | Notes |
-|---------|--------|-------|
-| Reverse Prompting + Proactive Tracker | R23 | TG bot proactive mode — spec exists (📐) |
-| Clarification-First Workflow | R29 | Prompt engineering refactor |
+All 5 deferred patterns and all 5 P1 散尾 have been implemented:
 
-### Previously Deferred → Now Done
-
-| Pattern | Source | Completed |
-|---------|--------|-----------|
-| Growth Loops (Curiosity/Pattern/Outcome) | R23 | ✅ d050fb6 |
-| Ontology Graph Layer | R14 P2 | ✅ 13ab426 |
-| Hooks 16-Event Lifecycle Extension | R38 | ✅ ef9bcc8 |
+| Pattern | Source | Status | Commit/Location |
+|---------|--------|--------|-----------------|
+| Reverse Prompting + Proactive Tracker | R23 | ✅ | `src/proactive/` (I29-I31) |
+| Growth Loops (Curiosity/Pattern/Outcome) | R23 | ✅ | `src/proactive/` (I28) |
+| Ontology Graph Layer | R14 P2 | ✅ | `governance/knowledge_graph.py` (D11) |
+| Clarification-First Workflow | R29 | ✅ | `governance/clarification.py` (O33) |
+| Hooks 16-Event Lifecycle Extension | R38 | ✅ | `core/lifecycle_hooks.py` (R12 updated) |
