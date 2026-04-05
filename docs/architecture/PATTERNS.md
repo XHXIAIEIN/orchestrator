@@ -10,9 +10,8 @@
 |--------|-------|
 | Total patterns | 191 |
 | ✅ Implemented | 167 |
-| 📐 Designed (spec exists) | 2 |
-| 🔲 Pending (cvui only) | 6 |
-| ⏸️ Shelved | 16 |
+| → Moved to other projects | 12 |
+| ⏸️ Shelved | 12 |
 
 ---
 
@@ -90,7 +89,7 @@
 | P8 | Engine Waterfall (multi-engine race) | Firecrawl (R5) | ✅ | `core/llm_router.py` | async _waterfall_generate() with staggered starts + first-wins cancellation |
 | P9 | Feature Flag Engine Selection | Firecrawl (R5) | ✅ | `core/llm_models.py` | Feature matrix per engine + select_engine_by_features() |
 | P10 | Smart Model Selection (complexity-based) | Firecrawl (R5) | ✅ | `core/llm_router.py` | `_score_schema_complexity()` + `select_model_for_schema()` → fast/balanced/strong tier |
-| P11 | LoDPI Adaptive Downscaling | Carbonyl (R9) | 🔲 | — | P1. Resolution-target-driven scale factor instead of fixed ratio. Apply to cvui DownscaleStage |
+| P11 | *LoDPI Adaptive Downscaling* | Carbonyl (R9) | → cvui | — | Moved to cvui `docs/plans/2026-03-28-steal-sheet-stages.md` |
 | P12 | Shared Memory IPC (zero-copy frames) | Carbonyl (R9) | ✅ | `desktop_use/screen.py` | SharedFrameBuffer: zero-copy frame buffer via shared_memory |
 | P13 | CDP Screencast Frame Stream | Carbonyl (R9) | ✅ | `core/browser_cdp.py` | `take_screenshot()` + `enable/disable_screencast()` + `recv_screencast_frame()` with ack |
 | P14 | Multi-Pass Model Normalization | CC (R28a) | ✅ | `src/core/model_normalize.py` | 4-pass: exact/prefix/date/fuzzy model name resolution |
@@ -158,20 +157,20 @@
 
 | # | Pattern | Source | Status | Location | Notes |
 |---|---------|--------|--------|----------|-------|
-| V1 | VLM Zone Stage (semantic first-cut) | Gemini + OmniParser (R7) | 🔲 | — | P0 for cvui. Screenshot → VLM("which regions are UI?") → zones → CV pipeline runs inside zones only |
-| V2 | CNN ClassifyStage (replace heuristic) | UIED (R7) | 🔲 | — | P1 for cvui. MobileNetV3-Small (~2M params, <5ms) classify: button/text/slider/icon/checkbox/dropdown |
-| V3 | Detection→Feature→Retrieval Pipeline | PaddleX PP-ShiTuV2 (R7) | ⏸️ | — | FAISS vector cache for similar windows. Current exact cache sufficient |
-| V4 | Format Converter Plugin (to_coco/yolo) | labelU (R7) | 🔲 | — | P1 for cvui. `DetectionContext.to_coco()`, `to_yolo()`, `to_labelme()` — detection as annotation data generator |
-| V5 | Pre-Annotation + Human Correction | labelU (R7) | 🔲 | — | P2 for cvui. AI annotate → human correct on dashboard → retrain. Detection→Correction→Training flywheel |
-| V6 | pix2emb Paradigm (embedding decode) | NExT-Chat (R7) | ⏸️ | — | Long-term. Position embedding → decoder → bbox/mask. Better than pix2seq for spatial precision |
-| V7 | Image Tiling (large image detection) | DarkHelp (R7) | 🔲 | — | P1 for cvui. `TilingStage`: split large screenshot into NxN tiles → per-tile pipeline → merge dedupe |
-| V8 | DOTS OCR Layout Parsing | R7 supplement | 📐 | — | 1.7B VLM, prompt_layout_only outputs bbox + category. Alternative VLMZoneStage backend |
-| V9 | Synthetic Data Training | DocLayout-YOLO (R7) | ⏸️ | — | Bin-packing synthetic UI pages for YOLO training. Long-term |
+| V1 | *VLM Zone Stage* | Gemini + OmniParser (R7) | → cvui | — | Moved to cvui steal-sheet |
+| V2 | *CNN ClassifyStage* | UIED (R7) | → cvui | — | Moved to cvui steal-sheet |
+| V3 | *Detection→Feature→Retrieval* | PaddleX (R7) | → cvui | — | Moved to cvui (shelved) |
+| V4 | *Format Converter Plugin* | labelU (R7) | → cvui | — | Moved to cvui steal-sheet |
+| V5 | *Pre-Annotation + Human Correction* | labelU (R7) | → cvui | — | Moved to cvui steal-sheet |
+| V6 | *pix2emb Paradigm* | NExT-Chat (R7) | → cvui | — | Moved to cvui (research) |
+| V7 | *Image Tiling* | DarkHelp (R7) | → cvui | — | Moved to cvui steal-sheet |
+| V8 | *DOTS OCR Layout Parsing* | R7 supplement | → cvui | — | Moved to cvui (designed) |
+| V9 | *Synthetic Data Training* | DocLayout-YOLO (R7) | → cvui | — | Moved to cvui (research) |
 | V10 | Structural CV Filtering (DBSCAN + multi-dim) | R7 supplement | ✅ | cvui `structural_v4` | DBSCAN density + saturation/variance/edge/neighbor anomaly. 56→41 rects, 60ms, 0 models |
 | V11 | Takeover + InputCapture (human handoff) | bytebot (R10) | ✅ | `desktop_use/` | pynput monitor + debounce aggregation (click 250ms, typing 500ms, scroll 4x) → inject trajectory |
 | V12 | Post-Action Auto Screenshot | bytebot (R10) | ✅ | `desktop_use/actions.py` | Every non-screenshot action → wait 750ms → auto screenshot as tool_result |
 | V13 | type vs paste Separation | bytebot (R10) | ✅ | `desktop_use/actions.py` | `type_text` (≤25 char) vs `paste_text` (clipboard+Ctrl+V); `sensitive` flag blocks echo |
-| V14 | Text-First Layered Strategy | Carbonyl (R9) | 📐 | — | DOM text / Win32 control text → trust first; OCR only as fallback. Matches Carbonyl TextCaptureDevice |
+| V14 | *Text-First Layered Strategy* | Carbonyl (R9) | → cvui | — | Moved to cvui (designed) |
 | V15 | Unicode Pixel Grid Visualization | Carbonyl (R9) | ✅ | `channels/pixel_grid.py` | PixelGrid: ANSI 24-bit color + block chars + heatmap gradient |
 
 ---
@@ -248,7 +247,7 @@
 | D4 | Dual-Track Generation (LLM + heuristic) | Understand-Anything (R1-R2) | ✅ | `governance/budget/token_budget.py` | Model degradation chain as heuristic fallback |
 | D5 | Objective Semantic Intent | Parallel (R3) | ✅ | `gateway/semantic_intent.py` | SemanticIntent: heuristic classification + department matching |
 | D6 | Token Budget Multi-Dimensional Control | Brave (R3) | ✅ | `core/multi_budget.py` | MultiBudget: per-department/model/time-window axes with auto-reset |
-| D7 | Hybrid RAG Dual-Source Fusion | Tavily (R3) | ⏸️ | — | For Construct3-RAG. Local + search fusion |
+| D7 | ~~Hybrid RAG Dual-Source Fusion~~ | Tavily (R3) | → | Construct3-RAG | Moved to Construct3-RAG project — not Orchestrator scope |
 | D8 | Deep Research Multi-Round Loop | Firecrawl (R5) | ✅ | `core/deep_research.py` | ResearchSession: multi-round with dedup, finding cap, status FSM |
 | D9 | Index Cache (quality-scored) | Firecrawl (R5) | ⏸️ | — | Quality=1000 highest priority; cache miss → real fetch. Scale concern |
 | D10 | Text Tool Call Recovery (6 formats) | OpenFang (R6) | ✅ | `core/tool_call_recovery.py` | JSON block, XML, ReAct, function call, bare JSON, YAML-ish |
@@ -333,26 +332,12 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 ## Priority Summary
 
-### P0 — Do Next
+### Orchestrator — All Done ✅
 
-| ID | Pattern | Est. Effort |
-|----|---------|-------------|
-| V1 | VLM Zone Stage (cvui) | Medium |
+All P0, P1, P2, and DEFER patterns implemented as of 2026-04-05.
+cvui patterns moved to `cvui/docs/plans/`. RAG pattern moved to `construct3-rag/docs/backlog.md`.
 
-### P1 — Near Term (cvui)
-
-| ID | Pattern | Est. Effort |
-|----|---------|-------------|
-| P11 | LoDPI Adaptive Downscaling (cvui) | Low |
-| V2 | CNN ClassifyStage (cvui) | Medium |
-| V4 | Format Converter to_coco/yolo (cvui) | Low |
-| V7 | Image Tiling (cvui) | Medium |
-
-### P1 — Near Term (Orchestrator)
-
-All 5 patterns implemented ✅ (2026-04-04 steal/p1-cleanup branch)
-
-### DEFER → All Done ✅ (2026-04-04 ~ 2026-04-05)
+### Completion Log (2026-04-04 ~ 2026-04-05)
 
 All 5 deferred patterns and all 5 P1 散尾 have been implemented:
 
