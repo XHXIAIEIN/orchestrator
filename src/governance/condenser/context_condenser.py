@@ -15,6 +15,8 @@ from typing import Optional
 from .base import Event, View
 from .amortized_forgetting import AmortizedForgettingCondenser
 from .llm_summarizing import LLMSummarizingCondenser
+from .upload_stripper import UploadStripper
+from .tool_output_pruner import ToolOutputPruner
 from .water_level import WaterLevelCondenser
 from .pipeline import CondenserPipeline
 
@@ -74,13 +76,18 @@ def _build_pipeline(config: dict) -> WaterLevelCondenser:
     """Build the condenser pipeline from config dict.
 
     The pipeline is:
-      WaterLevel gate → (AmortizedForgetting → LLMSummarizing)
+      WaterLevel gate → (UploadStripper → ToolOutputPruner → AmortizedForgetting → LLMSummarizing)
 
     WaterLevel acts as the outer gate: if context is under threshold,
     nothing happens. If over, the inner pipeline runs:
-      1. AmortizedForgetting to drop stale middle sections
-      2. LLMSummarizing to compress the longest remaining sections
+      1. UploadStripper to remove ephemeral file references (R29)
+      2. ToolOutputPruner to trim long tool outputs: head 200 + tail 20% (R39)
+      3. AmortizedForgetting to drop stale middle sections
+      4. LLMSummarizing to compress the longest remaining sections
     """
+    upload_stripper = UploadStripper()
+    tool_pruner = ToolOutputPruner()
+
     amortized = AmortizedForgettingCondenser(
         max_events=config.get("amortized_max_events", DEFAULT_AMORTIZED_MAX_EVENTS),
         keep_head=config.get("amortized_keep_head", DEFAULT_AMORTIZED_KEEP_HEAD),
@@ -95,7 +102,7 @@ def _build_pipeline(config: dict) -> WaterLevelCondenser:
         keep_tail=config.get("llm_keep_tail", DEFAULT_LLM_KEEP_TAIL),
     )
 
-    inner = CondenserPipeline([amortized, llm_summarizer])
+    inner = CondenserPipeline([upload_stripper, tool_pruner, amortized, llm_summarizer])
 
     return WaterLevelCondenser(
         inner=inner,

@@ -1,25 +1,172 @@
 # src/core/context_budget.py
 """
 ContextBudget — 上下文窗口预算管理器，偷自 OpenFang context_budget.rs。
+ContextLedger + SegmentBudget — per-segment 预算追踪，偷自 PraisonAI context/budgeter.py (R39).
 
 双层动态截断：
   Layer 1: 单个工具结果不超过 context window 的 30%（硬限 50%）
   Layer 2: 总工具输出超过可用空间 75% 时，按时间序压缩最旧的结果
 
+Segment 预算 (R39 新增):
+  将 context window 按功能区划分预算:
+    system: 2K, rules: 500, memory: 1K, tools_schema: 2K,
+    tool_outputs: 20K, history: 动态余量
+  ContextLedger 逐段追踪，超额预警。
+
 用法:
     budget = ContextBudget(context_window_tokens=200_000)
     result = budget.trim_single(tool_output, tool_name="Bash")
     budget.record_output(tool_name, result)
-    # 全局检查
     compressed = budget.compress_if_needed()
+
+    # Segment 预算
+    ledger = ContextLedger(context_window_tokens=200_000)
+    ledger.record("system", 1800)
+    ledger.record("tool_outputs", 15000)
+    warnings = ledger.check_overflow()
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import NamedTuple
 
 log = logging.getLogger(__name__)
+
+
+# ── Segment Budget (R39 PraisonAI steal) ───────────────────────
+
+
+class Segment(str, Enum):
+    """Context window 功能区段。"""
+    SYSTEM = "system"
+    RULES = "rules"
+    MEMORY = "memory"
+    TOOLS_SCHEMA = "tools_schema"
+    TOOL_OUTPUTS = "tool_outputs"
+    HISTORY = "history"
+
+
+# 默认 segment 预算 (tokens)。HISTORY 是动态余量，这里只定义固定段。
+DEFAULT_SEGMENT_BUDGETS: dict[str, int] = {
+    Segment.SYSTEM: 2_000,
+    Segment.RULES: 500,
+    Segment.MEMORY: 1_000,
+    Segment.TOOLS_SCHEMA: 2_000,
+    Segment.TOOL_OUTPUTS: 20_000,
+    # HISTORY: 动态计算 = total - sum(fixed segments)
+}
+
+
+@dataclass
+class SegmentEntry:
+    """单个 segment 的预算与实际使用。"""
+    budget: int
+    used: int = 0
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.budget - self.used)
+
+    @property
+    def usage_pct(self) -> float:
+        if self.budget <= 0:
+            return 100.0 if self.used > 0 else 0.0
+        return round(self.used / self.budget * 100, 1)
+
+    @property
+    def overflow(self) -> bool:
+        return self.used > self.budget
+
+
+@dataclass
+class ContextLedger:
+    """Per-segment token 预算追踪器。
+
+    追踪 context window 各段的 token 用量, 超额时发出预警。
+    HISTORY segment 的预算动态计算为: total - sum(固定段预算)。
+    """
+
+    context_window_tokens: int = 200_000
+    segment_budgets: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SEGMENT_BUDGETS))
+    # 超额警告阈值 (占 segment 预算的百分比)
+    warn_threshold_pct: float = 90.0
+
+    _entries: dict[str, SegmentEntry] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self):
+        # 初始化固定段
+        for seg, budget in self.segment_budgets.items():
+            self._entries[seg] = SegmentEntry(budget=budget)
+        # 动态计算 HISTORY 预算
+        fixed_total = sum(self.segment_budgets.values())
+        history_budget = max(0, self.context_window_tokens - fixed_total)
+        self._entries[Segment.HISTORY] = SegmentEntry(budget=history_budget)
+
+    def record(self, segment: str, tokens: int) -> SegmentEntry:
+        """记录某段的 token 使用量 (累加)。"""
+        if segment not in self._entries:
+            # 未知 segment, 给一个无限预算
+            self._entries[segment] = SegmentEntry(budget=self.context_window_tokens)
+        entry = self._entries[segment]
+        entry.used += tokens
+        return entry
+
+    def set_usage(self, segment: str, tokens: int) -> SegmentEntry:
+        """设置某段的 token 使用量 (覆盖, 非累加)。"""
+        if segment not in self._entries:
+            self._entries[segment] = SegmentEntry(budget=self.context_window_tokens)
+        self._entries[segment].used = tokens
+        return self._entries[segment]
+
+    def check_overflow(self) -> list[dict]:
+        """检查所有段, 返回超额或接近超额的预警列表。"""
+        warnings = []
+        for seg, entry in self._entries.items():
+            if entry.overflow:
+                warnings.append({
+                    "segment": seg,
+                    "level": "overflow",
+                    "budget": entry.budget,
+                    "used": entry.used,
+                    "over_by": entry.used - entry.budget,
+                })
+            elif entry.usage_pct >= self.warn_threshold_pct:
+                warnings.append({
+                    "segment": seg,
+                    "level": "warning",
+                    "budget": entry.budget,
+                    "used": entry.used,
+                    "usage_pct": entry.usage_pct,
+                })
+        return warnings
+
+    @property
+    def total_used(self) -> int:
+        return sum(e.used for e in self._entries.values())
+
+    @property
+    def total_remaining(self) -> int:
+        return max(0, self.context_window_tokens - self.total_used)
+
+    @property
+    def summary(self) -> dict:
+        """各段用量摘要。"""
+        segments = {}
+        for seg, entry in self._entries.items():
+            segments[seg] = {
+                "budget": entry.budget,
+                "used": entry.used,
+                "remaining": entry.remaining,
+                "usage_pct": entry.usage_pct,
+            }
+        return {
+            "context_window": self.context_window_tokens,
+            "total_used": self.total_used,
+            "total_remaining": self.total_remaining,
+            "segments": segments,
+        }
 
 
 class OutputRecord(NamedTuple):

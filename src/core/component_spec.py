@@ -164,10 +164,14 @@ _DEFAULTS = {
     "stuck_detector":       "src.governance.stuck_detector.StuckDetector",
     "taint_tracker":        "src.governance.safety.taint.TaintTracker",
     "context_budget":       "src.core.context_budget.ContextBudget",
+    "context_ledger":       "src.core.context_budget.ContextLedger",
     "runtime_supervisor":   "src.governance.supervisor.RuntimeSupervisor",
     "doom_loop_checker":    "src.governance.safety.doom_loop.check_doom_loop",
     "agent_semaphore":      "src.governance.safety.agent_semaphore.AgentSemaphore",
     "token_accountant":     "src.governance.budget.token_budget.TokenAccountant",
+    "rate_limiter":         "src.core.rate_limiter.RateLimiter",
+    "artifact_store":       "src.governance.context.artifact_store.ArtifactStore",
+    "thinking_tracker":     "src.governance.budget.thinking_budget.ThinkingTracker",
 }
 
 for _name, _path in _DEFAULTS.items():

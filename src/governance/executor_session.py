@@ -110,7 +110,11 @@ _DEFAULT_COMPONENTS = {
     "runtime_supervisor": "runtime_supervisor",
     "taint_tracker":      "taint_tracker",
     "context_budget":     "context_budget",
+    "context_ledger":     "context_ledger",        # R39: per-segment token tracking
     "doom_loop_checker":  "doom_loop_checker",
+    "rate_limiter":       "rate_limiter",           # R39: RPM + TPM token bucket
+    "artifact_store":     "artifact_store",         # R39: externalize large tool outputs
+    "thinking_tracker":   "thinking_tracker",       # R39: reasoning token stats
 }
 
 
@@ -298,10 +302,34 @@ class AgentSessionRunner:
         supervisor = build_component(self._component_specs.get("runtime_supervisor"))
         taint = build_component(self._component_specs.get("taint_tracker"))
         budget = build_component(self._component_specs.get("context_budget"))
+        ledger = build_component(self._component_specs.get("context_ledger"))
         check_doom_loop = build_component(self._component_specs.get("doom_loop_checker"))
+        rate_limiter = build_component(self._component_specs.get("rate_limiter"))
+        artifact_store = build_component(self._component_specs.get("artifact_store"))
+        thinking_tracker = build_component(self._component_specs.get("thinking_tracker"))
         checkpointer = PipelineCheckpointer(task_id=task_id)
         freeze_breaker = FreezeBreaker(idle_threshold=5)
         tool_count = 0
+
+        # ── R39: Rate Limiter — acquire before LLM call ──
+        if rate_limiter:
+            # Estimate initial token cost from prompt length
+            prompt_tokens = max(1, len(prompt) // 4)
+            if not rate_limiter.try_acquire(tokens=prompt_tokens):
+                rate_limiter.acquire(tokens=prompt_tokens, max_wait=30.0)
+
+        # ── R39: ContextLedger — record system prompt segment ──
+        if ledger:
+            ledger.set_usage("system", max(1, len(dept_prompt) // 4))
+            ledger.set_usage("history", max(1, len(prompt) // 4))
+
+        # ── R39: ThinkingTracker — start tracking ──
+        if thinking_tracker:
+            # Rough complexity estimate from prompt length
+            from src.governance.budget.thinking_budget import ThinkingBudget
+            complexity = min(1.0, len(prompt) / 50_000)  # normalize: 50K chars ≈ max complexity
+            tb = ThinkingBudget.adaptive(complexity=complexity)
+            thinking_tracker.start(str(task_id), tb)
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
@@ -405,6 +433,17 @@ class AgentSessionRunner:
                         outputs={"last_result": result_summary},
                     )
 
+                # ── R39: Artifact Store — externalize large tool outputs ──
+                if artifact_store and text_parts:
+                    for i, tp in enumerate(text_parts):
+                        externalized = artifact_store.maybe_externalize(tp, tool_name=f"turn-{turn}")
+                        if externalized != tp:
+                            text_parts[i] = externalized
+                            self._log_event(task_id, "artifact_externalized", {
+                                "turn": turn, "original_chars": len(tp),
+                                "ref_chars": len(externalized),
+                            })
+
                 # ── Context Budget: 记录工具输出 ──
                 if budget:
                     budget.advance_turn()
@@ -414,6 +453,16 @@ class AgentSessionRunner:
                     if compressed:
                         self._log_event(task_id, "context_budget_compress", {
                             "turn": turn, "compressed": compressed,
+                        })
+
+                # ── R39: ContextLedger — 逐段追踪 tool_outputs ──
+                if ledger and text_parts:
+                    tool_tokens = sum(max(1, len(tp) // 4) for tp in text_parts)
+                    ledger.record("tool_outputs", tool_tokens)
+                    overflow_warnings = ledger.check_overflow()
+                    if overflow_warnings:
+                        self._log_event(task_id, "context_ledger_overflow", {
+                            "turn": turn, "warnings": overflow_warnings,
                         })
 
                 # ── Stuck Detection: 每 3 轮检查一次 ──
@@ -563,6 +612,17 @@ class AgentSessionRunner:
                     "is_error": is_error_final,
                 })
                 self._log_event(task_id, "agent_result", result_data)
+
+        # ── R39: ThinkingTracker — finish tracking ──
+        if thinking_tracker:
+            # Estimate actual thinking tokens from total cost (~$3/M input, ~$15/M output for Sonnet)
+            # Rough heuristic: output_tokens ≈ total_chars / 4
+            est_output_tokens = max(1, len(result_text) // 4) if result_text else 0
+            thinking_tracker.finish(str(task_id), actual_tokens=est_output_tokens)
+
+        # ── R39: ContextLedger — final summary log ──
+        if ledger:
+            self._log_event(task_id, "context_ledger_summary", ledger.summary)
 
         # ── Phase 3: Finalize ──
         return self.finalize(
