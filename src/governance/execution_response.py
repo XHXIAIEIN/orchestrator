@@ -20,9 +20,10 @@ class ExecutionResponse:
     is_error: bool = False
     tool_calls_count: int = 0
     context_variables: dict = field(default_factory=dict)
+    trajectory_summary: dict = field(default_factory=dict)  # R39: eval trajectory data
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "status": self.status,
             "output": self.output[:500],
             "turns_taken": self.turns_taken,
@@ -32,6 +33,9 @@ class ExecutionResponse:
             "is_error": self.is_error,
             "tool_calls_count": self.tool_calls_count,
         }
+        if self.trajectory_summary:
+            d["trajectory_summary"] = self.trajectory_summary
+        return d
 
     def __str__(self) -> str:
         """Backward compat: str coercion returns output text."""

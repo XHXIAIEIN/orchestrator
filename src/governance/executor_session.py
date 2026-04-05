@@ -115,6 +115,7 @@ _DEFAULT_COMPONENTS = {
     "rate_limiter":       "rate_limiter",           # R39: RPM + TPM token bucket
     "artifact_store":     "artifact_store",         # R39: externalize large tool outputs
     "thinking_tracker":   "thinking_tracker",       # R39: reasoning token stats
+    "trajectory_tracker": "trajectory_tracker",     # R39: eval trajectory capture
 }
 
 
@@ -307,6 +308,16 @@ class AgentSessionRunner:
         rate_limiter = build_component(self._component_specs.get("rate_limiter"))
         artifact_store = build_component(self._component_specs.get("artifact_store"))
         thinking_tracker = build_component(self._component_specs.get("thinking_tracker"))
+        # R39: Trajectory capture — TrajectoryTracker needs task_id at init,
+        # so we can't use build_component's zero-arg constructor. Check if enabled
+        # (spec is not None), then construct directly.
+        traj_tracker = None
+        if self._component_specs.get("trajectory_tracker") is not None:
+            try:
+                from src.governance.eval.trajectory import TrajectoryTracker as _TT
+                traj_tracker = _TT(task_id=task_id)
+            except Exception as e:
+                log.debug(f"TrajectoryTracker init failed: {e}")
         checkpointer = PipelineCheckpointer(task_id=task_id)
         freeze_breaker = FreezeBreaker(idle_threshold=5)
         tool_count = 0
@@ -369,12 +380,22 @@ class AgentSessionRunner:
                             "warning": w, "turn": turn,
                         })
 
-                # ── Supervisor: 记录工具调用 ──
+                # ── Supervisor: 记��工具调用 ──
                 if supervisor and tool_calls:
                     for tc in tool_calls:
                         supervisor.record_tool_call(
                             tc.get("tool", ""),
                             {"_preview": tc.get("input_preview", "")},
+                        )
+
+                # ── R39: Trajectory — record each tool call ──
+                if traj_tracker and tool_calls:
+                    for tc in tool_calls:
+                        traj_tracker.record_tool_call(
+                            tool_name=tc.get("tool", ""),
+                            tool_args={"_preview": tc.get("input_preview", "")},
+                            success=not bool(message.error),
+                            error_message=(message.error or "")[:200],
                         )
 
                 if AgentTurnEvent:
@@ -624,8 +645,25 @@ class AgentSessionRunner:
         if ledger:
             self._log_event(task_id, "context_ledger_summary", ledger.summary)
 
+        # ── R39: Trajectory — finish and build summary ──
+        trajectory_summary = {}
+        if traj_tracker:
+            traj_tracker.finish()
+            traj = traj_tracker.trajectory
+            try:
+                from src.governance.eval.trajectory import score_trajectory
+                traj_score = score_trajectory(traj)
+                trajectory_summary = {
+                    **traj.to_dict(),
+                    "score": traj_score.to_dict(),
+                }
+                self._log_event(task_id, "trajectory_score", traj_score.to_dict())
+            except Exception as e:
+                trajectory_summary = traj.to_dict()
+                log.debug(f"Trajectory scoring failed: {e}")
+
         # ── Phase 3: Finalize ──
-        return self.finalize(
+        response = self.finalize(
             task_id=task_id,
             result_text=result_text,
             turn=turn,
@@ -637,3 +675,5 @@ class AgentSessionRunner:
             tool_count=tool_count,
             prefill_ctx=prefill_ctx,
         )
+        response.trajectory_summary = trajectory_summary
+        return response

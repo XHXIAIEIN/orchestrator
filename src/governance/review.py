@@ -115,6 +115,18 @@ except ImportError:
     capture_for_corpus = None
     CAPTURABLE_STATUSES = set()
 
+# R39: Trajectory scoring for successful tasks
+try:
+    from src.governance.eval.trajectory import score_trajectory, Trajectory, TrajectoryStep
+except ImportError:
+    score_trajectory = None
+
+# R39: Unified eval harness
+try:
+    from src.governance.eval.harness import EvalHarness
+except ImportError:
+    EvalHarness = None
+
 # Cross-Model Review (stolen from gstack, Round 3-7)
 try:
     from src.governance.cross_review import CrossModelReviewer
@@ -143,6 +155,7 @@ class ReviewManager:
         self.on_execute = on_execute
         self.accountant = TokenAccountant(db=self.db) if TokenAccountant else None
         self._dispatcher = ReviewDispatcher(db=self.db, on_execute=on_execute)
+        self._eval_harness = EvalHarness() if EvalHarness else None
 
     def finalize_task(self, task_id: int, task: dict, dept_key: str,
                       status: str, output: str, task_cwd: str, project_name: str, now: str):
@@ -352,19 +365,22 @@ class ReviewManager:
         self.db.write_log(f"任务 #{task_id}（{project_name}）{status}：{output[:80]}", "INFO" if status == "done" else "ERROR", "governor")
         log.info(f"ReviewManager: task #{task_id} {status}")
 
+        # ── R39: Read trajectory from agent events (logged by executor_session) ──
+        trajectory_summary = {}
+        try:
+            recent_events = self.db.get_agent_events(task_id, limit=20)
+            for evt in recent_events:
+                data = json.loads(evt["data"]) if isinstance(evt.get("data"), str) else evt.get("data", {})
+                if evt.get("event_type") == "trajectory_score":
+                    trajectory_summary = data
+                    break
+        except Exception:
+            pass
+
         # ── Production → Test Corpus (R38: Braintrust feedback loop) ──
         # Capture interesting failures as eval corpus entries for Clawvard
         if capture_for_corpus and status in CAPTURABLE_STATUSES:
             try:
-                trajectory_summary = {}
-                # Try to get trajectory from execution snapshot
-                try:
-                    from src.governance.audit.execution_snapshot import SnapshotStore
-                    store = SnapshotStore()
-                    snapshot = store.load_snapshot(task_id)
-                    trajectory_summary = snapshot.get_summary()
-                except Exception:
-                    pass
                 corpus_path = capture_for_corpus(
                     task_id=task_id,
                     task=task,
@@ -379,6 +395,46 @@ class ReviewManager:
                     })
             except Exception as e:
                 log.debug(f"ReviewManager: corpus capture failed for task #{task_id}: {e}")
+
+        # ── R39: Trajectory scoring — log composite for successful tasks ──
+        if status == "done" and trajectory_summary and score_trajectory:
+            try:
+                score_data = trajectory_summary.get("score", {})
+                composite = score_data.get("composite", 0)
+                if composite < 0.6:
+                    log.warning(
+                        f"ReviewManager: task #{task_id} low trajectory score "
+                        f"(composite={composite:.2f}, efficiency={score_data.get('efficiency', 0):.2f})"
+                    )
+                self.db.add_agent_event(task_id, "trajectory_eval", {
+                    "composite": composite,
+                    "efficiency": score_data.get("efficiency", 0),
+                    "correctness": score_data.get("correctness", 0),
+                    "tool_calls": trajectory_summary.get("tool_calls_count", 0),
+                })
+            except Exception as e:
+                log.debug(f"ReviewManager: trajectory eval logging failed for task #{task_id}: {e}")
+
+        # ── R39: EvalHarness — unified eval pipeline ──
+        if self._eval_harness and trajectory_summary:
+            try:
+                eval_result = self._eval_harness.evaluate(
+                    task_id=task_id,
+                    task=task,
+                    status=status,
+                    output=output,
+                    trajectory_summary=trajectory_summary,
+                    department=dept_key,
+                )
+                self.db.add_agent_event(task_id, "eval_harness", eval_result.to_dict())
+                if eval_result.regression_significant and eval_result.regression_direction == "regressed":
+                    self.db.write_log(
+                        f"⚠ 评估回归: {dept_key} 任务 #{task_id} 分数下降 "
+                        f"(composite={eval_result.composite_score:.3f})",
+                        "WARNING", "eval",
+                    )
+            except Exception as e:
+                log.debug(f"ReviewManager: eval harness failed for task #{task_id}: {e}")
 
         # ── Dependency Chain: unblock downstream tasks (stolen from Cline Kanban) ──
         if status == "done":

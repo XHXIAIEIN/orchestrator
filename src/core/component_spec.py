@@ -172,6 +172,10 @@ _DEFAULTS = {
     "rate_limiter":         "src.core.rate_limiter.RateLimiter",
     "artifact_store":       "src.governance.context.artifact_store.ArtifactStore",
     "thinking_tracker":     "src.governance.budget.thinking_budget.ThinkingTracker",
+    # R39: Eval framework components
+    "trajectory_tracker":   "src.governance.eval.trajectory.TrajectoryTracker",
+    "experiment_ledger":    "src.governance.eval.experiment.ExperimentLedger",
+    "early_stopping":       "src.governance.eval.early_stopping.EarlyStoppingPolicy",
 }
 
 for _name, _path in _DEFAULTS.items():
