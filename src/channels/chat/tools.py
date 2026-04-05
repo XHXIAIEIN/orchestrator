@@ -372,15 +372,19 @@ def _tool_query_status(params: dict) -> str:
 
 def _tool_wake_claude(params: dict, chat_id: str, channel_source: str = "channel") -> str:
     from src.channels.wake import create_session
+    from src.channels.channel_config import ALLOWED_USERS
     spotlight = params.get("spotlight", "")
     if not spotlight:
         return "Error: spotlight is required"
+    is_admin = ALLOWED_USERS.get(chat_id) == "admin"
     result = create_session(
         chat_id=chat_id, spotlight=spotlight, channel=channel_source,
+        auto_approve=is_admin,
     )
+    status_msg = "直接执行" if is_admin else "等待审批"
     return (
         f"Wake session #{result['session_id']} created (task #{result['task_id']}). "
-        f"Waiting for Governor approval."
+        f"{status_msg}"
     )
 
 
