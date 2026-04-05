@@ -4,6 +4,8 @@ Fact Confidence Ranking (R29 — stolen from bytedance/deer-flow).
 Sort facts/memories by confidence descending before injection into system prompt.
 Token budget enforcement: stop injecting when budget exhausted.
 High-frequency, high-confidence facts get priority.
+
+I8 extension: cite_count from CitationTracker now contributes to the score.
 """
 from __future__ import annotations
 
@@ -26,17 +28,24 @@ def compute_confidence(
     apply_count: int = 0,
     recurrence: int = 0,
     days_since_access: int = 999,
+    cite_count: int = 0,
 ) -> float:
     """Compute confidence score from usage signals.
 
-    Formula:
+    Formula (I8 update):
         min(1.0, (apply_count * 0.15) + (recurrence * 0.2)
-                  + max(0, (30 - days_since_access) / 30 * 0.3))
+                  + max(0, (30 - days_since_access) / 30 * 0.3)
+                  + min(0.3, cite_count * 0.05))
+
+    cite_count: number of times this memory was cited in task contexts.
+    Caps at 0.3 (~6 citations to max out), avoids runaway amplification.
     """
+    citation_boost = min(0.3, cite_count * 0.05)
     score = (
         apply_count * 0.15
         + recurrence * 0.2
         + max(0.0, (30 - days_since_access) / 30 * 0.3)
+        + citation_boost
     )
     return max(0.0, min(1.0, score))
 

@@ -264,6 +264,9 @@ class TwoStageRAGProvider(BaseProvider):
                 priority=20,
             ))
 
+        # ── I8: Citation tracking — record which learnings were retrieved ──
+        _record_learning_citations(ranked, ctx)
+
         return chunks
 
 
@@ -301,6 +304,7 @@ class StructuredMemoryProvider(BaseProvider):
             return []
 
         chunks = []
+        cited_entries: list[dict] = []  # I8: collect entries for citation tracking
 
         # ── Hot memories (high confidence, recent) ──
         try:
@@ -313,6 +317,7 @@ class StructuredMemoryProvider(BaseProvider):
                         content="[Structured Memory — hot tier]\n" + "\n".join(lines),
                         priority=15,
                     ))
+                    cited_entries.extend(hot_entries)
         except Exception as e:
             log.warning(f"StructuredMemoryProvider: hot memory retrieval failed: {e}")
 
@@ -333,15 +338,21 @@ class StructuredMemoryProvider(BaseProvider):
                     search_results.sort(
                         key=lambda e: e.get("confidence", 0), reverse=True
                     )
-                    formatted = self._format_search_results(search_results[:8])
+                    top_results = search_results[:8]
+                    formatted = self._format_search_results(top_results)
                     if formatted:
                         chunks.append(ContextChunk(
                             source=f"{self.name}/search",
                             content="[Structured Memory — relevant]\n" + "\n".join(formatted),
                             priority=45,
                         ))
+                        cited_entries.extend(top_results)
             except Exception as e:
                 log.warning(f"StructuredMemoryProvider: search failed: {e}")
+
+        # ── I8: Citation tracking — record structured memory usage ──
+        if cited_entries:
+            _record_structured_citations(cited_entries, ctx)
 
         return chunks
 
@@ -507,6 +518,44 @@ def build_system_snapshot() -> str:
         pass
 
     return "\n".join(lines)
+
+
+# ── I8: Citation helper functions ─────────────────────────────────────
+
+def _record_learning_citations(entries: list[dict], ctx: TaskContext):
+    """Record citation events for retrieved learnings (fire-and-forget)."""
+    try:
+        from src.governance.context.citation import get_tracker, SOURCE_LEARNING
+        tracker = get_tracker()
+        task_id = ctx.task.get("id") if ctx.task else None
+        records = [
+            {"source_type": SOURCE_LEARNING, "source_id": e["id"]}
+            for e in entries if e.get("id")
+        ]
+        if records:
+            tracker.record_batch(records, task_id=task_id)
+    except Exception as e:
+        log.debug(f"citation: learning tracking failed (non-fatal): {e}")
+
+
+def _record_structured_citations(entries: list[dict], ctx: TaskContext):
+    """Record citation events for retrieved structured memory entries (fire-and-forget)."""
+    try:
+        from src.governance.context.citation import get_tracker, SOURCE_STRUCTURED
+        tracker = get_tracker()
+        task_id = ctx.task.get("id") if ctx.task else None
+        records = [
+            {
+                "source_type": SOURCE_STRUCTURED,
+                "source_id": e["id"],
+                "source_dim": e.get("dimension") or e.get("_dimension"),
+            }
+            for e in entries if e.get("id")
+        ]
+        if records:
+            tracker.record_batch(records, task_id=task_id)
+    except Exception as e:
+        log.debug(f"citation: structured tracking failed (non-fatal): {e}")
 
 
 class HistoryProvider(BaseProvider):

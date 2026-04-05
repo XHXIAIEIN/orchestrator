@@ -382,6 +382,21 @@ CREATE TABLE IF NOT EXISTS evolution_log (
 );
 CREATE INDEX IF NOT EXISTS idx_evo_action ON evolution_log(action_type);
 CREATE INDEX IF NOT EXISTS idx_evo_created ON evolution_log(created_at);
+
+-- ── Citation Log (I8 — memory retrieval write-back) ──
+
+CREATE TABLE IF NOT EXISTS citation_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type TEXT NOT NULL,
+    source_id   INTEGER NOT NULL,
+    source_dim  TEXT,
+    task_id     INTEGER,
+    session_id  TEXT,
+    cited_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_citation_source ON citation_log(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_citation_task ON citation_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_citation_time ON citation_log(cited_at);
 """
 
 # Migrations: (table, column, type)
@@ -409,6 +424,10 @@ MIGRATIONS_LEARNINGS = [
     ("learnings", "last_seen", "TEXT DEFAULT ''"),
 ]
 
+MIGRATIONS_CITATION = [
+    ("citation_log", "context_snippet", "TEXT DEFAULT ''"),
+]
+
 DEFERRED_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_logs_run_id ON logs(run_id)",
 ]
@@ -421,7 +440,7 @@ def get_table_ddl() -> list[str]:
 
 def get_migrations() -> list[tuple[str, str, str]]:
     """Return all ALTER TABLE migrations as (table, column, type) tuples."""
-    return MIGRATIONS_TASKS + MIGRATIONS_LOGS + MIGRATIONS_LEARNINGS
+    return MIGRATIONS_TASKS + MIGRATIONS_LOGS + MIGRATIONS_LEARNINGS + MIGRATIONS_CITATION
 
 
 def get_deferred_indexes() -> list[str]:
