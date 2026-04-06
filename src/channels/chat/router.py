@@ -14,6 +14,8 @@ _TOOL_SIGNALS = {
     "呼叫外援", "wake claude", "叫claude",
     "唤醒", "wake remote", "远程唤醒", "启动claude", "wake up",
     "部署", "deploy", "重启", "restart", "git push", "git commit",
+    # 偷师 / 安排任务 → wake_claude
+    "偷师", "安排下", "安排一下",
     # 派单 → dispatch_task
     "跑场景", "run scenario", "审计一下", "扫描一下",
     # 读文件 → read_file
