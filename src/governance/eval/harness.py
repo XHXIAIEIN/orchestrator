@@ -53,9 +53,11 @@ class EvalPipelineResult:
     category_stopped: bool = False
     # Composite
     composite_score: float = 0.0       # weighted blend of trajectory + rubric
+    # Metadata (health alerts, etc.)
+    metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "task_id": self.task_id,
             "trajectory_composite": round(self.trajectory_composite, 3),
             "rubric_composite": round(self.rubric_composite, 3),
@@ -68,6 +70,9 @@ class EvalPipelineResult:
             "category_stopped": self.category_stopped,
             "composite_score": round(self.composite_score, 3),
         }
+        if self.metadata:
+            d["metadata"] = self.metadata
+        return d
 
 
 class EvalHarness:
@@ -77,17 +82,19 @@ class EvalHarness:
     The harness never raises — it logs warnings and returns partial results.
     """
 
-    def __init__(self, ledger_dir=None, enable_llm_judge: bool = False):
+    def __init__(self, ledger_dir=None, enable_llm_judge: bool = False, sampler=None):
         """
         Args:
             ledger_dir: Override for ExperimentLedger storage path.
             enable_llm_judge: Whether to run LLM-as-Judge scoring (costs tokens).
                               Default False — only trajectory scoring runs by default.
+            sampler: ProductionSampler instance for success sampling + health tracking.
         """
         self._ledger_dir = ledger_dir
         self._enable_llm_judge = enable_llm_judge
         self._ledger = None
         self._early_stopping = None
+        self._sampler = sampler
 
     @property
     def ledger(self):
@@ -222,6 +229,36 @@ class EvalHarness:
                             )
             except Exception as e:
                 log.debug(f"EvalHarness: regression detection failed: {e}")
+
+        # ── 7. Production sampling ──
+        if self._sampler and result.composite_score > 0:
+            try:
+                self._sampler.record_score(
+                    department, result.composite_score,
+                    criteria_scores=result.trajectory_details,
+                )
+                if status == "done" and self._sampler.should_sample(task_id):
+                    from src.governance.eval.corpus import capture_success_for_corpus
+                    capture_success_for_corpus(
+                        task_id, task, output, result.composite_score,
+                        criteria_scores=result.trajectory_details,
+                    )
+            except Exception as e:
+                log.debug(f"EvalHarness: production sampling failed: {e}")
+
+        # ── 8. Department health check ──
+        if self._sampler:
+            try:
+                health = self._sampler.get_health(department)
+                if health.alert:
+                    log.warning(
+                        f"EvalHarness: department {department} health degraded: "
+                        f"{health.rolling_mean:.3f} vs baseline {health.baseline:.3f}"
+                    )
+                    result.metadata["health_alert"] = True
+                    result.metadata["weak_criteria"] = health.weak_criteria
+            except Exception as e:
+                log.debug(f"EvalHarness: health check failed: {e}")
 
         log.info(
             f"EvalHarness: task #{task_id} [{department}] "

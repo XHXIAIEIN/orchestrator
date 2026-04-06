@@ -352,6 +352,49 @@ class EvalCorpus:
             })
         return questions
 
+    def to_exam_cases(
+        self,
+        department: str,
+        division: str | None = None,
+        max_cases: int = 30,
+    ) -> list[dict]:
+        """Generate exam cases from corpus entries.
+
+        For failures: "here's what went wrong, do better"
+        For successes: "here's a golden example, match this quality"
+
+        Returns exam_cases.jsonl compatible dicts.
+        """
+        entries = self.filter_by_department(department)
+        if division:
+            entries = [e for e in entries if division in e.tags or not division]
+
+        cases = []
+        for entry in entries[:max_cases]:
+            is_success = entry.status == "sampled_success"
+
+            if is_success:
+                expected = (
+                    f"Match the quality of this golden example. "
+                    f"Output scored {entry.spec.get('score', 'high')} on eval."
+                )
+            else:
+                expected = (
+                    f"Avoid the failure mode: {entry.failure_reason[:200]}. "
+                    f"Previous attempt failed with status '{entry.status}'."
+                )
+
+            cases.append({
+                "id": f"corpus-{entry.task_id}",
+                "input": entry.action,
+                "expected_behavior": expected,
+                "tags": entry.tags,
+                "source": f"corpus:{entry.task_id}",
+                "difficulty": _estimate_difficulty(entry),
+            })
+
+        return cases
+
     @property
     def stats(self) -> dict:
         """Corpus statistics."""
@@ -380,22 +423,109 @@ def _estimate_difficulty(entry: CorpusEntry) -> str:
     return "medium"
 
 
+def capture_success_for_corpus(
+    task_id: int,
+    task: dict,
+    output: str,
+    score: float,
+    criteria_scores: dict | None = None,
+    corpus_dir: Path | None = None,
+) -> Optional[Path]:
+    """Capture a successful task as a golden example.
+
+    Only called for sampled tasks (5% of successes).
+    Stores in sample_*.jsonl alongside failure corpus_*.jsonl.
+    """
+    corpus_dir = corpus_dir or CORPUS_DIR
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+
+    if not output or len(output.strip()) < MIN_OUTPUT_LENGTH:
+        return None
+
+    spec = task.get("spec", {})
+    if isinstance(spec, str):
+        try:
+            spec = json.loads(spec)
+        except (json.JSONDecodeError, TypeError):
+            spec = {"raw": spec}
+
+    action = task.get("action", "")
+    department = spec.get("department", "unknown")
+
+    content_hash = hashlib.sha256(
+        f"success:{action}:{task_id}".encode("utf-8")
+    ).hexdigest()[:16]
+
+    entry = CorpusEntry(
+        task_id=task_id,
+        captured_at=datetime.now(timezone.utc).isoformat(),
+        status="sampled_success",
+        action=action[:500],
+        department=department,
+        priority=task.get("priority", "medium"),
+        failure_reason="",  # success, no failure
+        agent_output=output[:2000],
+        spec={
+            **{k: v for k, v in spec.items() if k in (
+                "summary", "department", "problem", "source", "tier", "mode",
+            )},
+            "score": score,
+            "criteria_scores": criteria_scores or {},
+        },
+        trajectory_summary={},
+        content_hash=content_hash,
+        tags=_auto_tag(action, output, "sampled_success", department),
+    )
+
+    # Write to sample file (separate from failure corpus)
+    sample_file = _get_sample_file(corpus_dir)
+    with open(sample_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry.to_dict(), ensure_ascii=False, default=str) + "\n")
+
+    log.info(
+        f"corpus: sampled success task #{task_id} (score={score:.3f}) "
+        f"→ {sample_file.name}"
+    )
+    return sample_file
+
+
+def _get_sample_file(corpus_dir: Path) -> Path:
+    """Get the current sample JSONL file."""
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+
+    files = sorted(corpus_dir.glob("sample_*.jsonl"))
+    if files:
+        latest = files[-1]
+        try:
+            line_count = sum(1 for _ in open(latest, "r", encoding="utf-8"))
+            if line_count < MAX_ENTRIES_PER_FILE:
+                return latest
+        except Exception:
+            pass
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    seq = len(files) + 1
+    return corpus_dir / f"sample_{timestamp}_{seq:03d}.jsonl"
+
+
 def load_corpus(corpus_dir: Path | None = None) -> EvalCorpus:
-    """Load all corpus entries from disk."""
+    """Load all corpus entries from disk (failures + sampled successes)."""
     corpus_dir = corpus_dir or CORPUS_DIR
     if not corpus_dir.exists():
         return EvalCorpus()
 
     entries = []
-    for f in sorted(corpus_dir.glob("corpus_*.jsonl")):
-        try:
-            with open(f, "r", encoding="utf-8") as fh:
-                for line in fh:
-                    if not line.strip():
-                        continue
-                    entries.append(CorpusEntry.from_dict(json.loads(line)))
-        except Exception as e:
-            log.warning(f"corpus: error reading {f}: {e}")
+    # Load both corpus_*.jsonl (failures) and sample_*.jsonl (successes)
+    for pattern in ["corpus_*.jsonl", "sample_*.jsonl"]:
+        for f in sorted(corpus_dir.glob(pattern)):
+            try:
+                with open(f, "r", encoding="utf-8") as fh:
+                    for line in fh:
+                        if not line.strip():
+                            continue
+                        entries.append(CorpusEntry.from_dict(json.loads(line)))
+            except Exception as e:
+                log.warning(f"corpus: error reading {f}: {e}")
 
     log.info(f"corpus: loaded {len(entries)} entries from {corpus_dir}")
     return EvalCorpus(entries=entries)

@@ -39,6 +39,12 @@ from src.governance.eval.registry import register_eval, list_registered, get_reg
 # ── Harness (unified entry point) ──
 from src.governance.eval.harness import EvalHarness, EvalPipelineResult
 
+# ── Prompt Eval Closed Loop ──
+from src.governance.eval.department_rubric import get_department_rubric, DEPARTMENT_RUBRICS
+from src.governance.eval.production_sampler import ProductionSampler, DepartmentHealth
+from src.governance.eval.prompt_eval import PromptEvaluator, PromptEvalResult, load_exam_cases
+from src.governance.eval.corpus import capture_success_for_corpus
+
 __all__ = [
     # trajectory
     "TrajectoryTracker", "TrajectoryScore", "Trajectory",
@@ -58,4 +64,9 @@ __all__ = [
     "register_eval", "list_registered", "get_registered",
     # harness
     "EvalHarness", "EvalPipelineResult",
+    # prompt eval closed loop
+    "get_department_rubric", "DEPARTMENT_RUBRICS",
+    "ProductionSampler", "DepartmentHealth",
+    "PromptEvaluator", "PromptEvalResult", "load_exam_cases",
+    "capture_success_for_corpus",
 ]

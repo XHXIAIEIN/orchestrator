@@ -132,8 +132,10 @@ class ExperimentLedger:
     be a worthwhile config improvement?" — enforced by caller, not ledger.
     """
 
-    def __init__(self, ledger_dir: Path | None = None):
+    def __init__(self, ledger_dir: Path | None = None, department: str | None = None):
         self._dir = ledger_dir or LEDGER_DIR
+        if department:
+            self._dir = self._dir / department  # data/experiments/engineering/
         self._dir.mkdir(parents=True, exist_ok=True)
         self._file = self._dir / "ledger.jsonl"
         self._entries: list[ExperimentEntry] | None = None  # lazy load
