@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -53,6 +54,16 @@ class SkillVersion:
 
 
 @dataclass
+class SkillMeta:
+    """Lightweight skill metadata — loaded during scan, ~100 tokens per skill."""
+    name: str
+    description: str = ""
+    category: str = ""
+    path: Path | None = None
+    full_content: str | None = None  # None until load_skill() called
+
+
+@dataclass
 class SkillEntry:
     """A skill with its version history."""
     name: str
@@ -68,6 +79,19 @@ class SkillEntry:
         if len(self.versions) < 2:
             return None
         return self.versions[-2].hash
+
+
+def _parse_frontmatter(text: str) -> dict:
+    """Extract YAML frontmatter from SKILL.md content."""
+    match = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
+    if not match:
+        return {}
+    result = {}
+    for line in match.group(1).strip().split('\n'):
+        if ':' in line:
+            key, _, value = line.partition(':')
+            result[key.strip()] = value.strip()
+    return result
 
 
 class SkillCAS:
@@ -240,6 +264,38 @@ class SkillCAS:
             }
             for entry in self._index.values()
         ]
+
+    def scan_skills(self, skill_dir: Path) -> list[SkillMeta]:
+        """Scan skill directory for metadata only. ~100 tokens per skill."""
+        metas = []
+        if not skill_dir.exists():
+            return metas
+        for entry in sorted(skill_dir.iterdir()):
+            skill_file = entry / "SKILL.md" if entry.is_dir() else None
+            if not skill_file or not skill_file.exists():
+                continue
+            head = skill_file.read_text(encoding="utf-8")[:500]
+            fm = _parse_frontmatter(head)
+            metas.append(SkillMeta(
+                name=fm.get("name", entry.name),
+                description=fm.get("description", ""),
+                category=fm.get("category", ""),
+                path=skill_file,
+            ))
+        self._scan_cache = {m.name: m for m in metas}
+        return metas
+
+    def load_skill(self, name: str, skill_dir: Path | None = None) -> str | None:
+        """Load full skill content by name. Returns None if not found."""
+        if hasattr(self, '_scan_cache') and name in self._scan_cache:
+            meta = self._scan_cache[name]
+            if meta.path and meta.path.exists():
+                return meta.path.read_text(encoding="utf-8")
+        if skill_dir:
+            candidate = skill_dir / name / "SKILL.md"
+            if candidate.exists():
+                return candidate.read_text(encoding="utf-8")
+        return None
 
     def resolve_dependencies(self, name: str) -> list[str]:
         """Resolve transitive dependencies for a skill.

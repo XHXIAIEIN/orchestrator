@@ -177,6 +177,31 @@ class CostTracker:
             self._label, self.total_cost, self.total_tokens,
         )
 
+    def session_summary(self) -> dict:
+        """Per-session cost summary with token breakdown by type and model."""
+        with self._lock:
+            total_cost = 0.0
+            total_tokens = {"input": 0, "output": 0, "cache_read": 0, "reasoning": 0}
+            by_model: dict[str, dict] = {}
+            for c in self._calls:
+                total_cost += c.cost
+                for key in total_tokens:
+                    total_tokens[key] += c.tokens.get(key, 0)
+                m = c.model or "unknown"
+                if m not in by_model:
+                    by_model[m] = {"calls": 0, "cost": 0.0,
+                                   "tokens": {"input": 0, "output": 0, "cache_read": 0, "reasoning": 0}}
+                by_model[m]["calls"] += 1
+                by_model[m]["cost"] += c.cost
+                for key in by_model[m]["tokens"]:
+                    by_model[m]["tokens"][key] += c.tokens.get(key, 0)
+            return {
+                "total_cost": round(total_cost, 6),
+                "total_tokens": total_tokens,
+                "by_model": by_model,
+                "needs_compaction": False,
+            }
+
     def get_budget_summary(self) -> dict:
         """返回预算状态，含子预算树。"""
         summary = {

@@ -33,6 +33,48 @@ DEFAULT_LLM_THRESHOLD = 60
 DEFAULT_LLM_KEEP_HEAD = 8
 DEFAULT_LLM_KEEP_TAIL = 20
 
+# ── Model context lengths (known models) ──
+MODEL_CONTEXT_LENGTHS: dict[str, int] = {
+    "claude-opus-4": 200_000,
+    "claude-sonnet-4": 200_000,
+    "claude-haiku-4": 200_000,
+    "gpt-4o": 128_000,
+    "gpt-4o-mini": 128_000,
+    "o3": 200_000,
+    "o4-mini": 200_000,
+}
+
+
+def _resolve_context_length(model: str) -> int:
+    """Resolve model context window size. Exact → prefix → default."""
+    if model in MODEL_CONTEXT_LENGTHS:
+        return MODEL_CONTEXT_LENGTHS[model]
+    best_key, best_len = "", 0
+    for key in MODEL_CONTEXT_LENGTHS:
+        if model.startswith(key) and len(key) > best_len:
+            best_key, best_len = key, len(key)
+    if best_key:
+        return MODEL_CONTEXT_LENGTHS[best_key]
+    return DEFAULT_MAX_TOKENS
+
+
+def compute_compaction_threshold(
+    model: str = "",
+    custom_threshold: int | None = None,
+    ratio: float = DEFAULT_HIGH_WATER,
+) -> int:
+    """Three-priority compaction threshold: custom > model-aware > global default.
+
+    Priority:
+        1. custom_threshold (per-session override) — if set, use directly
+        2. model_context_length × ratio — model-aware calculation
+        3. DEFAULT_MAX_TOKENS × DEFAULT_HIGH_WATER — global fallback
+    """
+    if custom_threshold is not None:
+        return custom_threshold
+    context_length = _resolve_context_length(model)
+    return int(context_length * ratio)
+
 
 def _prompt_to_view(prompt: str) -> View:
     """Split a prompt string into section-based Events for condenser processing.
@@ -116,6 +158,7 @@ def condense_context(
     prompt: str,
     dept_key: str = "",
     config: Optional[dict] = None,
+    model: str = "",
 ) -> str:
     """Run the condenser pipeline on an assembled prompt string.
 
@@ -131,10 +174,18 @@ def condense_context(
         The (possibly compressed) prompt string.
     """
     config = config or {}
-
-    # Check if condenser is enabled (default: True)
     if not config.get("enabled", True):
         return prompt
+
+    # Model-aware threshold override
+    if model and "max_tokens" not in config:
+        config = dict(config)  # don't mutate caller's dict
+        config["max_tokens"] = compute_compaction_threshold(
+            model=model,
+            custom_threshold=config.get("custom_threshold"),
+            ratio=config.get("high_water", DEFAULT_HIGH_WATER),
+        )
+        config["high_water"] = 1.0  # max_tokens is already the threshold
 
     try:
         pipeline = _build_pipeline(config)

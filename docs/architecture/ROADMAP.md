@@ -170,9 +170,24 @@ All 12 plan files under `docs/superpowers/plans/` have been fully implemented:
 | 80 | Anti-Rationalization Hook (dynamic) | H14 | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` (L2-L4) |
 | 81 | Failure-Mode → Methodology Switch | H15 | PUA (R35) | ✅ | `SOUL/public/prompts/methodology_router.md` |
 
+## Sprint 7: R40 MachinaOS P0 Patterns (2026-04-07)
+
+8 patterns from MachinaOS (trohitg/MachinaOS). Core upgrades: DAG scheduling, model-aware compaction, fine-grained cost tracking.
+
+| # | Pattern | ID | Source | Status | Target |
+|---|---------|-----|--------|--------|--------|
+| 82 | Continuous Scheduling (FIRST_COMPLETED) | O28 | MachinaOS (R40) | ✅ | `src/governance/continuous_scheduler.py` |
+| 83 | Conductor Decide Lock | O29 | MachinaOS (R40) | ✅ | `src/governance/continuous_scheduler.py` |
+| 84 | ExecutionContext Isolation | O30 | MachinaOS (R40) | ✅ | `src/governance/execution_context.py` |
+| 85 | Dead Letter Queue (Null Object) | R19 | MachinaOS (R40) | ✅ | `src/governance/dlq.py` |
+| 86 | Model-Aware Compaction | I21 | MachinaOS (R40) | ✅ | `src/governance/condenser/context_condenser.py` |
+| 87 | Fine-Grained Cost Tracking | C3 | MachinaOS (R40) | ✅ | `src/core/model_pricing.py` + `cost_tracking.py` |
+| 88 | Agent Composition Discovery | O31 | MachinaOS (R40) | ✅ | `src/governance/agent_composition.py` |
+| 89 | Skill Progressive Loading | I22 | MachinaOS (R40) | ✅ | `src/governance/skill_cas.py` |
+
 ## Remaining Work
 
-**Orchestrator 本体：** Sprint 1-6 全部 81 项已完成 ✅
+**Orchestrator 本体：** Sprint 1-7 全部 89 项已完成 ✅
 
 **cvui 包（独立仓库 `D:\Users\Administrator\Documents\GitHub\cvui`）：**
 - 🔲 V1: VLM Zone Stage
