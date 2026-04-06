@@ -21,7 +21,8 @@ CANONICAL_MODELS = {
     "claude-haiku-4-5": ["haiku", "haiku-4", "haiku-4.5", "claude-haiku"],
     "claude-3-5-sonnet": ["sonnet-3.5", "claude-3.5-sonnet", "claude-3-5-sonnet-20241022"],
     "claude-3-5-haiku": ["haiku-3.5", "claude-3.5-haiku", "claude-3-5-haiku-20241022"],
-    "gemma3": ["gemma", "gemma-3", "gemma:4b"],
+    "gemma4": ["gemma", "gemma-4", "gemma4:26b", "gemma-4-26b"],
+    "gemma3": ["gemma-3", "gemma3:27b"],
 }
 
 _ALIAS_MAP: dict[str, str] = {}

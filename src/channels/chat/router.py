@@ -43,7 +43,7 @@ def _classify_intent(text: str, has_images: bool = False,
 
     Returns:
         "tools"   — needs Claude API with tool use
-        "vision"  — has images, route to gemma3:27b
+        "vision"  — has images, route to gemma4:26b
         "reason"  — needs deep reasoning, route to deepseek-r1
         "chat"    — casual chat, route to qwen3.5:9b
     """

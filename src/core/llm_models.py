@@ -8,13 +8,14 @@ from dataclasses import dataclass, field
 # ── 模型常量 — 全系统唯一的模型名定义点 ──
 # 其他模块应从此处导入，不要硬编码模型名。
 # 更换模型只改这里。
+MODEL_OPUS = "claude-opus-4-6"
 MODEL_SONNET = "claude-sonnet-4-6"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 # Ollama 本地模型
-MODEL_QWEN_CHAT = "qwen2.5:7b"         # 轻量闲聊
-MODEL_QWEN_THINK = "qwen3.5:9b"        # 带推理
+MODEL_QWEN_CHAT = "qwen3.5:9b"         # 闲聊 + 轻量推理（统一用 3.5）
+MODEL_QWEN_THINK = "qwen3.5:9b"        # 带推理（同模型，路由保留语义区分）
 MODEL_DEEPSEEK = "deepseek-r1:14b"      # 深度推理
-MODEL_GEMMA_VISION = "gemma3:27b"       # 多模态（视觉）
+MODEL_GEMMA_VISION = "gemma4:26b"       # 多模态（视觉）+ 深度推理（MoE）
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
@@ -34,16 +35,14 @@ MODEL_TIERS = {
                                     "speed": 10, "vision": False, "json_mode": False, "max_output": 256},
     "chrome-ai/prompt":            {"cost": 0, "capability": 0.35, "multimodal": False, "env": "desktop",
                                     "speed": 9, "vision": False, "json_mode": False, "max_output": 2048},
-    _OL_QWEN_CHAT:               {"cost": 0,    "capability": 0.5,  "multimodal": False,
+    _OL_QWEN_CHAT:               {"cost": 0,    "capability": 0.6,  "multimodal": False,
                                    "speed": 8, "vision": False, "json_mode": True,  "max_output": 4096},
-    _OL_QWEN_THINK:              {"cost": 0,    "capability": 0.55, "multimodal": False,
-                                   "speed": 6, "vision": False, "json_mode": True,  "max_output": 4096},
     _OL_DEEPSEEK:                {"cost": 0,    "capability": 0.6,  "multimodal": False,
                                    "speed": 4, "vision": False, "json_mode": True,  "max_output": 8192},
     MODEL_HAIKU:                 {"cost": 0.25, "capability": 0.7,  "multimodal": True,
                                   "speed": 8, "vision": True,  "json_mode": True,  "max_output": 8192},
-    _OL_GEMMA:                   {"cost": 0,    "capability": 0.65, "multimodal": True,
-                                  "speed": 5, "vision": True,  "json_mode": False, "max_output": 8192},
+    _OL_GEMMA:                   {"cost": 0,    "capability": 0.72, "multimodal": True,
+                                  "speed": 3, "vision": True,  "json_mode": True,  "max_output": 8192},
     MODEL_SONNET:                {"cost": 3.0,  "capability": 0.9,  "multimodal": True,
                                   "speed": 7, "vision": True,  "json_mode": True,  "max_output": 16384},
 }
@@ -111,7 +110,7 @@ ROUTES = {
     "scrutiny":      {"cascade": [_OL_DEEPSEEK, MODEL_HAIKU], "timeout": 45, "no_think": True},
     "debt_scan":     {"cascade": [_OL_DEEPSEEK, MODEL_HAIKU], "timeout": 90, "no_think": True},
     "summary":       {"backend": "claude", "model": MODEL_HAIKU,  "timeout": 120},
-    "deep_analysis": {"cascade": [MODEL_HAIKU, MODEL_SONNET], "timeout": 120},
+    "deep_analysis": {"cascade": [_OL_GEMMA, MODEL_HAIKU, MODEL_SONNET], "timeout": 120},
     "profile":       {"backend": "claude", "model": MODEL_SONNET, "timeout": 120},
     # 多模态路由 — 不适合 cascade
     "vision":        {"backend": "ollama", "model": MODEL_GEMMA_VISION, "timeout": 90, "fallback": "claude", "fallback_model": MODEL_HAIKU},
@@ -121,7 +120,7 @@ ROUTES = {
     # Channel 闲聊 — 非推理模型更快更稳
     "chat":          {"cascade": [_OL_QWEN_CHAT, MODEL_HAIKU], "timeout": 15, "no_think": True},
     # Channel 需要推理的对话
-    "chat_reason":   {"cascade": [_OL_DEEPSEEK, _OL_QWEN_THINK], "timeout": 90},
+    "chat_reason":   {"cascade": [_OL_QWEN_CHAT, _OL_GEMMA], "timeout": 90},
     # Chrome AI 路由 — 端侧免费，桌面环境优先
     "translate":     {"cascade": ["chrome-ai/translator", MODEL_HAIKU], "timeout": 15},
     "lang_detect":   {"backend": "chrome-ai", "model": "language-detector", "timeout": 5,
