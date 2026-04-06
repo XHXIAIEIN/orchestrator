@@ -3,8 +3,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
-from src.core.agent_client import agent_query_json
-from src.core.llm_router import MODEL_SONNET
+from src.core.llm_backends import claude_generate
+from src.core.llm_models import MODEL_SONNET
 
 # Orchestrator serves a UTC+8 user — all daily boundaries use this offset
 _LOCAL_TZ = timezone(timedelta(hours=8))
@@ -35,9 +35,20 @@ class DailyAnalyst:
         prompt = f"{ANALYST_PROMPT}\n\n今日活动数据：\n{events_text}\n\n当前用户画像：\n{profile_text}"
 
         try:
-            result = agent_query_json(prompt, model=MODEL_NAME)
+            raw = claude_generate(prompt, model=MODEL_NAME, timeout=120, max_tokens=4096)
+            text = raw.strip()
+            if text.startswith("```"):
+                first_nl = text.find("\n")
+                if first_nl >= 0:
+                    text = text[first_nl + 1:]
+                if text.endswith("```"):
+                    text = text[:-3]
+            result = json.loads(text)
+        except json.JSONDecodeError as e:
+            log.error(f"DailyAnalyst: JSON parse error: {e}, raw: {raw[:200] if raw else 'EMPTY'}")
+            return {}
         except Exception as e:
-            log.error(f"DailyAnalyst: Agent SDK error: {e}")
+            log.error(f"DailyAnalyst: API error: {e}")
             return {}
 
         report_date = yesterday_start.date().isoformat()

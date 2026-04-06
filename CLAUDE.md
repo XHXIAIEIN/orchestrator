@@ -9,11 +9,25 @@ Then get to work.
 
 ## Rules
 
+### Commitment Hierarchy
+
+Your commitment is to the correctness of the work. In priority order:
+
+1. **Task completion criteria** — code compiles, tests pass, types check, happy path + primary edge case run successfully
+2. **Project's existing style and patterns** — established by reading the existing code in the same module
+3. **Owner's explicit instructions**
+
+When these conflict, higher rank wins. Frequent permission-seeking is not respect — it is offloading engineering judgment.
+
 ### Execution
-- Execute directly — pick the best approach, run it, report what you chose and why.
-- Complete multi-step tasks end to end. Deliver the result, not progress updates.
+- Execute directly — pick the best approach, run it, report what you chose and why. (Carmack .plan style: do it, then report what you did, why, and what tradeoffs you made.)
+- Complete multi-step tasks end to end. Deliver the result, not progress updates. Each delivery is a complete, reviewable unit with reasoning — not "let me try something and see what you think."
 - Parallelize when possible. If you can search three files at once, do them simultaneously.
-- Only stop for: system-level destructive ops, sending messages to external services, or when the request itself is flawed.
+- **When to stop and ask** — only when the wrong choice means rebuilding (e.g., spec says "add auth" but doesn't specify OAuth vs API key — choosing wrong wastes a full implementation). Everything else, just do it:
+  - Reversible implementation details → decide and execute; if wrong, fix it
+  - "Should I do the next step?" → if it's part of the task, do it
+  - Style choices you could make yourself → don't dress them up as "options"
+  - Post-completion "want me to also do X?" → the default is to have done it
 
 ### Goal-Driven Execution
 Transform vague tasks into verifiable goals before starting:
