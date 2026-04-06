@@ -37,10 +37,16 @@ except ImportError:
     get_fan_out = None
 
 try:
-    from src.governance.policy.tiered_review import determine_review_tier, get_review_config
+    from src.governance.policy.tiered_review import (
+        determine_review_tier, get_review_config,
+        classify_risk, should_run_gate, RiskLevel,
+    )
 except ImportError:
     determine_review_tier = None
     get_review_config = None
+    classify_risk = None
+    should_run_gate = None
+    RiskLevel = None
 
 try:
     from src.governance.policy.policy_advisor import observe_task_execution
@@ -162,6 +168,19 @@ class ReviewManager:
         """Post-execution: visual verify, scratchpad, update status, write run log, dispatch collaboration."""
         spec = task.get("spec", {})
 
+        # ── P4 三层审核漏斗 (OpenClaw steal): classify risk → skip expensive gates ──
+        review_tier = "full"  # default: run everything
+        risk_level = "high"
+        if classify_risk and determine_review_tier:
+            task["output"] = output  # ensure output available for classification
+            risk_level = classify_risk(task, dept_key, status)
+            review_tier = determine_review_tier(task, dept_key, status)
+            log.info(f"ReviewManager: task #{task_id} risk={risk_level} tier={review_tier}")
+            self.db.add_agent_event(task_id, "review_tier", {
+                "risk_level": risk_level, "tier": review_tier, "department": dept_key,
+            })
+        _gate = lambda name: should_run_gate(review_tier, name) if should_run_gate else True
+
         # ── Scratchpad: 长输出写文件，DB 只存摘要 ──
         scratchpad_path = None
         if len(output) > 500 and write_scratchpad:
@@ -214,11 +233,10 @@ class ReviewManager:
                 log.warning(f"ReviewManager: verify gate error for task #{task_id}: {e}")
 
         # ── Elder Council / Cross-Model Review (Round 19: karpathy/llm-council) ──
-        # HIGH blast-radius → full council (5 elders + ranking + chairman)
-        # MEDIUM with critical flag → light council (skip ranking stage)
-        # Fallback → legacy CrossModelReviewer
+        # P4: Only runs at FOCUSED (cross_review) or FULL (council) tier
         _needs_review = (
             status == "done"
+            and (_gate("council") or _gate("cross_review"))
             and (dept_key in _HIGH_BLAST_DEPARTMENTS
                  or spec.get("requires_approval")
                  or spec.get("priority") == "critical")
@@ -351,8 +369,8 @@ class ReviewManager:
             except Exception as e:
                 log.debug(f"ReviewManager: file ratchet check failed for task #{task_id}: {e}")
 
-        # 视觉验证
-        if status == "done":
+        # 视觉验证 (P4: skip for SCAN/FOCUSED tier)
+        if status == "done" and _gate("visual_verify"):
             verification = self._visual_verify(task_id, task_cwd, spec)
             if verification:
                 output = f"{output}\n\n[visual_verify] {verification}"
@@ -415,8 +433,8 @@ class ReviewManager:
             except Exception as e:
                 log.debug(f"ReviewManager: trajectory eval logging failed for task #{task_id}: {e}")
 
-        # ── R39: EvalHarness — unified eval pipeline ──
-        if self._eval_harness and trajectory_summary:
+        # ── R39: EvalHarness — unified eval pipeline (P4: skip for SCAN tier) ──
+        if self._eval_harness and trajectory_summary and _gate("eval_harness"):
             try:
                 eval_result = self._eval_harness.evaluate(
                     task_id=task_id,
@@ -563,9 +581,9 @@ class ReviewManager:
             except Exception:
                 pass
 
-        # 部门协作 — PLAN→ACT→EVAL 闭环 (pipeline-driven)
+        # 部门协作 — PLAN→ACT→EVAL 闭环 (P4: skip quality dispatch for SCAN tier)
         if status == "done":
-            if _has("quality_review"):
+            if _has("quality_review") and _gate("quality_dispatch"):
                 task["output"] = output
                 handoff = TaskHandoff(
                     from_dept=dept_key,

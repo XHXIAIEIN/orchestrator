@@ -17,6 +17,7 @@ from claude_agent_sdk import (
 
 from src.governance.context.prompts import find_git_bash
 from src.core.component_spec import build_component
+from src.governance.audit.reasoning_trace import append_reasoning_trace
 from src.governance.pipeline.phase_rollback import PipelineCheckpointer, RollbackDecision
 from src.governance.execution_response import ExecutionResponse
 from src.governance.freeze_breaker import FreezeBreaker
@@ -357,19 +358,39 @@ class AgentSessionRunner:
                 thinking = []
                 tool_calls = []
                 text_parts = []
+                # Full-fidelity copies for reasoning trace (P8: OpenClaw steal)
+                thinking_full = []
+                tool_calls_full = []
+                text_full = []
                 for block in (message.content or []):
                     # Agent SDK uses typed blocks (ThinkingBlock, ToolUseBlock, TextBlock)
                     # — match by class name, not a 'type' string attribute.
                     cls_name = type(block).__name__
                     if cls_name == 'ThinkingBlock':
-                        thinking.append(getattr(block, 'thinking', '')[:300])
+                        raw = getattr(block, 'thinking', '')
+                        thinking_full.append(raw)
+                        thinking.append(raw[:300])
                     elif cls_name == 'ToolUseBlock':
+                        name = getattr(block, 'name', '')
+                        inp = getattr(block, 'input', {})
+                        tool_calls_full.append({'tool': name, 'input': inp})
                         tool_calls.append({
-                            'tool': getattr(block, 'name', ''),
-                            'input_preview': str(getattr(block, 'input', {}))[:200],
+                            'tool': name,
+                            'input_preview': str(inp)[:200],
                         })
                     elif cls_name == 'TextBlock':
-                        text_parts.append(getattr(block, 'text', '')[:300])
+                        raw = getattr(block, 'text', '')
+                        text_full.append(raw)
+                        text_parts.append(raw[:300])
+
+                # ── P8: Reasoning Trace — full-fidelity JSONL (OpenClaw steal) ──
+                append_reasoning_trace(
+                    task_id=task_id, turn=turn,
+                    thinking=thinking_full,
+                    tool_calls=tool_calls_full,
+                    text=text_full,
+                    error=message.error or None,
+                )
 
                 # ── Hallucinated Action Detection ──
                 text_content = " ".join(text_parts)
