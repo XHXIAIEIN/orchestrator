@@ -30,6 +30,8 @@ log = logging.getLogger("wake-watcher")
 POLL_INTERVAL = 5   # seconds
 MAX_WORKERS = 2
 WORK_DIR = _root / "tmp" / "wake"
+QUEUE_DIR = _root / "tmp" / "wake" / "queue"
+QUEUE_DONE = _root / "tmp" / "wake" / "queue" / "done"
 
 # Track which sessions are currently being executed
 _active: set[int] = set()
@@ -150,6 +152,65 @@ def _dispatch(session: dict):
         _active.discard(sid)
 
 
+def _process_queue():
+    """Process queue files from container → open WT tabs on host."""
+    import json
+    import shutil
+    import subprocess
+
+    if not QUEUE_DIR.exists():
+        return
+
+    QUEUE_DONE.mkdir(parents=True, exist_ok=True)
+    launcher_dir = _root / "tmp" / "wake" / "launchers"
+    launcher_dir.mkdir(parents=True, exist_ok=True)
+    project_root = str(_root).replace("/", "\\")
+
+    for f in sorted(QUEUE_DIR.glob("*.json")):
+        try:
+            req = json.loads(f.read_text(encoding="utf-8"))
+            profile = req.get("profile", "Wake Remote")
+            reason = req.get("reason", "")
+
+            if reason:
+                # Write .ps1 launcher to avoid quoting/truncation
+                script = launcher_dir / f"wake-{f.stem}.ps1"
+                git_bash = r"D:\Program Files\Git\bin\bash.exe"
+                lines = [
+                    f'Set-Location "{project_root}"',
+                    f'$gitBash = "{git_bash}"',
+                    'if ((Test-Path $gitBash) -and -not $env:CLAUDE_CODE_GIT_BASH_PATH) {',
+                    '    $env:CLAUDE_CODE_GIT_BASH_PATH = $gitBash',
+                    '}',
+                    'Write-Host "=== Wake Remote ===" -ForegroundColor Cyan',
+                    f'Write-Host "Task: {reason[:100]}"',
+                    'Write-Host ""',
+                    f'claude --dangerously-skip-permissions "{reason}"',
+                ]
+                script.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                script_path = str(script).replace("/", "\\")
+                cmd = [
+                    "wt.exe", "-w", "0", "new-tab",
+                    "-d", project_root,
+                    "--title", f"Wake: {reason[:30]}",
+                    "--", "pwsh", "-NoExit", "-File", script_path,
+                ]
+            else:
+                cmd = ["wt.exe", "-w", "0", "new-tab", "--profile", profile]
+
+            subprocess.Popen(cmd)
+            log.info("Opened WT tab from queue: %s (reason=%s)", f.name, reason[:60])
+
+            shutil.move(str(f), str(QUEUE_DONE / f.name))
+
+        except Exception as e:
+            log.error("Failed to process queue file %s: %s", f.name, e)
+            try:
+                shutil.move(str(f), str(QUEUE_DONE / f.name))
+            except Exception:
+                pass
+
+
 def main():
     _load_env()
     WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -160,11 +221,16 @@ def main():
 
     try:
         while True:
+            # DB-based sessions (headless execution via Agent SDK)
             sessions = db.get_wake_sessions(status="approved")
             for s in sessions:
                 if s["id"] not in _active:
                     _active.add(s["id"])
                     pool.submit(_dispatch, s)
+
+            # Queue-based requests (visual WT tab execution)
+            _process_queue()
+
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt:
         log.info("Shutting down")

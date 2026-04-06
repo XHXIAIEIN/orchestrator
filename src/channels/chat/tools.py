@@ -389,37 +389,75 @@ def _tool_wake_claude(params: dict, chat_id: str, channel_source: str = "channel
 
 
 def _tool_wake_remote(params: dict, chat_id: str) -> str:
-    """Run the Orchestrator Remote trigger via Agent SDK."""
-    import subprocess
-    trigger_id = "trig_01KgvqPcZv7SZAK5kRAZWsZZ"
-    reason = params.get("reason", "")
+    """Open a Windows Terminal tab with Wake Remote profile.
 
-    try:
-        # Use claude CLI to run the trigger — it handles OAuth internally.
-        # --print for non-interactive, --model haiku for speed (just one API call).
-        cmd = [
-            "claude", "-p",
-            f'Use the RemoteTrigger tool: action="run", trigger_id="{trigger_id}". '
-            f'Just run it and report the result.',
-            "--allowedTools", "RemoteTrigger",
-            "--model", "haiku",
-            "--dangerously-skip-permissions",
-        ]
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30,
+    Dual-mode:
+      - Host (Claude Code): wt.exe directly opens a tab.
+      - Container (TG bot): writes queue file → host watcher opens tab.
+    """
+    import json, os, subprocess, time
+
+    reason = params.get("reason", "")
+    in_container = os.path.exists("/.dockerenv")
+
+    if in_container:
+        # ── Container path: queue for host-side watcher ──
+        queue_dir = _REPO_ROOT / "tmp" / "wake" / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        request = {
+            "chat_id": chat_id,
+            "reason": reason,
+            "ts": time.time(),
+            "profile": "Wake Remote",
+        }
+        fname = f"{int(time.time() * 1000)}.json"
+        (queue_dir / fname).write_text(
+            json.dumps(request, ensure_ascii=False), encoding="utf-8",
         )
-        if result.returncode == 0:
-            output = result.stdout.strip()[-300:]
-            log.info(f"wake_remote: trigger run success: {output[:100]}")
-            return f"Remote session launched. {output}"
+        log.info(f"wake_remote: queued {fname} reason={reason[:80]}")
+        label = f" ({reason[:60]})" if reason else ""
+        return f"Wake request queued{label}. Host watcher will open terminal tab."
+
+    # ── Host path: open WT tab directly ──
+    try:
+        project_root = str(_REPO_ROOT).replace("/", "\\")
+        if reason:
+            # Write a temp .ps1 launcher to dodge quoting hell
+            launcher_dir = _REPO_ROOT / "tmp" / "wake" / "launchers"
+            launcher_dir.mkdir(parents=True, exist_ok=True)
+            ts = int(time.time() * 1000)
+            script = launcher_dir / f"wake-{ts}.ps1"
+            git_bash = r"D:\Program Files\Git\bin\bash.exe"
+            lines = [
+                f'Set-Location "{project_root}"',
+                f'$gitBash = "{git_bash}"',
+                'if ((Test-Path $gitBash) -and -not $env:CLAUDE_CODE_GIT_BASH_PATH) {',
+                '    $env:CLAUDE_CODE_GIT_BASH_PATH = $gitBash',
+                '}',
+                'Write-Host "=== Wake Remote ===" -ForegroundColor Cyan',
+                f'Write-Host "Task: {reason[:100]}"',
+                'Write-Host ""',
+                f'claude --dangerously-skip-permissions "{reason}"',
+            ]
+            script.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            script_path = str(script).replace("/", "\\")
+            cmd = [
+                "wt.exe", "-w", "0", "new-tab",
+                "-d", project_root,
+                "--title", f"Wake: {reason[:30]}",
+                "--", "pwsh", "-NoExit", "-File", script_path,
+            ]
         else:
-            err = result.stderr.strip()[-200:]
-            log.warning(f"wake_remote: trigger run failed: {err}")
-            return f"Remote trigger failed: {err}"
-    except subprocess.TimeoutExpired:
-        return "Remote trigger timed out (30s)"
+            cmd = ["wt.exe", "-w", "0", "new-tab", "--profile", "Wake Remote"]
+        subprocess.Popen(cmd)
+        log.info(f"wake_remote: opened WT tab, reason={reason[:80]}")
+        label = f" Task: {reason[:100]}" if reason else " Generic remote session."
+        return f"Terminal tab opened.{label}"
+    except FileNotFoundError:
+        return "wt.exe not found — is Windows Terminal installed?"
     except Exception as e:
-        return f"Remote trigger error: {e}"
+        log.warning(f"wake_remote: failed: {e}")
+        return f"Failed to open terminal tab: {e}"
 
 
 def _tool_wake_interact(params: dict, chat_id: str) -> str:
