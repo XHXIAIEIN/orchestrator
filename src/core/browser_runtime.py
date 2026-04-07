@@ -6,8 +6,8 @@ BrowserRuntime — Chrome 进程生命周期管理。
 import json
 import logging
 import os
-import platform
 import shutil
+import sys
 import subprocess
 import time
 import urllib.error
@@ -149,14 +149,13 @@ class BrowserRuntime:
                 log.debug(f"browser: found chrome via which: {found}")
                 return found
 
-        # 3. 平台特定路径
-        system = platform.system()
-        if system == "Windows":
+        # 3. 平台特定路径 (os.name is a compile-time constant, no WMI call)
+        if os.name == "nt":
             for path in _WINDOWS_CHROME_PATHS:
                 if Path(path).exists():
                     log.debug(f"browser: found chrome at well-known Windows path: {path}")
                     return path
-        elif system == "Darwin":
+        elif sys.platform == "darwin":
             for path in _MACOS_CHROME_PATHS:
                 if Path(path).exists():
                     log.debug(f"browser: found chrome at well-known macOS path: {path}")
