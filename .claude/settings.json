@@ -168,7 +168,5 @@
       "Bash(format:*)"
     ]
   },
-  "enabledPlugins": {
-    "autofix-bot@claude-plugins-official": true
-  }
+  "enabledPlugins": {}
 }
