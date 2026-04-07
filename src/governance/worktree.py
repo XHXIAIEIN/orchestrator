@@ -10,7 +10,6 @@ Windows note: junctions require no admin rights, unlike symlinks.
 import ctypes
 import logging
 import os
-import platform
 import shutil
 import subprocess
 import sys
@@ -33,7 +32,7 @@ _JUNCTION_TARGETS = [
 # Root directory where all worktrees live
 _WORKTREE_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "worktrees"
 
-_IS_WINDOWS = platform.system() == "Windows"
+_IS_WINDOWS = os.name == "nt"
 
 # Windows file attribute for reparse points (junctions/symlinks)
 _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
