@@ -114,17 +114,18 @@ def _build_context(db: EventsDB, analysis_type: str = 'periodic') -> str:
 
 JSON_INSTRUCTION = """
 
-请以 JSON 格式输出分析结果，只输出 JSON 对象，不要包含任何其他文字或 markdown 代码块标记。
-JSON 结构如下：
+CRITICAL: Output ONLY a valid JSON object. No markdown fences, no extra text.
+Keep the TOTAL response under 800 characters to avoid truncation.
+
 {
-  "overview": "对用户这段时间整体状态的印象（200字以内，直接、有洞察力）",
-  "strengths": ["从数据中观察到的用户优点、特质或能力（3-5条）"],
-  "blind_spots": ["可能的盲区、值得警惕的模式或被忽视的事项（2-4条）"],
+  "overview": "整体印象，50字以内",
+  "strengths": ["优点1（20字内）", "优点2", "优点3"],
+  "blind_spots": ["盲区1（20字内）", "盲区2"],
   "suggestions": [
-    {"action": "具体可执行的建议", "reason": "建议的理由和数据依据", "priority": "high|medium|low"}
+    {"action": "建议（30字内）", "reason": "理由（20字内）", "priority": "high|medium|low"}
   ],
-  "commentary": "AI 的自由评论：想法、感受、有趣的观察，语气自然随意（100-200字）",
-  "daily_note": "仅限 daily 类型：对昨天这一天的专属点评（100字以内），periodic 类型留空字符串"
+  "commentary": "自由评论，50字以内",
+  "daily_note": "daily类型填写，periodic留空字符串"
 }"""
 
 MODEL_NAME = MODEL_SONNET

@@ -40,7 +40,8 @@ async def _agent_query_async(
             model=model,
             max_turns=max_turns,
             permission_mode="bypassPermissions",
-            **({"cwd": cwd} if cwd else {}),
+            setting_sources=[],
+            cwd=cwd or "/tmp",
             **({"env": agent_env} if agent_env else {}),
         ),
     ):
@@ -101,8 +102,15 @@ def agent_query_json(
         if text.endswith("```"):
             text = text[:-3].rstrip()
 
+        text = text.strip()
+        if not text:
+            last_exc = RuntimeError("Agent SDK response empty after fence stripping")
+            log.warning("agent_query_json: empty after fence strip (attempt %d/%d)\nRaw: %s",
+                        attempt + 1, 1 + retries, raw[:300])
+            continue
+
         try:
-            return json.loads(text.strip())
+            return json.loads(text)
         except json.JSONDecodeError as exc:
             log.warning("agent_query_json: JSON parse failed (attempt %d/%d): %s\nRaw: %s",
                         attempt + 1, 1 + retries, exc, raw[:500])
