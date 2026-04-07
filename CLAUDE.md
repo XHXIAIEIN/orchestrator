@@ -148,6 +148,41 @@ If your inner monologue matches any excuse in the left column, you are rationali
 - If verification is impossible, say so explicitly and list what the owner should verify manually — do NOT claim completion
 - Full protocol: `.claude/skills/verification-gate/SKILL.md`
 
+### Memory Evidence Grading *(R42 — Evidence Tier System)*
+When writing memory files, add an `evidence` field to frontmatter indicating source reliability:
+
+```yaml
+---
+name: ...
+description: ...
+type: user | feedback | project | reference
+evidence: verbatim | artifact | impression
+---
+```
+
+| Tier | Definition | Example |
+|------|-----------|---------|
+| `verbatim` | Direct quote or observed behavior | User said "不要补丁式修正，直接重写" |
+| `artifact` | Derived from public work product (code, commits, docs) | Commit history shows 3am pushes for 5 consecutive days |
+| `impression` | Inferred from context, not directly observed | User seems to prefer functional style |
+
+**Merge rule**: When two memories conflict, higher-tier evidence wins (`verbatim` > `artifact` > `impression`). Same-tier conflicts → preserve both with timestamps; owner resolves.
+
+**Default**: If `evidence` is omitted, treat as `impression` (lowest confidence).
+
+### Per-Skill Constraints (Layer 0) *(R42 — Hard Rules per Skill)*
+Each skill MAY have a `constraints/` directory containing non-negotiable rules for that skill. These override all other instructions when the skill is active.
+
+```
+.claude/skills/<skill-name>/
+├── SKILL.md            # Main skill definition
+└── constraints/        # Layer 0 hard rules (optional)
+    └── *.md            # Each file = one inviolable constraint
+```
+
+**Priority**: Skill constraints > SKILL.md instructions > general CLAUDE.md rules.
+**When to create**: When a skill has failure modes that prompt-level "don't do X" cannot prevent. Hard constraints belong here; soft preferences stay in SKILL.md.
+
 ### Docker & Environment
 - Before Docker rebuilds, check if one is truly needed
 - Before GPU-heavy tasks, run `nvidia-smi` to check VRAM availability
