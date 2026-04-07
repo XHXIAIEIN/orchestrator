@@ -848,7 +848,11 @@ async function loadPolicySuggestions(container, existingHtml){
       const key=p.dept+':'+p.action;
       const a=_adopted[key];
       const btnHtml=a
-        ?`<button class='policy-adopt-btn' disabled style='border-color:var(--green);color:var(--green)'>执行中 #${a.taskId}</button>`
+        ?(a.status==='failed'
+          ?`<button class='policy-adopt-btn' disabled style='border-color:var(--red);color:var(--red)'>#${a.taskId} 审批失败</button>`
+          :a.status==='approving'
+            ?`<button class='policy-adopt-btn' disabled style='border-color:var(--accent);color:var(--accent)'>审批中 #${a.taskId}...</button>`
+            :`<button class='policy-adopt-btn' disabled style='border-color:var(--green);color:var(--green)'>执行中 #${a.taskId}</button>`)
         :`<button class='policy-adopt-btn' onclick="adoptSuggestion('${p.dept}','${safeAction}',this)">采纳派单</button>`;
       return`<div class='rec-item'><div class='rec-head'><div class='rec-action'>${esc(p.action)}<span class='rec-priority rec-${p.priority}'>${p.priority}</span><span class='policy-dept-tag'>${esc(p.deptZh)}</span></div>${btnHtml}</div><div class='rec-reason'>${esc(p.reason)}</div></div>`;
     }).join('');
@@ -896,13 +900,15 @@ async function adoptSuggestion(dept,preview,btn){
     const data=await resp.json();
     if(data.id){
       btn.textContent=`审批中 #${data.id}...`;
+      _adopted[key]={taskId:data.id,status:'approving'};
       const approveResp=await fetch(`/api/tasks/${data.id}/approve`,{method:'POST'});
       const result=await approveResp.json();
       if(result.error){
         btn.textContent=`#${data.id} 审批失败`;btn.style.borderColor='var(--red)';btn.style.color='var(--red)';
+        _adopted[key]={taskId:data.id,status:'failed'};
       }else{
         btn.textContent=`执行中 #${data.id}`;btn.style.borderColor='var(--green)';btn.style.color='var(--green)';
-        _adopted[key]={taskId:data.id};
+        _adopted[key]={taskId:data.id,status:'running'};
       }
       refreshTasks();
     }else{
@@ -1101,7 +1107,16 @@ function renderInsightsSection(insights) {
   const recHtml = (Array.isArray(insights.recommendations) && insights.recommendations.length)
     ? insights.recommendations.map((r,i) => {
         const safeAction = esc(r.action||'').replace(/"/g,'&quot;');
-        return `<div class='rec-item'><div class='rec-head'><div class='rec-action'>${esc(r.action||'')}<span class='rec-priority rec-${r.priority||'low'}'>${r.priority||''}</span></div><button class='policy-adopt-btn' onclick="adoptSuggestion('engineering','${safeAction}',this)">采纳派单</button></div><div class='rec-reason'>${esc(r.reason||'')}</div></div>`;
+        const rKey='engineering:'+(r.action||'');
+        const ra=_adopted[rKey];
+        const rBtnHtml=ra
+          ?(ra.status==='failed'
+            ?`<button class='policy-adopt-btn' disabled style='border-color:var(--red);color:var(--red)'>#${ra.taskId} 审批失败</button>`
+            :ra.status==='approving'
+              ?`<button class='policy-adopt-btn' disabled style='border-color:var(--accent);color:var(--accent)'>审批中 #${ra.taskId}...</button>`
+              :`<button class='policy-adopt-btn' disabled style='border-color:var(--green);color:var(--green)'>执行中 #${ra.taskId}</button>`)
+          :`<button class='policy-adopt-btn' onclick="adoptSuggestion('engineering','${safeAction}',this)">采纳派单</button>`;
+        return `<div class='rec-item'><div class='rec-head'><div class='rec-action'>${esc(r.action||'')}<span class='rec-priority rec-${r.priority||'low'}'>${r.priority||''}</span></div>${rBtnHtml}</div><div class='rec-reason'>${esc(r.reason||'')}</div></div>`;
       }).join('')
     : '';
   // Also load policy suggestions into the same list
