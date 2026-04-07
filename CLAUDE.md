@@ -71,6 +71,7 @@ For multi-step tasks, state a brief plan with verification:
 
 ### Gate Functions — Mandatory Pre-Checks
 
+<!-- block-protect:start — safety gates are immutable during sessions -->
 Before any dangerous operation, walk through the applicable gate. Do not skip steps.
 
 **Gate: Delete / Replace File**
@@ -113,6 +114,7 @@ Before any dangerous operation, walk through the applicable gate. Do not skip st
 4. Is the new config simpler than the previous version?  → Track complexity. Same score + simpler = keep.
 5. Log to experiment ledger (src/governance/eval/experiment.py) and proceed.
 ```
+<!-- block-protect:end -->
 
 ### Skill Routing
 
