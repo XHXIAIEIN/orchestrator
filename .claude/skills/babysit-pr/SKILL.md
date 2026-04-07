@@ -66,6 +66,19 @@ Wait 60 seconds for CI to restart, then go back to step 1.
 - **If the failure is infrastructure** (timeout, runner unavailable, rate limit), report it and STOP. Don't try to fix infra.
 - **Each fix must be a separate commit** with a clear message. No squashing.
 
+## Common Rationalizations
+
+These thoughts mean you're about to violate the babysit protocol:
+
+| Rationalization | Reality | Correct Behavior |
+|---|---|---|
+| "This test is flaky, I'll just re-run" | Flaky tests have root causes. Re-running without diagnosis is coin-flipping. | Read the failure log. If truly flaky (timing, network), report it as infra. Don't retry blindly. |
+| "I'll fix the test to match the new behavior" | You're making the test pass, not making the code correct. Tests define expected behavior — code should conform. | Fix the code, not the test. Unless the test expectation is genuinely wrong. |
+| "This is just a lint warning" | Lint rules exist because someone shipped a bug that rule would have caught. | Fix the lint issue. Don't disable the rule. |
+| "Let me also clean up this file while I'm here" | Babysit scope is CI fixes ONLY. Mixing cleanup with fixes makes rollback impossible. | Fix the failure. Nothing else. |
+| "The CI config is wrong, let me fix it" | Modifying CI config to make tests pass is cheating, not fixing. | Report CI config issues to the user. Don't touch workflows. |
+| "Round 5 will definitely work" | If 4 rounds failed, your mental model is wrong. Round 5 with the same model will also fail. | Stop at round 5. Escalate with a diagnostic report. |
+
 ## Exit Conditions
 
 - All checks green → "PR is green. All checks passing."

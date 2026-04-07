@@ -47,6 +47,38 @@ Bad:
    → verify: test it
 ```
 
+## Phase Gates
+
+For multi-phase work (Spec → Plan → Implement → Verify), each phase boundary requires an explicit gate check before proceeding.
+
+Insert a gate block between phases:
+
+```
+--- PHASE GATE: [phase name] → [next phase] ---
+□ Deliverable exists: [specific artifact — spec doc, plan file, passing tests]
+□ Acceptance criteria met: [list each criterion with evidence]
+□ No open questions: [all ambiguities resolved, or explicitly deferred with rationale]
+□ Owner review: [required/not required — if required, STOP and wait]
+```
+
+### Gate Rules
+
+1. **No implicit phase transitions.** Moving from planning to implementation without a gate check is a protocol violation.
+2. **"Owner review: required" means STOP.** Do not proceed until the owner explicitly approves. This is a hard gate, not a suggestion.
+3. **Deferred questions must be logged.** If you proceed with an open question, write it as a `⚠️ ASSUMPTION:` in the plan with a rationale. The owner can challenge it later.
+4. **Gate evidence must be concrete.** "Spec looks complete" is not evidence. "Spec covers 3 endpoints, 2 error cases, 1 auth flow — all with request/response examples" is evidence.
+
+### Default Gate Configuration
+
+| Transition | Owner Review Required? |
+|-----------|----------------------|
+| Spec → Plan | Yes (scope confirmation) |
+| Plan → Implement | No (plan IS the approval) |
+| Implement → Verify | No (automatic) |
+| Verify → Ship/Commit | No (evidence-based) |
+
+Override: If the user says "just do it" or grants blanket approval, all gates become automatic (still logged, but no STOP).
+
 ## Dependency Declaration
 
 If step N depends on step M, declare explicitly:

@@ -76,19 +76,21 @@ Before declaring a verification FAIL, ask these three questions:
 
 If all three answers are "no", it's a real failure. Report it.
 
-## Known Failure Modes
+## Common Rationalizations
 
-Watch for these traps that cause you to skip or weaken verification:
+These thoughts mean you're about to skip or weaken verification:
 
-- **Verification avoidance**: Finding excuses not to verify ("too small a change", "just a typo", "only touched comments"). Every change is a change.
-- **80% trap**: Most tests pass so you skip edge cases. The edge case you skip is the one that ships the bug.
-- **Confidence substitution**: You feel confident, so you treat that feeling as evidence. Confidence is not proof.
-- **Fatigue shortcuts**: Late in a long task, you rush the final verification. The last step is where most bugs hide.
-
-**When you feel the urge to skip verification, consult `SOUL/public/prompts/rationalization-immunity.md`.** The most relevant rationalizations:
-1. "It's just a small change" → Small changes break large systems. A one-char typo took down CloudFlare.
-2. "I know this will work" → Knowing is not verifying. Your mental model diverged from reality at least once today.
-3. "There's no time" → Skipping verification never saves time. It converts a 5-minute check into a 2-hour debug session.
+| Rationalization | Reality | Correct Behavior |
+|---|---|---|
+| "It's just a small change" | Small changes break large systems. A one-char typo took down CloudFlare. | Same verification process. No size exemptions. |
+| "I know this will work" | Knowing is not verifying. Your mental model diverged from reality at least once today. | Run it and prove it. |
+| "There's no time" | Skipping verification never saves time. It converts a 5-minute check into a 2-hour debug session. | The fastest path is the verified path. |
+| "Only touched comments/docs" | Comment changes can break parsers, configs, and tools. A stray `*/` has killed builds. | Verify cosmetic changes the same as functional ones. |
+| "Most tests pass, the rest are unrelated" | The 80% trap. The edge case you skip is the one that ships the bug. | Run ALL tests. Investigate every failure. |
+| "I feel confident about this" | Confidence is a feeling, not evidence. Substituting emotion for verification is the #1 gate bypass. | Convert confidence into proof. Run the command. |
+| "I'm tired, this is the last task" | Fatigue shortcuts cause the majority of late-stage bugs. The last step is where most bugs hide. | Slow down. The gate doesn't have a fatigue exemption. |
+| "The adversarial probe isn't needed here" | If you can't think of how to break it, you don't understand the change well enough. | Find at least one adversarial input. Always. |
+| "I already verified something similar earlier" | "Similar" ≠ "same". Different code, different state, different result. | Verify THIS change specifically. |
 
 ## Banned Phrases
 

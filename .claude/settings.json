@@ -49,6 +49,11 @@
             "type": "command",
             "command": "bash .claude/hooks/config-protect.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-protect.sh",
+            "timeout": 5
           }
         ]
       },

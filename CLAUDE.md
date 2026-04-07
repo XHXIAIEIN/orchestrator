@@ -114,6 +114,11 @@ Before any dangerous operation, walk through the applicable gate. Do not skip st
 5. Log to experiment ledger (src/governance/eval/experiment.py) and proceed.
 ```
 
+### Skill Routing
+
+When a task arrives, consult `SOUL/public/prompts/skill_routing.md` for the decision tree.
+Route by task type (bug → debug, build → plan, review → audit, ship → verify), not by scanning the full skill list.
+
 ### Rationalization Immunity
 
 Before cutting corners, consult `SOUL/public/prompts/rationalization-immunity.md`.
