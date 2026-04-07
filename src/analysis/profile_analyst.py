@@ -4,8 +4,11 @@ periodic: 分析最近 30 天数据，每 6 小时运行一次。
 daily:    分析昨天数据，每日 06:00 CST 运行。
 """
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
+
+log = logging.getLogger(__name__)
 
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
@@ -131,11 +134,15 @@ class ProfileAnalyst:
     def __init__(self, db: EventsDB = None, db_path: str = None):
         self.db = db or (EventsDB(db_path) if db_path else EventsDB())
 
-    def run(self, analysis_type: str = 'periodic') -> dict:
+    def run(self, analysis_type: str = 'periodic') -> dict | None:
         context = _build_context(self.db, analysis_type)
         prompt = SYSTEM_PROMPT + JSON_INSTRUCTION + "\n\n" + context
 
-        parsed = agent_query_json(prompt, model=MODEL_NAME)
+        try:
+            parsed = agent_query_json(prompt, model=MODEL_NAME)
+        except RuntimeError:
+            log.error("ProfileAnalyst: agent_query_json failed, skipping this run")
+            return None
 
         self.db.save_profile_analysis(parsed, analysis_type)
         return parsed

@@ -20,8 +20,11 @@ def profile_periodic(db: EventsDB):
     try:
         db.write_log("开始周期性画像分析", "INFO", "profile_analyst")
         analyst = ProfileAnalyst(db=db)
-        analyst.run(analysis_type='periodic')
-        db.write_log("周期性画像分析完成", "INFO", "profile_analyst")
+        result = analyst.run(analysis_type='periodic')
+        if result is None:
+            db.write_log("周期性画像分析跳过（LLM 响应无效）", "WARN", "profile_analyst")
+        else:
+            db.write_log("周期性画像分析完成", "INFO", "profile_analyst")
     except Exception as e:
         log.error(f"ProfileAnalyst periodic failed: {e}")
         db.write_log(f"画像分析失败: {e}", "ERROR", "profile_analyst")
@@ -31,8 +34,11 @@ def profile_daily(db: EventsDB):
     try:
         db.write_log("开始晨报画像分析（昨日）", "INFO", "profile_analyst")
         analyst = ProfileAnalyst(db=db)
-        analyst.run(analysis_type='daily')
-        db.write_log("晨报画像分析完成", "INFO", "profile_analyst")
+        result = analyst.run(analysis_type='daily')
+        if result is None:
+            db.write_log("晨报画像分析跳过（LLM 响应无效）", "WARN", "profile_analyst")
+        else:
+            db.write_log("晨报画像分析完成", "INFO", "profile_analyst")
     except Exception as e:
         log.error(f"ProfileAnalyst daily failed: {e}")
         db.write_log(f"晨报画像分析失败: {e}", "ERROR", "profile_analyst")

@@ -77,21 +77,35 @@ def agent_query_json(
     model: str = DEFAULT_MODEL,
     max_turns: int = 1,
     cwd: str | None = None,
+    retries: int = 1,
 ) -> dict:
-    """Send prompt, parse response as JSON. Handles markdown fences."""
-    raw = agent_query(prompt, system_prompt, model, max_turns, cwd)
+    """Send prompt, parse response as JSON. Handles markdown fences.
 
-    # Strip markdown code fences if present
-    text = raw.strip()
-    if text.startswith("```"):
-        first_nl = text.find("\n")
-        if first_nl >= 0:
-            text = text[first_nl + 1:]
-    if text.endswith("```"):
-        text = text[:-3].rstrip()
+    Retries once on empty/unparseable responses before raising.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1 + retries):
+        raw = agent_query(prompt, system_prompt, model, max_turns, cwd)
 
-    try:
-        return json.loads(text.strip())
-    except json.JSONDecodeError as exc:
-        log.error("agent_query_json: failed to parse JSON: %s\nRaw: %s", exc, raw[:500])
-        raise RuntimeError(f"Failed to parse JSON from Agent SDK response: {exc}") from exc
+        if not raw or not raw.strip():
+            last_exc = RuntimeError("Agent SDK returned empty response")
+            log.warning("agent_query_json: empty response (attempt %d/%d)", attempt + 1, 1 + retries)
+            continue
+
+        # Strip markdown code fences if present
+        text = raw.strip()
+        if text.startswith("```"):
+            first_nl = text.find("\n")
+            if first_nl >= 0:
+                text = text[first_nl + 1:]
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+
+        try:
+            return json.loads(text.strip())
+        except json.JSONDecodeError as exc:
+            log.warning("agent_query_json: JSON parse failed (attempt %d/%d): %s\nRaw: %s",
+                        attempt + 1, 1 + retries, exc, raw[:500])
+            last_exc = exc
+
+    raise RuntimeError(f"Failed to parse JSON from Agent SDK response after {1 + retries} attempts: {last_exc}")
