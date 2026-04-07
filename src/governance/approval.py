@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from src.governance.trust_ladder import TrustLadder
 
@@ -268,6 +268,26 @@ class ApprovalRequest:
     tool_args: dict = field(default_factory=dict)
 
 
+# ── R43: Interrupt-Resume (LangGraph steal) ─────────────────
+
+
+@dataclass
+class InterruptPoint:
+    """A point where agent execution pauses for human input.
+
+    Unlike ApprovalRequest (binary approve/deny), InterruptPoint supports
+    arbitrary payload exchange: agent sends a value, human responds with a value.
+    This enables mid-session interrupts at any node, not just pre-task approval.
+    """
+    interrupt_id: str           # hash of (task_id, node_id, counter)
+    task_id: str
+    node_id: str                # which agent/step triggered the interrupt
+    counter: int                # nth interrupt in this node
+    value: Any                  # payload sent to human
+    timestamp: str
+    resume_value: Any = None    # filled when human resumes
+
+
 def _hash_approval_step(request: "ApprovalRequest", prev_hash: str = "") -> str:
     """Compute step hash for approval chain integrity."""
     entry = {
@@ -302,6 +322,10 @@ class ApprovalGateway:
         self._yolo = False  # /yolo mode: auto-approve everything
         self._yolo_by: Optional[str] = None
         self._trust_ladder = TrustLadder()
+        # R43: Interrupt-Resume state
+        self._interrupt_counter: dict[tuple[str, str], int] = {}  # (task_id, node_id) -> count
+        self._interrupts: dict[str, InterruptPoint] = {}           # interrupt_id -> InterruptPoint
+        self._interrupt_events: dict[str, asyncio.Event] = {}      # interrupt_id -> resume signal
         # R38: approval policies (loaded from YAML or defaults)
         self._policies = policies if policies is not None else load_approval_policies()
 
@@ -520,6 +544,123 @@ class ApprovalGateway:
         """Return all pending approval requests."""
         with self._lock:
             return [r for r in self._requests.values() if r.decision is None]
+
+    # ── R43: Interrupt-Resume (LangGraph steal) ──────────────
+
+    def request_interrupt(
+        self, task_id: str, node_id: str, value: Any
+    ) -> InterruptPoint:
+        """Create an interrupt point for mid-session human input.
+
+        Unlike request_approval (pre-task gate), this can be called at any
+        point during agent execution to pause and request arbitrary input.
+
+        Returns InterruptPoint with a unique interrupt_id for resume matching.
+        """
+        key = (task_id, node_id)
+        with self._lock:
+            counter = self._interrupt_counter.get(key, 0) + 1
+            self._interrupt_counter[key] = counter
+
+            # Generate deterministic interrupt_id
+            raw = f"{task_id}:{node_id}:{counter}"
+            interrupt_id = hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+            point = InterruptPoint(
+                interrupt_id=interrupt_id,
+                task_id=task_id,
+                node_id=node_id,
+                counter=counter,
+                value=value,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+            self._interrupts[interrupt_id] = point
+            self._interrupt_events[interrupt_id] = asyncio.Event()
+
+        log.info(
+            f"ApprovalGateway: interrupt requested — id={interrupt_id}, "
+            f"task={task_id}, node={node_id}, counter={counter}"
+        )
+
+        # Broadcast interrupt to channels
+        self._notify_interrupt(point)
+        return point
+
+    def resume_interrupt(self, interrupt_id: str, value: Any) -> None:
+        """Resume a previously interrupted execution with a human-provided value.
+
+        Args:
+            interrupt_id: The interrupt_id from InterruptPoint
+            value: The human's response value
+        """
+        with self._lock:
+            point = self._interrupts.get(interrupt_id)
+            if not point:
+                log.warning(f"ApprovalGateway: unknown interrupt_id={interrupt_id}")
+                return
+            point.resume_value = value
+            event = self._interrupt_events.get(interrupt_id)
+
+        if event:
+            event.set()
+            log.info(f"ApprovalGateway: interrupt {interrupt_id} resumed")
+
+    async def await_interrupt_resume(
+        self, interrupt_id: str, timeout: float = DEFAULT_TIMEOUT
+    ) -> Any:
+        """Wait for an interrupt to be resumed. Returns the resume value.
+
+        Called by AgentSessionRunner.interrupt() to block until human responds.
+        """
+        event = self._interrupt_events.get(interrupt_id)
+        if not event:
+            raise ValueError(f"No interrupt event for {interrupt_id}")
+
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            log.warning(f"ApprovalGateway: interrupt {interrupt_id} timed out")
+            return None
+
+        point = self._interrupts.get(interrupt_id)
+        return point.resume_value if point else None
+
+    def get_pending_interrupts(self, task_id: str | None = None) -> list[InterruptPoint]:
+        """Return all pending (un-resumed) interrupts, optionally filtered by task."""
+        with self._lock:
+            points = [
+                p for p in self._interrupts.values()
+                if p.resume_value is None
+            ]
+            if task_id:
+                points = [p for p in points if p.task_id == task_id]
+            return points
+
+    def _notify_interrupt(self, point: InterruptPoint):
+        """Push interrupt notification to all channels."""
+        msg = (
+            f"🔴 Interrupt [{point.interrupt_id[:8]}]\n"
+            f"Task: {point.task_id} | Node: {point.node_id}\n"
+            f"Value: {str(point.value)[:200]}\n"
+            f"Reply with interrupt_id to resume."
+        )
+        if self._broadcast:
+            try:
+                self._broadcast({
+                    "type": "interrupt",
+                    "interrupt_id": point.interrupt_id,
+                    "task_id": point.task_id,
+                    "node_id": point.node_id,
+                    "value": point.value,
+                })
+            except Exception as e:
+                log.debug(f"Interrupt broadcast failed: {e}")
+
+        if self._channels:
+            try:
+                self._channels.notify_all(msg)
+            except Exception as e:
+                log.debug(f"Interrupt channel notify failed: {e}")
 
     def _notify_all(self, req: ApprovalRequest):
         """Push approval request to all channels.

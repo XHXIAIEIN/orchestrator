@@ -128,16 +128,18 @@ class AgentSessionRunner:
         runner = AgentSessionRunner(db, components={"stuck_detector": MyCustomDetector()})  # custom impl
     """
 
-    def __init__(self, db, log_event_fn=None, components: dict = None):
+    def __init__(self, db, log_event_fn=None, components: dict = None, approval_gateway=None):
         """
         Args:
             db: EventsDB instance.
             log_event_fn: Callable(task_id, event_type, data) for logging agent events.
             components: Optional overrides for default component specs. Keys:
                 stuck_detector, runtime_supervisor, taint_tracker, context_budget, doom_loop_checker
+            approval_gateway: Optional ApprovalGateway for mid-session interrupt-resume (R43).
         """
         self.db = db
         self._log_event = log_event_fn or self._default_log_event
+        self._approval_gateway = approval_gateway
 
         # ── ComponentSpec: merge defaults with overrides ──
         specs = {**_DEFAULT_COMPONENTS, **(components or {})}
@@ -149,6 +151,42 @@ class AgentSessionRunner:
             self.db.add_agent_event(task_id, event_type, data)
         except Exception:
             pass
+
+    async def interrupt(self, task_id: int, node_id: str, value) -> any:
+        """Request a mid-session interrupt and wait for human resume (R43).
+
+        Unlike pre-task approval, this can be called at any point during agent
+        execution to pause and request arbitrary human input.
+
+        Args:
+            task_id: Current task being executed
+            node_id: Identifier for the current execution node/step
+            value: Payload to send to human (question, options, etc.)
+
+        Returns:
+            The human-provided resume value, or None on timeout.
+        """
+        if not self._approval_gateway:
+            log.warning("AgentSessionRunner.interrupt() called without approval_gateway")
+            return None
+
+        point = self._approval_gateway.request_interrupt(
+            task_id=str(task_id), node_id=node_id, value=value
+        )
+        self._log_event(task_id, "interrupt_requested", {
+            "interrupt_id": point.interrupt_id,
+            "node_id": node_id,
+            "value": str(value)[:500],
+        })
+
+        resume_value = await self._approval_gateway.await_interrupt_resume(
+            point.interrupt_id
+        )
+        self._log_event(task_id, "interrupt_resumed", {
+            "interrupt_id": point.interrupt_id,
+            "resume_value": str(resume_value)[:500],
+        })
+        return resume_value
 
     def prefill(self, task_id: int, prompt: str, task_cwd: str) -> dict:
         """Phase 1: Prepare execution context — WAL scan, session creation, env setup.

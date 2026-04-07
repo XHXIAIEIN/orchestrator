@@ -54,7 +54,13 @@ from src.governance.pipeline.output_compress import compress_output
 from src.governance.pipeline.input_compress import compress_input
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
-from src.governance.checkpoint_recovery import detect_checkpoint
+from src.governance.checkpoint_recovery import (
+    detect_checkpoint,
+    Durability,
+    StructuredCheckpoint,
+    flush_exit_buffer,
+    save_checkpoint,
+)
 
 # ── Resilient Retry (stolen from ChatDev 2.0, Round 13) ──
 # Exception chain traversal for deeper failure classification.
@@ -451,11 +457,18 @@ class TaskExecutor:
             allowed_tools, task_cwd, max_turns, timeout=timeout,
         )
 
-    def execute_task(self, task_id: int) -> dict:
+    def execute_task(self, task_id: int, durability: Durability = "sync") -> dict:
         """Execute task by ID — routes to department based on spec.department.
 
         Blueprint-aware: if blueprint.yaml exists, uses its policy for tools/timeout/max_turns.
         Falls back to DEPARTMENTS dict for backwards compatibility.
+
+        Args:
+            task_id: Task to execute.
+            durability: Checkpoint durability mode (R43 — LangGraph steal):
+              - "sync": write checkpoints to DB immediately (safest)
+              - "async": fire-and-forget to thread pool (fastest)
+              - "exit": buffer in memory, flush on task completion/error
         """
         task = self.db.get_task(task_id)
         if not task:
@@ -895,6 +908,19 @@ class TaskExecutor:
                         log.warning(f"TaskExecutor: task #{task_id} failed to store context_variables: {e}")
                 if hasattr(response, 'to_dict'):
                     self._log_agent_event(task_id, "execution_response", response.to_dict())
+
+                # R43: Save structured checkpoint after successful agent turn
+                try:
+                    cp = StructuredCheckpoint(
+                        task_id=str(task_id),
+                        channel_values={"output": output[:2000], "status": status},
+                        channel_versions={"output": attempt},
+                        metadata={"attempt": attempt, "dept": dept_key},
+                    )
+                    save_checkpoint(cp, durability=durability, db=self.db)
+                except Exception as _cp_err:
+                    log.debug(f"TaskExecutor: checkpoint save failed: {_cp_err}")
+
             except CostLimitExceededError as e:
                 _last_exc = e
                 output = f"cost limit exceeded: {e}"
@@ -1051,6 +1077,12 @@ class TaskExecutor:
                 self._log_agent_event(task_id, "dual_verify", verification.to_dict())
             except Exception as e:
                 log.debug(f"TaskExecutor: dual verify skipped ({e})")
+
+        # ── R43: Flush exit-mode checkpoints (safety net) ──
+        if durability == "exit":
+            flushed = flush_exit_buffer(str(task_id), db=self.db)
+            if flushed:
+                log.info(f"TaskExecutor: flushed {flushed} exit-mode checkpoints for task #{task_id}")
 
         # ── Cleanup (once, after all attempts) ──
         # Concurrency Pool: release slot

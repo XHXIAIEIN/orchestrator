@@ -13,11 +13,19 @@ it detects a task requires cross-department collaboration.
 """
 import json
 import logging
+import operator
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
+
+from src.governance.channel_reducer import (
+    AppendChannel,
+    LastValueChannel,
+    MergeChannel,
+    ReducerChannel,
+)
 
 # ── FutureGate (stolen from ChatDev 2.0, Round 13) ──
 # Coordination primitive for multi-department batch dispatches.
@@ -69,6 +77,7 @@ class RoundResult:
     department_results: dict[str, dict] = field(default_factory=dict)
     # Each value: {"status": "success"|"failed"|"skipped", "output": str, "task_id": int|None}
     aggregated_output: str = ""
+    superstep_count: int = 0  # R43: BSP superstep tracking
 
     def all_succeeded(self) -> bool:
         return all(
@@ -167,9 +176,26 @@ class GroupOrchestrationSupervisor:
         self._round_results: list[RoundResult] = []
         self._signal_bus = signal_bus
         self._gate_timeout = gate_timeout
+        self._superstep_count: int = 0  # R43: BSP superstep counter
         # FutureGate for coordinating multi-department batch dispatches
         self._gate = FutureGate() if FutureGate else None
+        # R43: Channel-Reducer state for deterministic aggregation
+        self._state_channels = self._create_state_channels()
         self._init_signal_bus()
+
+    def _create_state_channels(self) -> MergeChannel:
+        """Create typed state channels for reducer-based aggregation (R43).
+
+        Each field uses a different reduction strategy:
+          - messages: AppendChannel — all department outputs collected in order
+          - status: LastValueChannel — final status wins
+          - artifacts: ReducerChannel(or_) — merge artifact dicts
+        """
+        return MergeChannel({
+            "messages": AppendChannel(str),
+            "status": LastValueChannel(str),
+            "artifacts": ReducerChannel(lambda a, b: {**a, **b}, dict, {}),
+        })
 
     def _init_signal_bus(self):
         """Initialize the cross-department signal bus for inter-round communication."""
@@ -254,6 +280,8 @@ class GroupOrchestrationSupervisor:
             Aggregated final output string.
         """
         self._round_results = []
+        self._superstep_count = 0
+        self._state_channels = self._create_state_channels()
         spec = task.get("spec", {})
         if isinstance(spec, str):
             try:
@@ -407,30 +435,50 @@ class GroupOrchestrationSupervisor:
     # ── Aggregation ─────────────────────────────────────────────
 
     def aggregate(self, results: list[RoundResult]) -> str:
-        """Aggregate outputs from all rounds into a single coherent result.
+        """Aggregate outputs from all rounds using Channel-Reducer protocol (R43).
 
-        Strategy: concatenate successful outputs, clearly label failures.
+        Uses MergeChannel with per-field reducers for deterministic aggregation:
+          - messages: AppendChannel (all outputs collected)
+          - status: LastValueChannel (final status wins)
+          - artifacts: ReducerChannel (merged dicts)
+
+        Falls back to legacy concatenation if channels produce nothing.
         """
         if not results:
             return ""
 
-        sections: list[str] = []
+        # Feed round results into state channels
+        channels = self._create_state_channels()
         for rr in results:
             for dept, dr in rr.department_results.items():
                 status = dr.get("status", "unknown")
                 output = dr.get("output", "")
+                artifacts = dr.get("artifacts", {})
+
                 if status == "success" and output:
-                    sections.append(f"[{dept}] {output}")
+                    channels.update({
+                        "messages": [f"[{dept}] {output}"],
+                        "status": ["success"],
+                    })
                 elif status == "failed":
-                    sections.append(f"[{dept}] (FAILED) {output[:200]}")
+                    channels.update({
+                        "messages": [f"[{dept}] (FAILED) {output[:200]}"],
+                        "status": ["failed"],
+                    })
 
-        if not sections:
-            # Fall back to aggregated_output if individual results are empty
-            return "\n\n".join(
-                rr.aggregated_output for rr in results if rr.aggregated_output
-            )
+                if artifacts:
+                    channels.update({"artifacts": [artifacts]})
 
-        return "\n\n".join(sections)
+        state = channels.get()
+        messages = state.get("messages", [])
+
+        if messages:
+            return "\n\n".join(messages)
+
+        # Legacy fallback: aggregated_output if channels produced nothing
+        return "\n\n".join(
+            rr.aggregated_output for rr in results if rr.aggregated_output
+        )
 
     # ── Execution (delegates to Governor/Dispatcher) ────────────
 
@@ -521,6 +569,31 @@ class GroupOrchestrationSupervisor:
                     dept, decision.instruction, task
                 )
                 result.department_results[dept] = dept_result
+
+        # ── R43 BSP: Write phase — feed results into state channels ──
+        self._superstep_count += 1
+        result.superstep_count = self._superstep_count
+
+        for dept, dr in result.department_results.items():
+            status = dr.get("status", "unknown")
+            output = dr.get("output", "")
+            artifacts = dr.get("artifacts", {})
+
+            if status == "success" and output:
+                self._state_channels.update({
+                    "messages": [f"[{dept}] {output}"],
+                    "status": ["success"],
+                })
+            elif status == "failed":
+                self._state_channels.update({
+                    "messages": [f"[{dept}] (FAILED) {output[:200]}"],
+                    "status": ["failed"],
+                })
+            if artifacts:
+                self._state_channels.update({"artifacts": [artifacts]})
+
+        # ── R43 BSP: Sync barrier — advance to next superstep ──
+        self._state_channels.finish()
 
         # Build aggregated output for this round
         outputs = [
