@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 38 轮偷师，100+ 项目，191 模式。按主题域组织，不按来源。
+> 44 轮偷师，100+ 项目，217 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 191 |
-| ✅ Implemented | 168 |
+| Total patterns | 217 |
+| ✅ Implemented | 194 |
 | → Moved to other projects | 12 |
 | ⏸️ Shelved | 11 |
 
@@ -96,6 +96,11 @@
 | P15 | Configurable Summarization Triggers | DeerFlow (R29) | ✅ | `governance/condenser/configurable.py` | OR-logic triggers (token/message/fraction) + configurable retention policies |
 | P16 | Upload Mention Stripping | DeerFlow (R29) | ✅ | `governance/condenser/upload_stripper.py` | Strip ephemeral file paths (/tmp, uploads, AppData) from memory |
 | P17 | WAL Buffer (Context Danger Zone) | ClawHub (R14) | ✅ | `governance/context/wal_buffer.py` | At 60% context, log human+agent summaries; recover after compaction |
+| P18 | Segment-Based Context Budgeter | PraisonAI (R39) | ✅ | `core/context_budget.py` | Per-segment token allocation with proportional distribution |
+| P19 | Adaptive Thinking Budget (5 levels) | PraisonAI (R39) | ✅ | `core/llm_router.py` | 5-tier reasoning budget scaled by task complexity |
+| P20 | Rate Limiter (Token Bucket) | PraisonAI (R39) | ✅ | `core/rate_limiter.py` | Token bucket rate limiting for API calls |
+| P21 | Model-Aware Compaction Threshold | MachinaOS (R40) | ✅ | `governance/condenser/` | Context window threshold scaled by model capacity |
+| P22 | Fine-Grained Cost Tracking (4-dim) | MachinaOS (R40) | ✅ | `core/cost_tracking.py` | Separate input/output/cache/reasoning token cost tracking |
 
 ---
 
@@ -135,6 +140,14 @@
 | I30 | Proactive ThrottleGate | proactive-agent (R23) | ✅ | `src/proactive/throttle.py` | 4-layer filter (cooldown/budget/quiet/queue) with /quiet /loud TG commands |
 | I31 | Proactive DigestBuilder | proactive-agent (R23) | ✅ | `src/proactive/digest.py` | Daily/weekly HTML digest from proactive_log, delivered via TG |
 | I32 | Evolution Engine (closed loop) | ClawHub (R14) + R23 | ✅ | `src/evolution/loop.py` | Detect → RiskClassify → Act → Evaluate → Learn; 6 action types with rollback |
+| I33 | Artifact Store (externalized output) | PraisonAI (R39) | ✅ | `governance/artifact_store.py` | Large outputs stored externally, reference passed instead of inline |
+| I34 | Tool Output Prune | PraisonAI (R39) | ✅ | `governance/condenser/` | Truncate verbose tool outputs before context injection |
+| I35 | Anti-Rationalization Per-Skill Tables | agent-skills (R41) | ✅ | `SOUL/public/prompts/rationalization-immunity.md` | Per-skill excuse↔correct-behavior lookup tables |
+| I36 | Skill Discovery Flowchart | agent-skills (R41) | ✅ | `SOUL/public/prompts/skill_routing.md` | Decision tree routing: task type → appropriate skill |
+| I37 | Evidence Grading (3-tier) | persona-distill (R42) | ✅ | `CLAUDE.md` memory frontmatter | verbatim > artifact > impression; higher tier wins on conflict |
+| I38 | Triple Validation Gate | persona-distill (R42) | ✅ | `.claude/skills/steal/SKILL.md` | 3-step quality gate for knowledge extraction |
+| I39 | Per-Skill Constraints (Layer 0) | persona-distill (R42) | ✅ | `CLAUDE.md` + skill `constraints/` dirs | Inviolable hard rules per skill override all other instructions |
+| I40 | Knowledge Irreplaceability Classifier (6-class) | persona-distill (R42) | ✅ | `.claude/skills/steal/SKILL.md` | 6 categories of knowledge value for steal prioritization |
 
 ---
 
@@ -212,6 +225,17 @@
 | O31 | Agent Builder Meta-Tool | LobeHub (R16) | ✅ | `governance/agent_builder.py` | NL description → AgentSpec → blueprint.yaml + SKILL.md; keyword-based capability/authority detection |
 | O32 | Skill CAS Distribution | LobeHub (R16) | ✅ | `governance/skill_cas.py` | SHA-256 content hash dedup, version history, rollback, transitive dependency resolution |
 | O33 | Clarification-First Gate | DeerFlow (R29) | ✅ | `governance/clarification.py` | CLARIFY→PLAN→ACT workflow; 5 clarification types; deterministic + LLM 2-tier check |
+| O34 | Continuous Scheduling (FIRST_COMPLETED) | MachinaOS (R40) | ✅ | `src/scheduler.py` | FIRST_COMPLETED scheduling with concurrent task dispatch |
+| O35 | Conductor Decide + Distributed Lock | MachinaOS (R40) | ✅ | `src/governance/` | Centralized conductor with lock-based coordination |
+| O36 | ExecutionContext Isolation | MachinaOS (R40) | ✅ | `src/governance/executor_session.py` | Per-task isolated execution context preventing cross-contamination |
+| O37 | Null Object DLQ | MachinaOS (R40) | ✅ | `src/governance/` | Dead letter queue with null object pattern for failed dispatches |
+| O38 | Connection-Based Agent Composition | MachinaOS (R40) | ✅ | `src/governance/` | Agents composed via connection graph rather than inheritance |
+| O39 | Skill Progressive Loading | MachinaOS (R40) | ✅ | `src/governance/` | Skills loaded on-demand, not all at startup |
+| O40 | Gated Phase Workflow (4-stage) | agent-skills (R41) | ✅ | `SOUL/public/prompts/` | 4-phase workflow with explicit gate checks between phases |
+| O41 | Block Protection (hash+backup+restore) | agent-skills (R41) | ✅ | `governance/` | Hash-based block integrity with backup before modification |
+| O42 | Channel-Reducer State Model | LangGraph (R43) | ✅ | `src/governance/channel_reducer.py` | 10 channel types with reducer aggregation + AfterFinish variants |
+| O43 | Superstep BSP (deterministic parallel) | LangGraph (R43) | ✅ | `src/governance/group_orchestration.py` | Bulk Synchronous Parallel: aggregate→dispatch→barrier |
+| O44 | Interrupt-Resume Mapping | LangGraph (R43) | ✅ | `src/governance/approval.py` | xxh3 ID-based interrupt points with request/resume/await lifecycle |
 
 ---
 
@@ -268,6 +292,8 @@
 | E7 | Regression Detection (Bootstrap CI) | R38 Braintrust | ✅ | `governance/eval/regression.py` | Bootstrap 10K samples, percentile CI, direction classification (improved/regressed/stable) |
 | E8 | Decorator-Registry System | R38 Inspect AI | ✅ | `governance/eval/registry.py` | @register_eval decorator for task/scorer/reducer component discovery |
 | E9 | Failure Root-Cause Classification | AutoAgent (R38b) | ✅ | `governance/eval/corpus.py` | Auto-tag rc:* root-cause tags (rc:stuck, rc:gate_failed, rc:doom_loop, etc.) |
+| E10 | Checkpoint Durability (3 modes) | LangGraph (R43) | ✅ | `src/governance/checkpoint_recovery.py` | sync/async/exit checkpoint strategies with configurable durability |
+| E11 | Storage Conformance Test Suite | LangGraph (R43) | ✅ | `src/governance/storage_protocol.py` | 8-dimension capability contract tests for storage backends |
 
 ---
 
@@ -309,6 +335,11 @@
 | ClawHub elite-longterm-memory | 305K | 14 | I26, P17, S26 |
 | entrix | — | 15 | R20 |
 | LobeHub | — | 16 | O31, O32 |
+| PraisonAI | 6.6K | 39 | P18, P19, P20, I33, I34 |
+| MachinaOS | new | 40 | P21, P22, O34, O35, O36, O37, O38, O39 |
+| agent-skills (Addy Osmani) | 5.5K | 41 | I35, I36, O40, O41 |
+| persona-distill-skills | new | 42 | I37, I38, I39, I40 |
+| LangGraph | 28.6K | 43 | O42, O43, O44, E10, E11 |
 
 ---
 
@@ -332,9 +363,10 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 ## Priority Summary
 
-### Orchestrator — All Done ✅
+### Orchestrator — R1-R43 P0 All Done ✅ / R44 Pending
 
-All P0, P1, P2, and DEFER patterns implemented as of 2026-04-05.
+R1-R43 P0/P1/P2 patterns implemented as of 2026-04-07.
+R44 MemPalace (5 P0) documented, code pending (~15h).
 cvui patterns moved to `cvui/docs/plans/`. RAG pattern moved to `construct3-rag/docs/backlog.md`.
 
 ### Completion Log (2026-04-04 ~ 2026-04-05)
