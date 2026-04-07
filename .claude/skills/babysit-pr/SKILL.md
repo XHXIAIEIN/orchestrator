@@ -85,3 +85,14 @@ These thoughts mean you're about to violate the babysit protocol:
 - 5 rounds exhausted → "Babysit limit reached. Remaining failures: [list]"
 - Infrastructure failure → "CI infrastructure issue: [description]. Manual intervention needed."
 - User interrupts → Stop immediately.
+
+## Common Rationalizations
+
+| Thought | Reality | Correct Behavior |
+|---------|---------|-----------------|
+| "The test is flaky, I'll skip it" | You don't know that without evidence. Flaky = same code passes sometimes. | Run the test 2x. If it fails both times, it's real. Only skip with `gh run rerun` evidence of prior flaky history. |
+| "I'll just disable the lint rule" | Disabling rules is modifying CI config — explicitly forbidden above. | Fix the code to satisfy the linter. |
+| "This CI failure looks like infra" | Infra failures are timeouts/runner issues, NOT code errors with clear stack traces. | If there's a stack trace pointing to code, it's a code bug. Diagnose it. |
+| "Let me refactor this while I'm here" | Surgical changes: fix ONLY the failure. Adjacent cleanup is scope creep. | Fix the one failing line. Commit. Move on. |
+| "5 rounds isn't enough, I need more" | 5 rounds is the hard limit. If you can't fix it in 5, the problem is your diagnosis, not the round count. | Report remaining failures honestly. Don't request more rounds. |
+| "I'll batch these 3 fixes into one commit" | Each fix = separate commit. Batching defeats bisectability. | One fix, one commit, one push. |

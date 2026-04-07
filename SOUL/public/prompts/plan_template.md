@@ -89,3 +89,29 @@ If step N depends on step M, declare explicitly:
 ```
 
 Implicit dependencies (reader must infer order) are not allowed.
+
+## Phase Gates
+
+Each phase ends with a gate. Do NOT cross into the next phase until all gate conditions pass.
+
+### Gate 1: SPECIFY → PLAN
+Before writing any plan steps:
+- [ ] Goal is one sentence, verifiable (not "improve X" — what does done look like?)
+- [ ] File Map is complete (every file that will be touched is listed)
+- [ ] Ambiguities resolved (if spec says "add auth" but not which type → ASK, don't guess)
+- [ ] Scope confirmed (nothing in File Map that the user didn't ask for)
+
+### Gate 2: PLAN → IMPLEMENT
+Before writing any code:
+- [ ] Every step has an action verb + specific target + verify command
+- [ ] No banned placeholder phrases (check against Iron Rule table above)
+- [ ] Dependencies are explicit (no implicit ordering)
+- [ ] Steps are 2-5 min each (split anything bigger)
+- [ ] Owner has seen the plan (unless task is clearly reversible and < 30 min total)
+
+### Gate 3: IMPLEMENT → DONE
+Before declaring completion:
+- [ ] Every step's verify command has been run and passed
+- [ ] No unrelated changes in `git diff` (surgical changes rule)
+- [ ] Orphaned imports/vars from YOUR changes are cleaned up
+- [ ] If tests exist, they pass

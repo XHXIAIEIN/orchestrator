@@ -23,6 +23,11 @@
             "type": "command",
             "command": "bash .claude/hooks/session-start.sh",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-protect.sh scan",
+            "timeout": 5
           }
         ]
       }
@@ -43,7 +48,7 @@
         "hooks": []
       },
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
@@ -52,7 +57,7 @@
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/block-protect.sh",
+            "command": "bash .claude/hooks/block-protect.sh check",
             "timeout": 5
           }
         ]
@@ -73,6 +78,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash .claude/hooks/commit-reminder.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/memory-save-hook.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/stall-detector.sh",
             "timeout": 3
           },
@@ -85,6 +100,11 @@
             "type": "command",
             "command": "bash .claude/hooks/session-stop.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-protect.sh cleanup",
+            "timeout": 3
           }
         ]
       }
@@ -148,5 +168,7 @@
       "Bash(format:*)"
     ]
   },
-  "enabledPlugins": {}
+  "enabledPlugins": {
+    "autofix-bot@claude-plugins-official": true
+  }
 }

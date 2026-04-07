@@ -1,73 +1,152 @@
 #!/bin/bash
-# Block Protection Hook — prevents edits to code between protect-start/protect-end markers
-# Triggered on: PreToolUse for Edit|Write
+# block-protect.sh — Physical-level code block protection hook
+# Prevents AI from modifying content between protection markers.
 #
-# Markers (language-agnostic, detected by substring):
-#   protect-start / protect-end
-#   PROTECT-START / PROTECT-END
+# Supported markers (must be a comment line, not embedded in prose):
+#   # block-protect:start  /  # block-protect:end
+#   // simplify-ignore-start  /  // simplify-ignore-end
+#   <!-- DO-NOT-MODIFY:start -->  /  <!-- DO-NOT-MODIFY:end -->
 #
-# Examples in code:
-#   # protect-start
-#   critical_function_here()
-#   # protect-end
+# Modes:
+#   scan    — SessionStart: find and report protected files
+#   check   — PreToolUse(Edit|Write|MultiEdit): block edits touching protected regions
+#   cleanup — Stop: remove temp state files
 #
-#   <!-- protect-start -->
-#   <div>immutable markup</div>
-#   <!-- protect-end -->
+# Architecture: stateless check (no persistent state needed).
+# Each Edit/Write is checked against the file's current markers in real-time.
 
+MODE="${1:-check}"
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+STATE_DIR="$HOOK_DIR/state"
+PROJECT_DIR="$(cd "$HOOK_DIR/../.." && pwd)"
+
+# Marker keywords
+KEYWORDS_S='(block-protect:start|simplify-ignore-start|DO-NOT-MODIFY:start)'
+KEYWORDS_E='(block-protect:end|simplify-ignore-end|DO-NOT-MODIFY:end)'
+# Comment prefixes that signal a real marker (not prose)
+COMMENT_PREFIX='^[[:space:]]*(#|//|--|/[*]|<!--|%)[[:space:]]*'
+# Full line-anchored patterns
+MARKER_START="${COMMENT_PREFIX}${KEYWORDS_S}"
+MARKER_END="${COMMENT_PREFIX}${KEYWORDS_E}"
+
+# ── scan: SessionStart — report protected files ──
+if [ "$MODE" = "scan" ]; then
+    cd "$PROJECT_DIR" || exit 0
+    PROTECTED_FILES=$(git ls-files -z 2>/dev/null | xargs -0 grep -rlE "$MARKER_START" 2>/dev/null)
+
+    if [ -n "$PROTECTED_FILES" ]; then
+        COUNT=$(echo "$PROTECTED_FILES" | wc -l)
+        mkdir -p "$STATE_DIR"
+        echo "$PROTECTED_FILES" > "$STATE_DIR/block-protect-files.txt"
+
+        DETAILS=""
+        while IFS= read -r f; do
+            BLOCKS=$(grep -cE "$MARKER_START" "$f" 2>/dev/null)
+            DETAILS="${DETAILS}  ${f} (${BLOCKS} block(s))\n"
+        done <<< "$PROTECTED_FILES"
+
+        echo "[block-protect] $COUNT file(s) with protected blocks:"
+        echo -e "$DETAILS"
+    fi
+    exit 0
+fi
+
+# ── cleanup: Stop — remove temp files ──
+if [ "$MODE" = "cleanup" ]; then
+    rm -f "$STATE_DIR/block-protect-files.txt" 2>/dev/null
+    exit 0
+fi
+
+# ── check: PreToolUse(Edit|Write|MultiEdit) — block edits to protected regions ──
 INPUT=$(cat)
 
-# Extract tool info
-PARSED=$(echo "$INPUT" | jq -r '[.tool_name // "", .tool_input.file_path // "", .tool_input.old_string // "", .tool_input.content // ""] | @tsv')
-TOOL_NAME=$(echo "$PARSED" | cut -f1)
-FILE_PATH=$(echo "$PARSED" | cut -f2)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
 
-# Only check Edit and Write
+[ -z "$FILE_PATH" ] && echo '{"decision":"allow"}' && exit 0
+
+# Normalize Windows backslashes to forward slashes
+FILE_PATH=$(echo "$FILE_PATH" | tr '\' '/')
+
+# File doesn't exist → allow (new file creation)
+[ ! -f "$FILE_PATH" ] && echo '{"decision":"allow"}' && exit 0
+
+# Fast check: does file have any real protection markers?
+if ! grep -qE "$MARKER_START" "$FILE_PATH" 2>/dev/null; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── File has protected blocks — analyze the edit ──
+
 case "$TOOL_NAME" in
-    Edit|MultiEdit) ;;
     Write)
-        # For Write (full overwrite), check if file has protected blocks
-        if [ -f "$FILE_PATH" ] && grep -qi 'protect-start' "$FILE_PATH" 2>/dev/null; then
-            echo "{\"decision\":\"block\",\"reason\":\"[BLOCK-PROTECT] $FILE_PATH contains protected blocks (protect-start/protect-end). Use Edit to modify only unprotected sections, or get owner approval to remove protection markers first.\"}"
+        echo '{"decision":"block","reason":"[BLOCK-PROTECT] File contains protected blocks. Use Edit to modify only unprotected regions, or remove the markers first if intentional."}'
+        exit 0
+        ;;
+
+    Edit|MultiEdit)
+        OLD_STRING=$(echo "$INPUT" | jq -r '.tool_input.old_string // ""')
+        [ -z "$OLD_STRING" ] && echo '{"decision":"allow"}' && exit 0
+
+        # Defense 1: old_string contains a real marker line → block
+        if echo "$OLD_STRING" | grep -qE "$MARKER_START|$MARKER_END"; then
+            echo '{"decision":"block","reason":"[BLOCK-PROTECT] Cannot modify or remove protection markers."}'
             exit 0
         fi
-        exit 0 ;;
-    *) exit 0 ;;
-esac
 
-# For Edit: check if old_string overlaps with a protected block
-# Strategy: extract protected blocks from file, check if old_string contains any protected content
+        # Defense 2: old_string targets content within a protected region
+        ANCHOR=$(echo "$OLD_STRING" | grep -v '^[[:space:]]*$' | head -1)
+        [ -z "$ANCHOR" ] && echo '{"decision":"allow"}' && exit 0
 
-# File must exist
-[ ! -f "$FILE_PATH" ] && exit 0
+        MATCH_LINES=$(grep -nF -- "$ANCHOR" "$FILE_PATH" 2>/dev/null | cut -d: -f1)
+        [ -z "$MATCH_LINES" ] && echo '{"decision":"allow"}' && exit 0
 
-# File must have protection markers
-grep -qi 'protect-start' "$FILE_PATH" 2>/dev/null || exit 0
+        OLD_LINE_COUNT=$(echo "$OLD_STRING" | wc -l)
 
-# Extract old_string from input (may contain special chars, use jq)
-OLD_STRING=$(echo "$INPUT" | jq -r '.tool_input.old_string // ""')
-[ -z "$OLD_STRING" ] && exit 0
+        # Build protected ranges (awk needs escaped regex)
+        PROTECTED_RANGES=$(awk '
+            /^[[:space:]]*(#|\/\/|--|\/[*]|<!--|%)[[:space:]]*(block-protect:start|simplify-ignore-start|DO-NOT-MODIFY:start)/ { start=NR }
+            /^[[:space:]]*(#|\/\/|--|\/[*]|<!--|%)[[:space:]]*(block-protect:end|simplify-ignore-end|DO-NOT-MODIFY:end)/   { if(start) { print start"-"NR; start=0 } }
+        ' "$FILE_PATH" 2>/dev/null)
 
-# Extract protected blocks and check overlap
-# Use awk to extract content between markers, then check if old_string contains any of it
-PROTECTED_LINES=$(awk '
-    tolower($0) ~ /protect-start/ { inside=1; next }
-    tolower($0) ~ /protect-end/ { inside=0; next }
-    inside { print }
-' "$FILE_PATH")
+        [ -z "$PROTECTED_RANGES" ] && echo '{"decision":"allow"}' && exit 0
 
-[ -z "$PROTECTED_LINES" ] && exit 0
+        # Check each match location against protected ranges
+        for match_line in $MATCH_LINES; do
+            match_end=$((match_line + OLD_LINE_COUNT - 1))
+            for range in $PROTECTED_RANGES; do
+                range_start=$(echo "$range" | cut -d'-' -f1)
+                range_end=$(echo "$range" | cut -d'-' -f2)
+                if [ "$match_line" -le "$range_end" ] && [ "$match_end" -ge "$range_start" ]; then
+                    echo "{\"decision\":\"block\",\"reason\":\"[BLOCK-PROTECT] Edit overlaps with protected region (lines ${range_start}-${range_end}). Content between markers cannot be modified.\"}"
+                    exit 0
+                fi
+            done
+        done
 
-# Check if old_string contains any protected line (non-empty, non-whitespace)
-while IFS= read -r line; do
-    # Skip empty/whitespace-only lines
-    trimmed=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    [ -z "$trimmed" ] && continue
-    # Check if old_string contains this protected line
-    if echo "$OLD_STRING" | grep -qF "$trimmed"; then
-        echo "{\"decision\":\"block\",\"reason\":\"[BLOCK-PROTECT] Edit touches protected code in $FILE_PATH. The line '$trimmed' is inside a protect-start/protect-end block. Get owner approval before modifying protected code.\"}"
+        # Secondary anchor: last line of old_string
+        LAST_ANCHOR=$(echo "$OLD_STRING" | grep -v '^[[:space:]]*$' | tail -1)
+        if [ -n "$LAST_ANCHOR" ] && [ "$LAST_ANCHOR" != "$ANCHOR" ]; then
+            LAST_MATCH_LINES=$(grep -nF -- "$LAST_ANCHOR" "$FILE_PATH" 2>/dev/null | cut -d: -f1)
+            for last_line in $LAST_MATCH_LINES; do
+                for range in $PROTECTED_RANGES; do
+                    range_start=$(echo "$range" | cut -d'-' -f1)
+                    range_end=$(echo "$range" | cut -d'-' -f2)
+                    if [ "$last_line" -ge "$range_start" ] && [ "$last_line" -le "$range_end" ]; then
+                        echo "{\"decision\":\"block\",\"reason\":\"[BLOCK-PROTECT] Edit extends into protected region (lines ${range_start}-${range_end}). Content between markers cannot be modified.\"}"
+                        exit 0
+                    fi
+                done
+            done
+        fi
+
+        echo '{"decision":"allow"}'
         exit 0
-    fi
-done <<< "$PROTECTED_LINES"
+        ;;
 
-exit 0
+    *)
+        echo '{"decision":"allow"}'
+        exit 0
+        ;;
+esac
