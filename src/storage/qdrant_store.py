@@ -3,10 +3,14 @@ Qdrant vector store — Ollama embedding + Qdrant storage/search.
 
 Uses Ollama /api/embed for embeddings and qdrant-client for vector ops.
 Auto-detects Docker vs host environment for URL defaults.
+
+Hybrid search (R44 MemPalace steal): keyword overlap re-ranking on top of
+semantic results. fused_dist = dist * (1 - weight * overlap).
 """
 
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -37,6 +41,98 @@ COLLECTIONS = [
 ]
 
 EMBED_BATCH_SIZE = 32
+
+# ---------------------------------------------------------------------------
+# Palace Hierarchy Metadata (R44 MemPalace P0#2)
+# ---------------------------------------------------------------------------
+# Three-level metadata filter: domain > category > topic
+# Equivalent to MemPalace's Wing > Hall > Room.
+# Applied during upsert to tag documents, and during search to narrow scope.
+
+# Standard domain taxonomy for Orchestrator
+DOMAIN_KEYWORDS: dict[str, list[str]] = {
+    "system": ["docker", "container", "gpu", "nvidia", "qdrant", "ollama", "deploy", "infra"],
+    "code": ["src/", "function", "class", "import", "module", "refactor", "bug", "fix"],
+    "memory": ["memory", "remember", "experience", "learning", "pattern", "feedback"],
+    "governance": ["governor", "task", "dispatch", "approval", "scrutiny", "department"],
+    "collection": ["collector", "scrape", "fetch", "crawl", "schedule", "cron"],
+    "channel": ["telegram", "wechat", "bot", "message", "chat", "notification"],
+    "soul": ["identity", "personality", "voice", "calibration", "boot", "relationship"],
+}
+
+
+def classify_metadata(text: str, source: str = "") -> dict[str, str]:
+    """Auto-classify text into domain/category/topic hierarchy.
+
+    Returns {"domain": str, "category": str, "topic": str}.
+    Uses keyword matching with source path hints.
+    """
+    text_lower = text.lower()
+    source_lower = source.lower()
+    combined = f"{source_lower} {text_lower}"
+
+    # Domain: highest keyword match score
+    best_domain = "general"
+    best_score = 0
+    for domain, keywords in DOMAIN_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in combined)
+        if score > best_score:
+            best_score = score
+            best_domain = domain
+
+    # Category: derived from source path or content type
+    category = "misc"
+    if "/" in source or "\\" in source:
+        parts = re.split(r"[/\\]", source)
+        # Use the deepest meaningful directory as category
+        for part in reversed(parts):
+            if part and part not in ("src", ".", "..", "data", "SOUL"):
+                category = part.lower()
+                break
+
+    # Topic: first significant noun phrase or filename stem
+    if source:
+        topic = Path(source).stem.lower()
+    else:
+        # Extract first meaningful phrase from text
+        words = re.findall(r"[a-zA-Z0-9_]+", text_lower)[:5]
+        topic = "_".join(words) if words else "unknown"
+
+    return {"domain": best_domain, "category": category, "topic": topic}
+
+
+# ---------------------------------------------------------------------------
+# Hybrid search helpers (R44 MemPalace P0#5)
+# ---------------------------------------------------------------------------
+
+# Minimal stopwords — covers EN + CN particles. Not exhaustive by design:
+# over-filtering hurts more than under-filtering for keyword overlap.
+_STOPWORDS = frozenset(
+    "a an the is are was were be been being have has had do does did "
+    "will would shall should may might can could of in to for on with "
+    "at by from as into through during before after above below between "
+    "and or but not no nor so yet both either neither each every all "
+    "any few more most other some such than too very it its this that "
+    "these those i me my we our you your he him his she her they them "
+    "their what which who whom whose when where how why "
+    "的 了 在 是 我 有 和 就 不 人 都 一 一个 上 也 很 到 说 要 去 你 会 着 "
+    "没有 看 好 自己 这".split()
+)
+
+
+def _extract_keywords(text: str) -> set[str]:
+    """Extract meaningful keywords from text, lowercased, stopwords removed."""
+    tokens = re.findall(r"[a-zA-Z0-9_\-\.]+|[\u4e00-\u9fff]+", text.lower())
+    return {t for t in tokens if t not in _STOPWORDS and len(t) > 1}
+
+
+def _keyword_overlap(query_kw: set[str], doc_text: str) -> float:
+    """Fraction of query keywords found in document text (0.0 - 1.0)."""
+    if not query_kw:
+        return 0.0
+    doc_lower = doc_text.lower()
+    hits = sum(1 for kw in query_kw if kw in doc_lower)
+    return hits / len(query_kw)
 
 
 # ---------------------------------------------------------------------------
@@ -114,8 +210,21 @@ class QdrantStore:
         sqlite_id: int,
         text: str,
         metadata: dict,
+        auto_classify: bool = True,
     ) -> None:
-        """Embed and upsert a single document."""
+        """Embed and upsert a single document.
+
+        When auto_classify=True (default), adds domain/category/topic metadata
+        from Palace Hierarchy classification (R44 P0#2) if not already present.
+        """
+        if auto_classify:
+            source = metadata.get("source", metadata.get("source_file", ""))
+            hierarchy = classify_metadata(text, source)
+            # Only fill in missing keys — don't override explicit metadata
+            for key in ("domain", "category", "topic"):
+                if key not in metadata:
+                    metadata[key] = hierarchy[key]
+
         vector = await self.embed_single(text)
         point_id = make_point_id(collection_prefix, sqlite_id)
         payload = {**metadata, "text": text, "sqlite_id": sqlite_id}
@@ -164,8 +273,17 @@ class QdrantStore:
         query: str,
         top_k: int = 5,
         filters: dict | None = None,
+        hybrid: bool = True,
+        hybrid_weight: float = 0.30,
     ) -> list[dict]:
-        """Embed query and search. Returns [{id, text, score, metadata, sqlite_id}]."""
+        """Embed query and search with optional hybrid keyword re-ranking.
+
+        When hybrid=True (default), over-fetches semantic results then re-ranks
+        using keyword overlap: fused_dist = dist * (1 - weight * overlap).
+        Stolen from MemPalace R44 P0#5 (hybrid v1 formula).
+
+        Returns [{id, text, score, metadata, sqlite_id}].
+        """
         query_vector = await self.embed_single(query)
 
         query_filter = None
@@ -176,11 +294,14 @@ class QdrantStore:
             ]
             query_filter = models.Filter(must=conditions)
 
+        # Over-fetch for hybrid re-ranking (min 50, or 10x top_k)
+        fetch_k = max(50, top_k * 10) if hybrid else top_k
+
         results = self.client.query_points(
             collection_name=collection,
             query=query_vector,
             query_filter=query_filter,
-            limit=top_k,
+            limit=fetch_k,
         )
 
         out = []
@@ -195,7 +316,45 @@ class QdrantStore:
                 "metadata": payload,
                 "sqlite_id": sqlite_id,
             })
-        return out
+
+        # Hybrid keyword re-ranking
+        if hybrid and out:
+            query_kw = _extract_keywords(query)
+            if query_kw:
+                for item in out:
+                    overlap = _keyword_overlap(query_kw, item["text"])
+                    # score from Qdrant is similarity (higher=better for cosine).
+                    # Boost score by keyword overlap: fused = score * (1 + weight * overlap)
+                    item["score"] = item["score"] * (1.0 + hybrid_weight * overlap)
+                out.sort(key=lambda x: x["score"], reverse=True)
+
+        return out[:top_k]
+
+    async def search_scoped(
+        self,
+        collection: str,
+        query: str,
+        top_k: int = 5,
+        domain: str | None = None,
+        category: str | None = None,
+        topic: str | None = None,
+        **kwargs,
+    ) -> list[dict]:
+        """Search with Palace Hierarchy metadata pre-filter (R44 P0#2).
+
+        Narrows search scope before semantic matching: domain > category > topic.
+        This gives ~34% R@10 improvement over unfiltered search (MemPalace benchmark).
+        """
+        filters = {}
+        if domain:
+            filters["domain"] = domain
+        if category:
+            filters["category"] = category
+        if topic:
+            filters["topic"] = topic
+        return await self.search(
+            collection, query, top_k=top_k, filters=filters or None, **kwargs,
+        )
 
     async def search_with_fallback(
         self,
