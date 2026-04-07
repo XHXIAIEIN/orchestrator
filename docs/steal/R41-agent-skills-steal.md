@@ -39,12 +39,12 @@ Layer 1: Infrastructure
 
 ### P0 — Must Steal (4 patterns)
 
-| Pattern | Mechanism | Our Current State | Adaptation | Effort |
-|---------|-----------|------------------|------------|--------|
-| Anti-Rationalization Table | 每个 skill 内置 `Common Rationalizations` 表：左列是 AI 常见借口，右列是事实反驳。不是劝告，是**预判 + 拦截** | 我们有 `rationalization-immunity.md` 但是全局单文件，未嵌入每个 skill | 在每个 SKILL.md 中加入 skill-specific 的反合理化表。通用表保留，但每个 skill 应该有自己的"常见跳过理由" | ~2h |
-| simplify-ignore Block Protection | `simplify-ignore-start/end` 注解 → PreToolUse Read 时用 content hash 替换为 `BLOCK_<hash>` 占位符 → PostToolUse Edit/Write 时展开 → Stop 时恢复。AI 物理上看不到被保护的代码 | 我们没有类似机制。代码保护完全依赖 prompt-level "don't touch this" | 移植 simplify-ignore.sh 的核心逻辑为通用 hook。应用场景：(1) 偷师报告中的代码片段保护 (2) SOUL/private 敏感内容 (3) 任何 `# DO NOT MODIFY` 标注的代码块 | ~4h |
-| Skill Discovery Flowchart | `using-agent-skills` meta-skill 在 SessionStart 注入，提供一个决策树：Task arrives → 哪个阶段 → 哪个 skill。不是列表匹配，是**结构化路由** | 我们的 superpowers:using-superpowers 用的是列表匹配 + 红旗表。没有按任务阶段的决策树 | 在 boot.md 或 using-superpowers 中加入按任务类型的决策树路由，补充现有的技能列表。关键改进：当前我们有 70+ skills，决策树比列表更高效 | ~2h |
-| Gated Phase Workflow | spec-driven-development 的四阶段门控：SPECIFY → PLAN → TASKS → IMPLEMENT，每阶段需要 human review 才能前进。不是建议，是**硬性流程** | 我们的 Phase Separation 规则说"每阶段一个 session"，但没有显式门控机制 | 在 plan_template.md 中加入显式 Phase Gate checklist。每个阶段结束时必须列出 gate 条件，通过才继续 | ~1h |
+| Pattern | Mechanism | Our Current State | Adaptation | Effort | Status |
+|---------|-----------|------------------|------------|--------|--------|
+| Anti-Rationalization Table | 每个 skill 内置 `Common Rationalizations` 表：左列是 AI 常见借口，右列是事实反驳。不是劝告，是**预判 + 拦截** | 我们有 `rationalization-immunity.md` 但是全局单文件，未嵌入每个 skill | 在每个 SKILL.md 中加入 skill-specific 的反合理化表。通用表保留，但每个 skill 应该有自己的"常见跳过理由" | ~2h | ✅ 2026-04-07: 4/6 skills 已有表 (systematic-debugging, verification-gate, babysit-pr, clawvard-practice)。persona/doctor 无需（展示型 skill 无偷懒路径） |
+| simplify-ignore Block Protection | `simplify-ignore-start/end` 注解 → PreToolUse Read 时用 content hash 替换为 `BLOCK_<hash>` 占位符 → PostToolUse Edit/Write 时展开 → Stop 时恢复。AI 物理上看不到被保护的代码 | 我们没有类似机制。代码保护完全依赖 prompt-level "don't touch this" | 移植 simplify-ignore.sh 的核心逻辑为通用 hook。应用场景：(1) 偷师报告中的代码片段保护 (2) SOUL/private 敏感内容 (3) 任何 `# DO NOT MODIFY` 标注的代码块 | ~4h | ⏳ 待实施 — infra 级改动，需独立 session |
+| Skill Discovery Flowchart | `using-agent-skills` meta-skill 在 SessionStart 注入，提供一个决策树：Task arrives → 哪个阶段 → 哪个 skill。不是列表匹配，是**结构化路由** | 我们的 superpowers:using-superpowers 用的是列表匹配 + 红旗表。没有按任务阶段的决策树 | 在 boot.md 或 using-superpowers 中加入按任务类型的决策树路由，补充现有的技能列表。关键改进：当前我们有 70+ skills，决策树比列表更高效 | ~2h | ✅ 2026-04-07: 创建 skill_routing.md，按任务意图路由到对应 skill/command |
+| Gated Phase Workflow | spec-driven-development 的四阶段门控：SPECIFY → PLAN → TASKS → IMPLEMENT，每阶段需要 human review 才能前进。不是建议，是**硬性流程** | 我们的 Phase Separation 规则说"每阶段一个 session"，但没有显式门控机制 | 在 plan_template.md 中加入显式 Phase Gate checklist。每个阶段结束时必须列出 gate 条件，通过才继续 | ~1h | ✅ 2026-04-07: plan_template.md 加入三级 Phase Gate (SPECIFY→PLAN→IMPLEMENT→DONE) |
 
 ### P1 — Worth Doing (6 patterns)
 

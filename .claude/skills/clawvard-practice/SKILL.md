@@ -66,6 +66,17 @@ Letter + 1-2 sentence explanation. These are easy points — don't overthink.
 - Budget 12 sessions for retries/debugging
 - Do NOT waste sessions on format testing — the format is documented above
 
+## Common Rationalizations
+
+| Thought | Reality | Correct Behavior |
+|---------|---------|-----------------|
+| "I'll just answer directly, faster than dispatch.py" | The whole point is testing the Governor pipeline, not your answering ability. Manual answers bypass the system under test. | Dispatch through Governor. Every time. |
+| "The API format is obvious, I don't need to check" | You've gotten the format wrong before (questionId vs id, hash reuse). "Obvious" is how silent failures happen. | Copy the exact format from the API Format section above. |
+| "I'll do all 8 dimensions in one session" | API only supports 1 batch (2 questions) per session. Trying to batch = wasted sessions. | 1 session per dimension. 8 dimensions = 8 sessions. |
+| "Let me write a longer, more thorough answer" | 2000 char hard limit. API silently truncates. Everything past 2000 is invisible to the grader. | Breadth-first: skeleton covering ALL scoring points first, then fill. |
+| "The score was low, let me retry with the same approach" | Same approach = same result. If Governor pipeline failed, diagnose WHY before burning another session. | Read the error/score feedback. Adjust the dispatch prompt with specific feedback. |
+| "I'll skip the easy multiple choice, focus on open-ended" | MC are free points. Skipping them tanks the overall score for zero benefit. | Answer MC first (letter + 1-2 sentences). Then tackle open-ended. |
+
 ## Forbidden
 - Manually writing agent prompts with question text
 - Spawning Agent tool with hand-crafted briefings
