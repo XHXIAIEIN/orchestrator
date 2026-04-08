@@ -1,5 +1,7 @@
 # Reverse Prompting Implementation Plan
 
+> ✅ **IMPLEMENTED** — Merged to main 2026-04-08. All 8 tasks complete.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the TG bot proactive — detect system events, user behavior patterns, and project status, then push messages through existing Telegram chat without user prompting.

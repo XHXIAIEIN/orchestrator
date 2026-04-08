@@ -75,6 +75,6 @@ Orchestrator 是一个 AI 管家系统——不是在运行一个程序，而是
 
 ## Knowledge Base
 
-- [PATTERNS.md](PATTERNS.md) — 模式库（149 patterns，来自 35 轮偷师、90+ 开源项目）
+- [PATTERNS.md](PATTERNS.md) — 模式库（217 patterns，来自 44 轮偷师、100+ 开源项目）
 - [ROADMAP.md](ROADMAP.md) — 实施路线图
 - [fact-expression-split.md](fact-expression-split.md) — 原创研究：反谄媚架构（事实-表达分离）

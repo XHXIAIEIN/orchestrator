@@ -4,7 +4,7 @@
 >
 > ✅ = done / 📐 = designed (spec exists) / 🔲 = pending / ⏸️ = shelved
 >
-> Last updated: 2026-04-01
+> Last updated: 2026-04-08
 
 ## Sprint 1: Quick Wins — ✅ ALL COMPLETE
 
@@ -185,9 +185,35 @@ All 12 plan files under `docs/superpowers/plans/` have been fully implemented:
 | 88 | Agent Composition Discovery | O31 | MachinaOS (R40) | ✅ | `src/governance/agent_composition.py` |
 | 89 | Skill Progressive Loading | I22 | MachinaOS (R40) | ✅ | `src/governance/skill_cas.py` |
 
+## Sprint 8: R41-R45 Patterns + Channel Layer (2026-04-02 ~ 2026-04-08)
+
+R41-R45 偷师 + 主动推送 + 通道安全。含 prompt 全量升级、MemPalace 存储、Proactive Engine。
+
+| # | Pattern | ID | Source | Status | Target |
+|---|---------|-----|--------|--------|--------|
+| 90 | Phase Gates + Skill Routing | — | R41 Agent Skills | ✅ | `SOUL/public/prompts/skill_routing.md` |
+| 91 | Rationalization Immunity Tables | — | R41 Agent Skills | ✅ | `SOUL/public/prompts/rationalization-immunity.md` |
+| 92 | Persona Distillation | — | R42 Persona | ✅ | `SOUL/` compiler |
+| 93 | Evidence Tier System | — | R42 Persona | ✅ | `CLAUDE.md` memory grading |
+| 94 | Per-Skill Constraints (Layer 0) | — | R42 Persona | ✅ | `CLAUDE.md` constraints/ |
+| 95 | LangGraph DAG Patterns (5 P0) | — | R43 LangGraph | ✅ | Various governance modules |
+| 96 | MemPalace Storage | — | R44 MemPalace | ✅ | `src/storage/` qdrant modules |
+| 97 | Commit-Reminder Hook | — | R44 | ✅ | `.claude/hooks/` |
+| 98 | Block-Protect Hook | — | R44 | ✅ | `.claude/hooks/` |
+| 99 | 21 Prompts 5-Section Upgrade | — | R41 | ✅ | `SOUL/public/prompts/` |
+| 100 | Secret Sanitizer | — | R45a Graphify | ✅ | `src/channels/` |
+| 101 | Token Persistence + Session Guard | — | R45a Graphify | ✅ | `src/channels/` |
+| 102 | Confidence Provenance + Surprise Scoring | — | R45c Graphify | ✅ | `src/governance/` |
+| 103 | Content-Hash Cache | — | R45c Graphify | ✅ | `src/governance/` |
+| 104 | DocMason — fs_lock, shared_jobs, sidecar | — | R45b DocMason | ✅ | `src/governance/` |
+| 105 | Agent Bridge + Discovery + Broadcast | — | R45d Channels | ✅ | `src/channels/` |
+| 106 | Session Pool | — | R45d Channels | ✅ | `src/channels/` |
+| 107 | Proactive Engine (Signal + Throttle + Generator) | — | Reverse Prompting | ✅ | `src/proactive/` |
+| 108 | Daily Report + Profile Opus Upgrade | — | Analysis | ✅ | `src/analysis/` |
+
 ## Remaining Work
 
-**Orchestrator 本体：** Sprint 1-7 全部 89 项已完成 ✅
+**Orchestrator 本体：** Sprint 1-8 全部 108 项已完成 ✅
 
 **cvui 包（独立仓库 `D:\Users\Administrator\Documents\GitHub\cvui`）：**
 - 🔲 V1: VLM Zone Stage
