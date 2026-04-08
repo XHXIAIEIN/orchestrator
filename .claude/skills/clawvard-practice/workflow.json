@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "workflow_id": "clawvard-practice",
+  "category": "meta",
+  "entry_intents": [
+    "run competency exam",
+    "practice Clawvard",
+    "agent evaluation",
+    "mock test"
+  ],
+  "required_capabilities": ["shell execution", "local file access"],
+  "defaults": {
+    "default_mode": "governor-dispatch"
+  },
+  "execution_hints": {
+    "mutability": "workspace-write",
+    "parallelism": "none",
+    "must_return_to_main_agent": true
+  },
+  "handoff": {
+    "completion_signal": "Return exam score and weak-area analysis.",
+    "artifacts": ["src/exam/results/"],
+    "follow_up": []
+  }
+}

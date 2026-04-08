@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "workflow_id": "babysit-pr",
+  "category": "automation",
+  "entry_intents": [
+    "fix CI failures",
+    "PR checks are failing",
+    "CI is red",
+    "watch this PR"
+  ],
+  "required_capabilities": ["git", "shell execution", "gh cli"],
+  "defaults": {
+    "default_mode": "diagnose-and-fix"
+  },
+  "execution_hints": {
+    "mutability": "workspace-write",
+    "parallelism": "none",
+    "must_return_to_main_agent": true
+  },
+  "handoff": {
+    "completion_signal": "Return fix commit or diagnosis if infrastructure failure.",
+    "artifacts": [],
+    "follow_up": ["verification-gate"]
+  }
+}

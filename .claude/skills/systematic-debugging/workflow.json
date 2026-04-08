@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "workflow_id": "systematic-debugging",
+  "category": "diagnostics",
+  "entry_intents": [
+    "debug a bug",
+    "investigate error",
+    "fix failing test",
+    "unexpected behavior"
+  ],
+  "required_capabilities": ["shell execution", "local file access"],
+  "defaults": {
+    "default_mode": "investigate-isolate-fix-verify"
+  },
+  "execution_hints": {
+    "mutability": "workspace-write",
+    "parallelism": "none",
+    "must_return_to_main_agent": true
+  },
+  "handoff": {
+    "completion_signal": "Return root cause, fix applied, and verification evidence.",
+    "artifacts": [],
+    "follow_up": ["verification-gate"]
+  }
+}

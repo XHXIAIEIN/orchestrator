@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "workflow_id": "steal",
+  "category": "learning",
+  "entry_intents": [
+    "study external repository",
+    "steal patterns from open-source project",
+    "learn from another codebase",
+    "analyze repo for adoption"
+  ],
+  "required_capabilities": ["git", "shell execution", "web access"],
+  "defaults": {
+    "default_mode": "deep-analysis"
+  },
+  "execution_hints": {
+    "mutability": "workspace-write",
+    "parallelism": "per-source-safe",
+    "must_return_to_main_agent": true
+  },
+  "handoff": {
+    "completion_signal": "Return steal report with patterns, gap analysis, and adaptation plan.",
+    "artifacts": ["SOUL/public/steal/<date>-<topic>.md"],
+    "follow_up": ["verification-gate"]
+  }
+}

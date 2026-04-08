@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "workflow_id": "doctor",
+  "category": "diagnostics",
+  "entry_intents": [
+    "system health check",
+    "diagnose orchestrator",
+    "check if everything is running",
+    "something is wrong with the system"
+  ],
+  "required_capabilities": ["docker", "shell execution", "database access"],
+  "defaults": {
+    "default_mode": "full-diagnostic"
+  },
+  "execution_hints": {
+    "mutability": "read-only",
+    "parallelism": "read-only-safe",
+    "must_return_to_main_agent": true
+  },
+  "handoff": {
+    "completion_signal": "Return PASS/WARN/FAIL per subsystem with fix commands.",
+    "artifacts": [],
+    "follow_up": []
+  }
+}

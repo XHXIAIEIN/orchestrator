@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "workflow_id": "verification-gate",
+  "category": "review",
+  "entry_intents": [
+    "verify task completion",
+    "check if work is done",
+    "evidence chain before commit"
+  ],
+  "required_capabilities": ["shell execution", "local file access"],
+  "defaults": {
+    "default_mode": "five-step-evidence-chain"
+  },
+  "execution_hints": {
+    "mutability": "read-only",
+    "parallelism": "read-only-safe",
+    "must_return_to_main_agent": true
+  },
+  "handoff": {
+    "completion_signal": "Return pass/fail with evidence for each verification step.",
+    "artifacts": [],
+    "follow_up": []
+  }
+}
