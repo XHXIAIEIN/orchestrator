@@ -23,26 +23,82 @@ def _base_info() -> dict:
     """每个请求都要带的 base_info。"""
     return {"channel_version": CHANNEL_VERSION}
 
-# ── context_token 缓存 ──────────────────────────────────────────────────────
-# key = user_id, value = context_token
-# 每次 getupdates 收到消息时更新，sendmessage 时读取。
+# ── context_token 写透缓存 ────────────────────────────────────────────────────
+# 内存 dict 做热读，DB 做持久化。重启时从 DB 恢复。
+# Stolen from: Claude-to-IM-skill (R45a) — context_token 持久化模式。
 _context_tokens: dict[str, str] = {}
 _ctx_lock = threading.Lock()
+_ctx_db_loaded = False
+
+
+def _ctx_db_path() -> str:
+    from pathlib import Path
+    return str(Path(__file__).resolve().parent.parent.parent.parent / "data" / "events.db")
+
+
+def _ensure_ctx_table(conn):
+    """Ensure wechat_context_tokens table exists (idempotent)."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS wechat_context_tokens "
+        "(user_id TEXT PRIMARY KEY, token TEXT NOT NULL, updated_at TEXT NOT NULL)"
+    )
+
+
+def _load_from_db():
+    """Load all tokens from DB into memory cache (once)."""
+    global _ctx_db_loaded
+    if _ctx_db_loaded:
+        return
+    try:
+        from src.storage.pool import get_pool
+        pool = get_pool(_ctx_db_path(), log_prefix="wechat_ctx")
+        with pool.lock:
+            conn = pool.get_conn()
+            _ensure_ctx_table(conn)
+            rows = conn.execute("SELECT user_id, token FROM wechat_context_tokens").fetchall()
+        for uid, tok in rows:
+            _context_tokens[uid] = tok
+        _ctx_db_loaded = True
+        if rows:
+            log.info(f"wechat: restored {len(rows)} context_token(s) from DB")
+    except Exception as e:
+        log.warning(f"wechat: failed to load context_tokens from DB: {e}")
+        _ctx_db_loaded = True  # don't retry on every call
 
 
 def set_context_token(user_id: str, token: str):
     with _ctx_lock:
+        _load_from_db()
         _context_tokens[user_id] = token
+    # Write-through to DB (outside lock to avoid blocking reads)
+    try:
+        from src.storage.pool import get_pool
+        from datetime import datetime, timezone
+        pool = get_pool(_ctx_db_path(), log_prefix="wechat_ctx")
+        with pool.lock:
+            conn = pool.get_conn()
+            _ensure_ctx_table(conn)
+            conn.execute(
+                "INSERT INTO wechat_context_tokens (user_id, token, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET token = ?, updated_at = ?",
+                (user_id, token, datetime.now(timezone.utc).isoformat(),
+                 token, datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+    except Exception as e:
+        log.warning(f"wechat: failed to persist context_token: {e}")
 
 
 def get_context_token(user_id: str) -> str | None:
     with _ctx_lock:
+        _load_from_db()
         return _context_tokens.get(user_id)
 
 
 def get_all_context_users() -> list[str]:
     """返回所有有 context_token 的用户 ID。"""
     with _ctx_lock:
+        _load_from_db()
         return list(_context_tokens.keys())
 
 

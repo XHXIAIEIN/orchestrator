@@ -143,6 +143,10 @@ _registry: Optional[ChannelRegistry] = None
 def get_channel_registry() -> ChannelRegistry:
     global _registry
     if _registry is None:
+        # Install secret sanitization before any channel logs
+        from src.channels.log_sanitizer import install as install_sanitizer
+        install_sanitizer()
+
         _registry = ChannelRegistry()
         _registry.auto_discover()
     return _registry

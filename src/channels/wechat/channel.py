@@ -104,6 +104,10 @@ class WeChatChannel(WeChatSender, WeChatHandler, Channel):
 
     def _poll_loop(self):
         MAX_FAILURES, BACKOFF_S, RETRY_S = 3, 30, 2
+        # Session guard: exponential backoff on session expiry (R45a steal)
+        SESSION_BACKOFF_INIT = 30
+        SESSION_BACKOFF_MAX = 300   # 5 minutes cap
+        SESSION_MAX_RETRIES = 10    # ~50 min total before giving up
 
         while not self._stop_event.is_set():
             try:
@@ -111,8 +115,39 @@ class WeChatChannel(WeChatSender, WeChatHandler, Channel):
                                    self.base_url, timeout=60)
 
                 if resp.get("errcode") == -14:
-                    log.warning("wechat: session expired (errcode -14)")
-                    break
+                    # Session expired — pause and retry with exponential backoff
+                    # instead of breaking (R45a: WeChat Session Guard pattern)
+                    backoff = SESSION_BACKOFF_INIT
+                    for attempt in range(SESSION_MAX_RETRIES):
+                        log.warning(f"wechat: session expired (-14), "
+                                    f"retry {attempt + 1}/{SESSION_MAX_RETRIES} in {backoff}s")
+                        self._stop_event.wait(timeout=backoff)
+                        if self._stop_event.is_set():
+                            return
+                        try:
+                            probe = get_updates(self.bot_token, self._sync_cursor,
+                                                self.base_url, timeout=10)
+                            if probe.get("errcode") != -14:
+                                log.info("wechat: session recovered")
+                                # Process any messages from probe
+                                new_cursor = probe.get("get_updates_buf", "")
+                                if new_cursor:
+                                    self._sync_cursor = new_cursor
+                                for msg in probe.get("msgs") or []:
+                                    try:
+                                        self._handle_message(msg)
+                                    except Exception as e:
+                                        log.error(f"wechat: handle message failed: {e}")
+                                break
+                        except Exception:
+                            pass
+                        backoff = min(backoff * 2, SESSION_BACKOFF_MAX)
+                    else:
+                        log.error("wechat: session recovery failed after "
+                                  f"{SESSION_MAX_RETRIES} retries, stopping poll")
+                        return
+                    continue
+
                 # ret=None 或 ret=0 都是正常（无新消息时 ret 可能为 null）
                 ret = resp.get("ret")
                 if ret is not None and ret != 0:

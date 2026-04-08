@@ -179,6 +179,12 @@ CREATE TABLE IF NOT EXISTS file_index (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS wechat_context_tokens (
+    user_id TEXT PRIMARY KEY,
+    token TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id TEXT NOT NULL,
