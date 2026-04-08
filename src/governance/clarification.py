@@ -296,7 +296,7 @@ class ClarificationGate:
     LLM_THRESHOLD = 0.6
 
     # Source types that skip clarification (already structured/validated)
-    SKIP_SOURCES = {"scout", "rework", "group_orchestration", "fact_layer", "expression_layer"}
+    SKIP_SOURCES = {"scout", "rework", "group_orchestration", "fact_layer", "expression_layer", "agent_cron"}
 
     def __init__(self, prompt_template: str = ""):
         self._prompt_template = prompt_template
