@@ -166,24 +166,16 @@
 
 ---
 
-## 6. Perception & Vision (desktop_use + cvui)
+## 6. Perception & Vision (desktop_use)
+
+> cvui-specific patterns (V1-V9, V14) moved to `cvui/docs/plans/`. Tracked in cvui repo, not here.
 
 | # | Pattern | Source | Status | Location | Notes |
 |---|---------|--------|--------|----------|-------|
-| V1 | *VLM Zone Stage* | Gemini + OmniParser (R7) | → cvui | — | Moved to cvui steal-sheet |
-| V2 | *CNN ClassifyStage* | UIED (R7) | → cvui | — | Moved to cvui steal-sheet |
-| V3 | *Detection→Feature→Retrieval* | PaddleX (R7) | → cvui | — | Moved to cvui (shelved) |
-| V4 | *Format Converter Plugin* | labelU (R7) | → cvui | — | Moved to cvui steal-sheet |
-| V5 | *Pre-Annotation + Human Correction* | labelU (R7) | → cvui | — | Moved to cvui steal-sheet |
-| V6 | *pix2emb Paradigm* | NExT-Chat (R7) | → cvui | — | Moved to cvui (research) |
-| V7 | *Image Tiling* | DarkHelp (R7) | → cvui | — | Moved to cvui steal-sheet |
-| V8 | *DOTS OCR Layout Parsing* | R7 supplement | → cvui | — | Moved to cvui (designed) |
-| V9 | *Synthetic Data Training* | DocLayout-YOLO (R7) | → cvui | — | Moved to cvui (research) |
 | V10 | Structural CV Filtering (DBSCAN + multi-dim) | R7 supplement | ✅ | cvui `structural_v4` | DBSCAN density + saturation/variance/edge/neighbor anomaly. 56→41 rects, 60ms, 0 models |
 | V11 | Takeover + InputCapture (human handoff) | bytebot (R10) | ✅ | `desktop_use/` | pynput monitor + debounce aggregation (click 250ms, typing 500ms, scroll 4x) → inject trajectory |
 | V12 | Post-Action Auto Screenshot | bytebot (R10) | ✅ | `desktop_use/actions.py` | Every non-screenshot action → wait 750ms → auto screenshot as tool_result |
 | V13 | type vs paste Separation | bytebot (R10) | ✅ | `desktop_use/actions.py` | `type_text` (≤25 char) vs `paste_text` (clipboard+Ctrl+V); `sensitive` flag blocks echo |
-| V14 | *Text-First Layered Strategy* | Carbonyl (R9) | → cvui | — | Moved to cvui (designed) |
 | V15 | Unicode Pixel Grid Visualization | Carbonyl (R9) | ✅ | `channels/pixel_grid.py` | PixelGrid: ANSI 24-bit color + block chars + heatmap gradient |
 
 ---
@@ -367,7 +359,7 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 R1-R43 P0/P1/P2 patterns implemented as of 2026-04-07.
 R44 MemPalace (5 P0) documented, code pending (~15h).
-cvui patterns moved to `cvui/docs/plans/`. RAG pattern moved to `construct3-rag/docs/backlog.md`.
+cvui patterns fully transferred to `cvui` repo — no longer tracked here. RAG pattern moved to `construct3-rag/docs/backlog.md`.
 
 ### Completion Log (2026-04-04 ~ 2026-04-05)
 
