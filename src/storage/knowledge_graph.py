@@ -4,6 +4,10 @@ Temporal Knowledge Graph — SQLite triples with time validity.
 Stolen from MemPalace R44 P0#4. Tracks facts as (subject, predicate, object)
 triples with valid_from/valid_to windows and confidence scores.
 
+R45c steal: Confidence-Tagged Relationships from graphify.
+Every edge carries EXTRACTED|INFERRED|AMBIGUOUS label. Validation gate
+hard-rejects triples without a confidence_tag.
+
 Key operations:
     - add_entity / add_triple: insert facts with temporal bounds
     - invalidate: mark a fact as ended (sets valid_to, never deletes)
@@ -18,6 +22,7 @@ import logging
 import sqlite3
 import uuid
 from datetime import date, datetime
+from enum import Enum
 from pathlib import Path
 
 from src.storage.pool import get_pool
@@ -25,6 +30,28 @@ from src.storage.pool import get_pool
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB = str(Path(__file__).resolve().parent.parent.parent / "data" / "knowledge.db")
+
+
+# ---------------------------------------------------------------------------
+# Confidence Tag (R45c steal from graphify)
+# ---------------------------------------------------------------------------
+
+class ConfidenceTag(str, Enum):
+    """Semantic confidence label for knowledge graph edges.
+
+    EXTRACTED: Hard fact directly observed or parsed from structured data
+               (e.g., code imports, config files, user's explicit statement).
+    INFERRED:  Derived by reasoning over multiple signals, not directly stated
+               (e.g., "user prefers X" inferred from behavior patterns).
+    AMBIGUOUS: Uncertain — conflicting signals, low sample size, or guesswork
+               (e.g., entity type unclear, relationship direction uncertain).
+    """
+    EXTRACTED = "EXTRACTED"
+    INFERRED = "INFERRED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+VALID_CONFIDENCE_TAGS = frozenset(tag.value for tag in ConfidenceTag)
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -50,6 +77,7 @@ CREATE TABLE IF NOT EXISTS kg_triples (
     valid_from    TEXT,
     valid_to      TEXT,
     confidence    REAL NOT NULL DEFAULT 1.0,
+    confidence_tag TEXT NOT NULL DEFAULT 'INFERRED',
     source        TEXT NOT NULL DEFAULT '',
     extracted_at  TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (subject_id) REFERENCES kg_entities(id),
@@ -60,6 +88,21 @@ CREATE INDEX IF NOT EXISTS idx_kg_tri_obj  ON kg_triples(object_id);
 CREATE INDEX IF NOT EXISTS idx_kg_tri_pred ON kg_triples(predicate);
 CREATE INDEX IF NOT EXISTS idx_kg_tri_valid ON kg_triples(valid_from, valid_to);
 """
+
+
+# ---------------------------------------------------------------------------
+# Tag promotion logic (R45c)
+# ---------------------------------------------------------------------------
+
+_TAG_RANK = {"AMBIGUOUS": 0, "INFERRED": 1, "EXTRACTED": 2}
+
+
+def _promote_tag(existing_tag: str, new_tag: str) -> str:
+    """When re-asserting a triple, promote to the stronger confidence tag.
+
+    EXTRACTED > INFERRED > AMBIGUOUS. Never demote.
+    """
+    return new_tag if _TAG_RANK.get(new_tag, 0) > _TAG_RANK.get(existing_tag, 0) else existing_tag
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +118,18 @@ class KnowledgeGraph:
         self._pool = get_pool(db_path, row_factory=sqlite3.Row, log_prefix="kg")
         with self._pool.connect() as conn:
             conn.executescript(_SCHEMA)
+            # R45c migration: add confidence_tag column to existing DBs
+            self._migrate_confidence_tag(conn)
+
+    @staticmethod
+    def _migrate_confidence_tag(conn) -> None:
+        """Add confidence_tag column if missing (R45c migration)."""
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_triples)").fetchall()}
+        if "confidence_tag" not in cols:
+            conn.execute(
+                "ALTER TABLE kg_triples ADD COLUMN confidence_tag TEXT NOT NULL DEFAULT 'INFERRED'"
+            )
+            logger.info("KG migration: added confidence_tag column to kg_triples")
 
     # -- Entity operations ---------------------------------------------------
 
@@ -203,15 +258,27 @@ class KnowledgeGraph:
         object_type: str = "unknown",
         valid_from: str | None = None,
         confidence: float = 1.0,
+        confidence_tag: str = "INFERRED",
         source: str = "",
         check_conflicts: bool = True,
     ) -> str:
         """Add a fact triple. Auto-creates entities if needed. Returns triple ID.
 
+        confidence_tag (R45c): EXTRACTED | INFERRED | AMBIGUOUS.
+        Hard validation — rejects unknown tags. This is a gate, not decoration.
+
         When check_conflicts=True (default), logs warnings for contradictions
         but still adds the triple. Callers can check_contradictions() first
         for stricter validation.
         """
+        # R45c gate: hard-reject invalid confidence tags
+        tag = confidence_tag.upper()
+        if tag not in VALID_CONFIDENCE_TAGS:
+            raise ValueError(
+                f"Invalid confidence_tag '{confidence_tag}'. "
+                f"Must be one of: {', '.join(sorted(VALID_CONFIDENCE_TAGS))}"
+            )
+
         if check_conflicts:
             conflicts = self.check_contradictions(subject, predicate, obj)
             for c in conflicts:
@@ -234,23 +301,25 @@ class KnowledgeGraph:
         with self._pool.connect() as conn:
             # Check for existing active triple (same subject+predicate+object, no valid_to)
             existing = conn.execute(
-                "SELECT id FROM kg_triples "
+                "SELECT id, confidence_tag FROM kg_triples "
                 "WHERE subject_id = ? AND predicate = ? AND object_id = ? AND valid_to IS NULL",
                 (sub_id, predicate, obj_id),
             ).fetchone()
             if existing:
-                # Already active — update confidence if higher
+                # Already active — update confidence if higher, promote tag if stronger
+                new_tag = _promote_tag(existing["confidence_tag"], tag)
                 conn.execute(
-                    "UPDATE kg_triples SET confidence = MAX(confidence, ?), source = ? WHERE id = ?",
-                    (confidence, source, existing["id"]),
+                    "UPDATE kg_triples SET confidence = MAX(confidence, ?), "
+                    "confidence_tag = ?, source = ? WHERE id = ?",
+                    (confidence, new_tag, source, existing["id"]),
                 )
                 return existing["id"]
 
             conn.execute(
                 "INSERT INTO kg_triples "
-                "(id, subject_id, predicate, object_id, valid_from, confidence, source) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (tid, sub_id, predicate, obj_id, vf, confidence, source),
+                "(id, subject_id, predicate, object_id, valid_from, confidence, confidence_tag, source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (tid, sub_id, predicate, obj_id, vf, confidence, tag, source),
             )
             return tid
 
@@ -327,6 +396,7 @@ class KnowledgeGraph:
                         "valid_from": row["valid_from"],
                         "valid_to": row["valid_to"],
                         "confidence": row["confidence"],
+                        "confidence_tag": row["confidence_tag"],
                         "source": row["source"],
                     })
 
@@ -354,6 +424,7 @@ class KnowledgeGraph:
                         "valid_from": row["valid_from"],
                         "valid_to": row["valid_to"],
                         "confidence": row["confidence"],
+                        "confidence_tag": row["confidence_tag"],
                         "source": row["source"],
                     })
 
@@ -389,6 +460,7 @@ class KnowledgeGraph:
                     "valid_from": r["valid_from"],
                     "valid_to": r["valid_to"],
                     "confidence": r["confidence"],
+                    "confidence_tag": r["confidence_tag"],
                     "active": r["valid_to"] is None,
                 }
                 for r in rows
@@ -467,11 +539,23 @@ class KnowledgeGraph:
     # -- Stats ---------------------------------------------------------------
 
     def stats(self) -> dict:
-        """Return basic graph statistics."""
+        """Return basic graph statistics including confidence tag distribution."""
         with self._pool.connect() as conn:
             entities = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
             triples = conn.execute("SELECT COUNT(*) FROM kg_triples").fetchone()[0]
             active = conn.execute(
                 "SELECT COUNT(*) FROM kg_triples WHERE valid_to IS NULL"
             ).fetchone()[0]
-            return {"entities": entities, "triples": triples, "active_triples": active}
+            # R45c: confidence tag distribution
+            tag_rows = conn.execute(
+                "SELECT confidence_tag, COUNT(*) as cnt "
+                "FROM kg_triples WHERE valid_to IS NULL "
+                "GROUP BY confidence_tag"
+            ).fetchall()
+            by_tag = {row["confidence_tag"]: row["cnt"] for row in tag_rows}
+            return {
+                "entities": entities,
+                "triples": triples,
+                "active_triples": active,
+                "by_confidence_tag": by_tag,
+            }

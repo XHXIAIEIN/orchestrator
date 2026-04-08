@@ -4,6 +4,10 @@ Extracted memories from the 6-type extractor were previously written to
 events.db/agent_events (dead data). This bridge routes them to the
 6-dimensional structured_memory.py system where they're actually queryable.
 
+R45c: Content-hash cache integration. Before inserting a memory,
+SHA256(text + category) check skips exact duplicates at O(1) cost,
+before the more expensive keyword-based _is_duplicate() runs.
+
 Mapping:
   profile    -> persona     (aspect/description/subject)
   preferences -> preference (directive/priority/condition/suggested_action)
@@ -43,6 +47,17 @@ def get_store(db_path: str = None) -> StructuredMemoryStore:
         kwargs = {"db_path": db_path} if db_path else {}
         _store_instance = StructuredMemoryStore(**kwargs)
     return _store_instance
+
+
+# ── Content hash cache (R45c) ─────────────────────────────────────────
+
+def _get_hash_cache():
+    """Get ContentHashCache instance, or None if unavailable."""
+    try:
+        from src.storage.content_hash import ContentHashCache
+        return ContentHashCache()
+    except Exception:
+        return None
 
 
 # ── Category -> Dimension mapping ──────────────────────────────────────
@@ -121,6 +136,9 @@ def save_extracted_to_structured_memory(
     now = datetime.now(timezone.utc)
     counts: dict[str, int] = {}
 
+    # R45c: Content hash cache for O(1) dedup before expensive keyword search
+    hash_cache = _get_hash_cache()
+
     for m in memories:
         category = m.get("category", "")
         dimension = _CATEGORY_TO_DIMENSION.get(category)
@@ -135,14 +153,29 @@ def save_extracted_to_structured_memory(
         if not l0:
             continue
 
-        # Dedup: check if similar memory already exists
+        # R45c: Fast content-hash check first (O(1) vs O(n) keyword search)
+        if hash_cache:
+            point_key = f"{category}.{l0[:64]}"
+            status = hash_cache.check("memory_bridge", point_key, l0, category)
+            if status == "unchanged":
+                log.debug(f"memory_bridge: content-hash hit for '{l0[:50]}...', skipping")
+                continue
+
+        # Dedup: check if similar memory already exists (slower, keyword-based)
         if _is_duplicate(store, dimension, l0):
             log.debug(f"memory_bridge: duplicate found for '{l0[:50]}...', skipping")
+            # Record hash so next time we skip at O(1)
+            if hash_cache:
+                hash_cache.update("memory_bridge", point_key, l0, category)
             continue
 
         entry = _build_entry(category, dimension, l0, l1, tags, now)
         store.add(dimension, entry)
         counts[dimension.value] = counts.get(dimension.value, 0) + 1
+
+        # R45c: Record hash after successful insert
+        if hash_cache:
+            hash_cache.update("memory_bridge", point_key, l0, category)
 
     if counts:
         log.info(f"memory_bridge: saved {sum(counts.values())} memories -> {counts}")

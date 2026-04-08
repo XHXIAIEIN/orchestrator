@@ -33,7 +33,7 @@ PROFILE_TOOL = {
             "blind_spots": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Possible blind spots, concerning patterns, or overlooked issues (2-4 items)"
+                "description": "Possible blind spots, concerning patterns, or overlooked issues (2-4 items). MUST incorporate surprise scoring signals when available."
             },
             "suggestions": {
                 "type": "array",
@@ -109,7 +109,61 @@ def _build_context(db: EventsDB, analysis_type: str = 'periodic') -> str:
         for s in summaries[:5]:
             parts.append(f"[{s['date']}] {s.get('summary', '')[:80]}")
 
+    # R45c: Surprise scoring — structured signals to ground blind_spots
+    surprise_section = _build_surprise_context(events, analysis_type)
+    if surprise_section:
+        parts.append(surprise_section)
+
     return "\n".join(parts)
+
+
+def _build_surprise_context(events: list[dict], analysis_type: str) -> str:
+    """Run surprise scoring and format as context for the LLM.
+
+    This gives the profile analyst structured, reproducible signals instead
+    of relying purely on LLM intuition for blind_spots.
+    """
+    from src.analysis.surprise_scoring import compute_surprise_report
+
+    # Optionally include KG triples for confidence-weight factor
+    triples = None
+    try:
+        from src.storage.knowledge_graph import KnowledgeGraph
+        kg = KnowledgeGraph()
+        stats = kg.stats()
+        if stats.get("active_triples", 0) > 0:
+            # Get recent triples (simplified — query all active)
+            from src.storage.pool import get_pool
+            import sqlite3
+            pool = get_pool(kg.db_path, row_factory=sqlite3.Row, log_prefix="kg_surprise")
+            with pool.connect() as conn:
+                rows = conn.execute(
+                    "SELECT t.*, s.name AS subject, o.name AS object "
+                    "FROM kg_triples t "
+                    "JOIN kg_entities s ON t.subject_id = s.id "
+                    "JOIN kg_entities o ON t.object_id = o.id "
+                    "WHERE t.valid_to IS NULL "
+                    "ORDER BY t.extracted_at DESC LIMIT 100"
+                ).fetchall()
+                triples = [dict(r) for r in rows]
+    except Exception:
+        pass  # KG not available, skip confidence factor
+
+    report = compute_surprise_report(
+        events, triples=triples, period=analysis_type,
+    )
+
+    if not report.top_surprises:
+        return ""
+
+    lines = ["\n--- Surprise Scoring（系统性异常检测 R45c）---"]
+    lines.append(f"检测到 {len(report.signals)} 个信号，前 {len(report.top_surprises)} 个最显著：")
+    for i, s in enumerate(report.top_surprises, 1):
+        lines.append(f"  {i}. [{s.factor}] score={s.score:.2f} — {s.description}")
+        lines.append(f"     Why: {s.why}")
+    lines.append("请在 blind_spots 中整合以上信号（可补充 LLM 洞察，但不要忽略结构化发现）。")
+
+    return "\n".join(lines)
 
 
 JSON_INSTRUCTION = """
@@ -144,8 +198,20 @@ class ProfileAnalyst:
             log.error("ProfileAnalyst: agent_query_json failed, skipping this run")
             return None
 
+        # R45c: Attach surprise scoring metadata to the result
+        self._attach_surprise_metadata(parsed, analysis_type)
         self.db.save_profile_analysis(parsed, analysis_type)
         return parsed
+
+    def _attach_surprise_metadata(self, result: dict, analysis_type: str) -> None:
+        """Attach surprise scoring report to profile analysis output."""
+        try:
+            from src.analysis.surprise_scoring import compute_surprise_report
+            events = self.db.get_recent_events(days=30 if analysis_type == 'periodic' else 3)
+            report = compute_surprise_report(events, period=analysis_type, top_k=5)
+            result["_surprise_scoring"] = report.to_dict()
+        except Exception as e:
+            log.debug(f"Surprise scoring attachment failed: {e}")
 
 
 if __name__ == "__main__":

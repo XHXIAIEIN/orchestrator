@@ -211,27 +211,72 @@ class QdrantStore:
         text: str,
         metadata: dict,
         auto_classify: bool = True,
-    ) -> None:
+        use_content_hash: bool = True,
+    ) -> str:
         """Embed and upsert a single document.
 
         When auto_classify=True (default), adds domain/category/topic metadata
         from Palace Hierarchy classification (R44 P0#2) if not already present.
+
+        When use_content_hash=True (default, R45c), checks content hash first:
+            - "unchanged": skip entirely (saves embedding + Qdrant write)
+            - "metadata_only": update Qdrant payload without re-embedding
+            - "changed"/"new": full embed + upsert
+
+        Returns: "unchanged", "metadata_only", "upserted"
         """
         if auto_classify:
             source = metadata.get("source", metadata.get("source_file", ""))
             hierarchy = classify_metadata(text, source)
-            # Only fill in missing keys — don't override explicit metadata
             for key in ("domain", "category", "topic"):
                 if key not in metadata:
                     metadata[key] = hierarchy[key]
 
-        vector = await self.embed_single(text)
         point_id = make_point_id(collection_prefix, sqlite_id)
+        point_key = f"{collection_prefix}.{sqlite_id}"
+
+        # R45c: Content hash check
+        if use_content_hash:
+            try:
+                from src.storage.content_hash import ContentHashCache
+                cache = ContentHashCache()
+                source_hint = metadata.get("source", metadata.get("source_file", ""))
+                status = cache.check(collection, point_key, text, source_hint, metadata)
+
+                if status == "unchanged":
+                    return "unchanged"
+
+                if status == "metadata_only":
+                    # Update payload without re-embedding
+                    payload = {**metadata, "text": text, "sqlite_id": sqlite_id}
+                    self.client.set_payload(
+                        collection_name=collection,
+                        payload=payload,
+                        points=[point_id],
+                    )
+                    cache.update(collection, point_key, text, source_hint, metadata)
+                    return "metadata_only"
+            except Exception:
+                logger.debug("Content hash cache unavailable, proceeding with full upsert")
+
+        vector = await self.embed_single(text)
         payload = {**metadata, "text": text, "sqlite_id": sqlite_id}
         self.client.upsert(
             collection_name=collection,
             points=[models.PointStruct(id=point_id, vector=vector, payload=payload)],
         )
+
+        # R45c: Record hash after successful upsert
+        if use_content_hash:
+            try:
+                from src.storage.content_hash import ContentHashCache
+                cache = ContentHashCache()
+                source_hint = metadata.get("source", metadata.get("source_file", ""))
+                cache.update(collection, point_key, text, source_hint, metadata)
+            except Exception:
+                pass  # Non-critical
+
+        return "upserted"
 
     async def upsert_batch(
         self,
