@@ -268,33 +268,49 @@ section:last-of-type { border-bottom: none; }
 .cat-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s ease; }
 
 /* ── Insights ── */
+/* ── Daily Card ── */
+.daily-behavior {
+  font-family: var(--serif); font-size: .9rem; line-height: 2;
+  color: var(--text-mid); margin-bottom: 20px;
+}
 .insight-daily {
-  font-family: var(--serif); font-size: .95rem; line-height: 1.9;
-  color: var(--text); margin-bottom: 24px;
+  margin-bottom: 24px;
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px 20px;
+  border-radius: var(--radius); padding: 20px 24px;
 }
-.insight-daily .daily-headline {
-  font-size: .95rem; line-height: 1.8; margin-bottom: 14px;
+.insight-daily .daily-overview {
+  font-family: var(--serif); font-size: .9rem; line-height: 1.9;
+  color: var(--text); margin-bottom: 16px;
 }
-.insight-daily .daily-topics {
-  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;
+.insight-daily .daily-two-col {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
 }
-.insight-daily .daily-topic-tag {
-  font-family: var(--mono); font-size: .68rem; color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  padding: 3px 10px; border-radius: 3px; letter-spacing: .3px;
+@media (max-width: 700px) { .insight-daily .daily-two-col { grid-template-columns: 1fr; } }
+.insight-daily .daily-list-label {
+  font-size: .62rem; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 500; margin-bottom: 8px;
 }
-.insight-daily .daily-time-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 16px;
-  margin-bottom: 14px;
+.insight-daily .daily-list {
+  list-style: none; padding: 0; margin: 0 0 14px 0;
 }
-.insight-daily .daily-time-row {
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: .75rem; color: var(--text-mid); padding: 4px 0;
+.insight-daily .daily-list li {
+  font-family: var(--serif); font-size: .82rem; line-height: 1.7;
+  color: var(--text-mid); padding: 5px 0;
   border-bottom: 1px solid #f4f4f0;
 }
-.insight-daily .daily-time-row .time-label { flex: 1; }
+.insight-daily .daily-list li::before {
+  content: ''; display: inline-block; width: 5px; height: 5px;
+  border-radius: 50%; margin-right: 8px; vertical-align: middle;
+}
+.insight-daily .daily-list.strengths li::before { background: var(--accent); }
+.insight-daily .daily-list.blindspots li::before { background: #c9a44a; }
+.insight-daily .daily-time-grid {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.insight-daily .daily-time-row {
+  display: flex; align-items: center; font-size: .75rem; color: var(--text-mid); padding: 3px 0;
+}
+.insight-daily .daily-time-row .time-label { min-width: 80px; }
 .insight-daily .daily-time-row .time-bar-wrap {
   flex: 1; height: 3px; background: #f0f0ec; border-radius: 2px; margin: 0 8px;
 }
@@ -302,13 +318,16 @@ section:last-of-type { border-bottom: none; }
   height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s ease;
 }
 .insight-daily .daily-time-row .time-val {
-  font-family: var(--mono); font-size: .7rem; min-width: 36px; text-align: right;
+  font-family: var(--mono); font-size: .7rem; min-width: 32px; text-align: right;
 }
-.daily-behavior {
-  font-family: var(--serif); font-size: .9rem; line-height: 2;
-  color: var(--text-mid); margin-bottom: 20px;
+.insight-daily .daily-topics {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px;
 }
-.insight-daily .tags { font-family: var(--mono); font-size: .7rem; color: var(--accent); margin-top: 8px; letter-spacing: .3px; }
+.insight-daily .daily-topic-tag {
+  font-family: var(--mono); font-size: .66rem; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  padding: 2px 8px; border-radius: 3px; letter-spacing: .3px;
+}
 .insight-overview {
   font-family: var(--serif); font-size: .9rem; line-height: 2;
   color: var(--text-mid);
@@ -1158,29 +1177,47 @@ function renderInsightsSection(insights) {
   loadPolicySuggestions(re, recHtml);
 }
 
-function renderDailySummary(summary) {
+function renderDailySummary(summary, profile) {
   const el = $('daily-summary');
+  const beh = $('daily-behavior');
   const latest = summary.summaries?.[0];
   if (!latest) { el.innerHTML = '<span style="color:var(--text-dim)">Awaiting first analysis</span>'; return; }
   try {
     const d = JSON.parse(latest.summary || '{}');
-    const parts = [];
 
-    // Headline
-    if (d.summary) parts.push('<div class="daily-headline">' + esc(d.summary) + '</div>');
+    // Behavioral insights — above the card
+    beh.textContent = d.behavioral_insights || '';
 
-    // Topic tags
-    if (d.top_topics?.length) {
-      parts.push('<div class="daily-topics">' + d.top_topics.map(t =>
-        '<span class="daily-topic-tag">' + esc(t) + '</span>'
-      ).join('') + '</div>');
+    // Overview: prefer profile overview (richer), fallback to daily summary
+    const overview = profile?.overview || d.summary || '';
+    let html = overview ? '<div class="daily-overview">' + esc(overview) + '</div>' : '';
+
+    // Two-column layout: left = strengths/blindspots, right = time + topics
+    const leftParts = [];
+    const rightParts = [];
+
+    // Left: strengths
+    const strengths = profile?.strengths || [];
+    if (strengths.length) {
+      leftParts.push('<div class="daily-list-label">strengths</div>');
+      leftParts.push('<ul class="daily-list strengths">' +
+        strengths.map(s => '<li>' + esc(s) + '</li>').join('') + '</ul>');
     }
 
-    // Time breakdown as mini bars
+    // Left: blind spots
+    const blindspots = profile?.blind_spots || [];
+    if (blindspots.length) {
+      leftParts.push('<div class="daily-list-label">blind spots</div>');
+      leftParts.push('<ul class="daily-list blindspots">' +
+        blindspots.map(s => '<li>' + esc(s) + '</li>').join('') + '</ul>');
+    }
+
+    // Right: time breakdown
     if (d.time_breakdown && Object.keys(d.time_breakdown).length) {
-      const entries = Object.entries(d.time_breakdown).sort((a,b) => b[1] - a[1]);
+      const entries = Object.entries(d.time_breakdown).sort((a,b) => b[1] - a[1]).slice(0, 8);
       const maxMin = Math.max(...entries.map(e => e[1]), 1);
-      parts.push('<div class="daily-time-grid">' + entries.map(([k, v]) => {
+      rightParts.push('<div class="daily-list-label">time</div>');
+      rightParts.push('<div class="daily-time-grid">' + entries.map(([k, v]) => {
         const hrs = (v / 60).toFixed(1);
         const pct = Math.round((v / maxMin) * 100);
         return '<div class="daily-time-row">' +
@@ -1191,11 +1228,22 @@ function renderDailySummary(summary) {
       }).join('') + '</div>');
     }
 
-    el.innerHTML = parts.join('') || '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
+    // Right: topic tags
+    if (d.top_topics?.length) {
+      rightParts.push('<div class="daily-topics">' + d.top_topics.map(t =>
+        '<span class="daily-topic-tag">' + esc(t) + '</span>'
+      ).join('') + '</div>');
+    }
 
-    // Behavioral insights — rendered above the card
-    const beh = $('daily-behavior');
-    beh.textContent = d.behavioral_insights || '';
+    // Assemble two-column if both sides have content
+    if (leftParts.length || rightParts.length) {
+      html += '<div class="daily-two-col">';
+      html += '<div>' + leftParts.join('') + '</div>';
+      html += '<div>' + rightParts.join('') + '</div>';
+      html += '</div>';
+    }
+
+    el.innerHTML = html || '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
   } catch { el.innerHTML = '<p>' + esc(latest.summary || '') + '</p>'; }
 }
 
@@ -1444,7 +1492,7 @@ async function loadAll(){
   $('event-count').textContent=`${(stats.total||0).toLocaleString()} events`;
   renderGlance(stats,events,tasks,debts,summary,insights);
   renderPageStats(stats,tasks,debts);
-  renderDailySummary(summary);
+  renderDailySummary(summary, profile);
   renderInsightsSection(insights);
   renderDebts(debts);
   renderGovernance(tasks);renderHeatmap(heatmap);buildSourceOptions();filterEvents();
