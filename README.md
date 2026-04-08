@@ -293,7 +293,7 @@ These are not required. The system adapts automatically:
 
 ## Design References
 
-Pattern research from 78+ open-source projects across 16 rounds. 119 patterns total (94 implemented). Full pattern library at [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md).
+Pattern research from 100+ open-source projects across 44 rounds. 217 patterns total (194 implemented). Full pattern library at [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md).
 
 Core sources:
 

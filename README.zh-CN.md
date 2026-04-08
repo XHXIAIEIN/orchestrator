@@ -293,7 +293,7 @@ Governor 支持两种派单模式：
 
 ## 设计参考
 
-78+ 开源项目、16 轮偷师的模式研究。119 个模式（94 个已实现）。完整模式库见 [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md)。
+100+ 开源项目、44 轮偷师的模式研究。217 个模式（194 个已实现）。完整模式库见 [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md)。
 
 核心来源：
 
