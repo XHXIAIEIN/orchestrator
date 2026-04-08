@@ -13,48 +13,48 @@ log = logging.getLogger(__name__)
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
 from src.core.agent_client import agent_query_json
-from src.core.llm_router import MODEL_SONNET
+from src.core.llm_router import MODEL_OPUS
 
 PROFILE_TOOL = {
     "name": "save_profile_analysis",
-    "description": "保存深度用户画像分析结果",
+    "description": "Save deep user profile analysis result",
     "input_schema": {
         "type": "object",
         "properties": {
             "overview": {
                 "type": "string",
-                "description": "对用户这段时间整体状态的印象（200字以内，直接、有洞察力）"
+                "description": "Overall impression of user's state this period (under 200 Chinese chars, direct, insightful)"
             },
             "strengths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "从数据中观察到的用户优点、特质或能力（3-5条）"
+                "description": "User strengths, traits, or abilities observed from data (3-5 items)"
             },
             "blind_spots": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "可能的盲区、值得警惕的模式或被忽视的事项（2-4条）"
+                "description": "Possible blind spots, concerning patterns, or overlooked issues (2-4 items)"
             },
             "suggestions": {
                 "type": "array",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "action": {"type": "string", "description": "具体可执行的建议"},
-                        "reason": {"type": "string", "description": "建议的理由和数据依据"},
+                        "action": {"type": "string", "description": "Specific actionable suggestion"},
+                        "reason": {"type": "string", "description": "Reason and data evidence for the suggestion"},
                         "priority": {"type": "string", "enum": ["high", "medium", "low"]}
                     },
                     "required": ["action", "reason", "priority"]
                 },
-                "description": "3-5 条有针对性的建议，基于数据"
+                "description": "3-5 targeted suggestions based on data"
             },
             "commentary": {
                 "type": "string",
-                "description": "AI 的自由评论：想法、感受、有趣的观察，语气自然随意（100-200字）"
+                "description": "Frenemy roast: data-driven trash talk, late-night text vibe not weekly report (200-350 Chinese chars)"
             },
             "daily_note": {
                 "type": "string",
-                "description": "仅限 daily 类型：对昨天这一天的专属点评（100字以内），periodic 类型留空字符串"
+                "description": "Daily type only: yesterday's dedicated roast (under 100 Chinese chars). Empty string for periodic type."
             }
         },
         "required": ["overview", "strengths", "blind_spots", "suggestions", "commentary", "daily_note"]
@@ -114,21 +114,20 @@ def _build_context(db: EventsDB, analysis_type: str = 'periodic') -> str:
 
 JSON_INSTRUCTION = """
 
-CRITICAL: Output ONLY a valid JSON object. No markdown fences, no extra text.
-Keep the TOTAL response under 800 characters to avoid truncation.
+CRITICAL: All data is already provided below. Do NOT use any tools. Output ONLY a valid JSON object directly. No markdown fences, no planning, no extra text.
 
 {
-  "overview": "整体印象，50字以内",
-  "strengths": ["优点1（20字内）", "优点2", "优点3"],
-  "blind_spots": ["盲区1（20字内）", "盲区2"],
+  "overview": "overall impression (50-100 Chinese chars)",
+  "strengths": ["strength with data evidence", "strength 2", "strength 3"],
+  "blind_spots": ["blind spot with data evidence", "blind spot 2"],
   "suggestions": [
-    {"action": "建议（30字内）", "reason": "理由（20字内）", "priority": "high|medium|low"}
+    {"action": "specific actionable suggestion", "reason": "data-backed reason", "priority": "high|medium|low"}
   ],
-  "commentary": "自由评论，50字以内",
-  "daily_note": "daily类型填写，periodic留空字符串"
+  "commentary": "frenemy roast, 200-350 Chinese chars, data-driven, late-night text vibe not weekly report",
+  "daily_note": "daily type only (under 100 Chinese chars), empty string for periodic"
 }"""
 
-MODEL_NAME = MODEL_SONNET
+MODEL_NAME = MODEL_OPUS
 
 
 class ProfileAnalyst:

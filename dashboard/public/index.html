@@ -274,6 +274,40 @@ section:last-of-type { border-bottom: none; }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px 20px;
 }
+.insight-daily .daily-headline {
+  font-size: .95rem; line-height: 1.8; margin-bottom: 14px;
+}
+.insight-daily .daily-topics {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;
+}
+.insight-daily .daily-topic-tag {
+  font-family: var(--mono); font-size: .68rem; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  padding: 3px 10px; border-radius: 3px; letter-spacing: .3px;
+}
+.insight-daily .daily-time-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 16px;
+  margin-bottom: 14px;
+}
+.insight-daily .daily-time-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: .75rem; color: var(--text-mid); padding: 4px 0;
+  border-bottom: 1px solid #f4f4f0;
+}
+.insight-daily .daily-time-row .time-label { flex: 1; }
+.insight-daily .daily-time-row .time-bar-wrap {
+  flex: 1; height: 3px; background: #f0f0ec; border-radius: 2px; margin: 0 8px;
+}
+.insight-daily .daily-time-row .time-bar-fill {
+  height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s ease;
+}
+.insight-daily .daily-time-row .time-val {
+  font-family: var(--mono); font-size: .7rem; min-width: 36px; text-align: right;
+}
+.insight-daily .daily-behavior {
+  font-size: .85rem; line-height: 1.9; color: var(--text-mid);
+  border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px;
+}
 .insight-daily .tags { font-family: var(--mono); font-size: .7rem; color: var(--accent); margin-top: 8px; letter-spacing: .3px; }
 .insight-overview {
   font-family: var(--serif); font-size: .9rem; line-height: 2;
@@ -552,35 +586,6 @@ section:last-of-type { border-bottom: none; }
     <button class="roast-history-toggle" id="roast-history-btn" onclick="toggleRoastHistory()" style="display:none">往期语录</button>
   </div>
 
-  <!-- 一览 -->
-  <section id="section-glance">
-    <div class="section-head">
-      <span class="section-label">一览</span>
-    </div>
-    <div class="card">
-      <div class="gov-stats" id="page-stats"></div>
-      <div id="glance-entries" style="margin-top:8px"></div>
-    </div>
-  </section>
-
-  <!-- 三省六部 -->
-  <section id="section-gov">
-    <div class="section-head">
-      <span class="section-label">三省六部</span>
-      <span class="section-meta" id="gov-meta"></span>
-    </div>
-    <div id="gov-stats" class="gov-stats"></div>
-    <div class="gov-layout">
-      <div class="gov-block" id="gov-zhongshu"></div>
-      <div class="gov-block" id="gov-menxia"></div>
-      <div class="gov-block" id="gov-shangshu"></div>
-      <div class="gov-recent-block">
-        <div class="gov-sub-label">最近任务</div>
-        <div id="gov-recent" class="gov-task-list"></div>
-      </div>
-    </div>
-  </section>
-
   <!-- Insights -->
   <section id="section-insights">
     <div class="section-head">
@@ -628,6 +633,35 @@ section:last-of-type { border-bottom: none; }
         <div id="sys-collectors"></div>
         <div id="sys-channels"></div>
         <div class="sys-agents" id="sys-agents"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 一览 -->
+  <section id="section-glance">
+    <div class="section-head">
+      <span class="section-label">一览</span>
+    </div>
+    <div class="card">
+      <div class="gov-stats" id="page-stats"></div>
+      <div id="glance-entries" style="margin-top:8px"></div>
+    </div>
+  </section>
+
+  <!-- 三省六部 -->
+  <section id="section-gov">
+    <div class="section-head">
+      <span class="section-label">三省六部</span>
+      <span class="section-meta" id="gov-meta"></span>
+    </div>
+    <div id="gov-stats" class="gov-stats"></div>
+    <div class="gov-layout">
+      <div class="gov-block" id="gov-zhongshu"></div>
+      <div class="gov-block" id="gov-menxia"></div>
+      <div class="gov-block" id="gov-shangshu"></div>
+      <div class="gov-recent-block">
+        <div class="gov-sub-label">最近任务</div>
+        <div id="gov-recent" class="gov-task-list"></div>
       </div>
     </div>
   </section>
@@ -1126,16 +1160,43 @@ function renderInsightsSection(insights) {
 function renderDailySummary(summary) {
   const el = $('daily-summary');
   const latest = summary.summaries?.[0];
-  if (latest) {
-    try {
-      const d = JSON.parse(latest.summary || '{}');
-      let html = '<p>' + esc(d.summary || '') + '</p>';
-      if (d.top_topics?.length) html += '<div class="tags">' + d.top_topics.map(t => '#' + esc(t)).join('  ') + '</div>';
-      el.innerHTML = html || '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
-    } catch { el.innerHTML = '<p>' + esc(latest.summary || '') + '</p>'; }
-  } else {
-    el.innerHTML = '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
-  }
+  if (!latest) { el.innerHTML = '<span style="color:var(--text-dim)">Awaiting first analysis</span>'; return; }
+  try {
+    const d = JSON.parse(latest.summary || '{}');
+    const parts = [];
+
+    // Headline
+    if (d.summary) parts.push('<div class="daily-headline">' + esc(d.summary) + '</div>');
+
+    // Topic tags
+    if (d.top_topics?.length) {
+      parts.push('<div class="daily-topics">' + d.top_topics.map(t =>
+        '<span class="daily-topic-tag">' + esc(t) + '</span>'
+      ).join('') + '</div>');
+    }
+
+    // Time breakdown as mini bars
+    if (d.time_breakdown && Object.keys(d.time_breakdown).length) {
+      const entries = Object.entries(d.time_breakdown).sort((a,b) => b[1] - a[1]);
+      const maxMin = Math.max(...entries.map(e => e[1]), 1);
+      parts.push('<div class="daily-time-grid">' + entries.map(([k, v]) => {
+        const hrs = (v / 60).toFixed(1);
+        const pct = Math.round((v / maxMin) * 100);
+        return '<div class="daily-time-row">' +
+          '<span class="time-label">' + esc(k) + '</span>' +
+          '<span class="time-bar-wrap"><span class="time-bar-fill" style="width:' + pct + '%"></span></span>' +
+          '<span class="time-val">' + hrs + 'h</span>' +
+        '</div>';
+      }).join('') + '</div>');
+    }
+
+    // Behavioral insights
+    if (d.behavioral_insights) {
+      parts.push('<div class="daily-behavior">' + esc(d.behavioral_insights) + '</div>');
+    }
+
+    el.innerHTML = parts.join('') || '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
+  } catch { el.innerHTML = '<p>' + esc(latest.summary || '') + '</p>'; }
 }
 
 /* ── Debts ── */

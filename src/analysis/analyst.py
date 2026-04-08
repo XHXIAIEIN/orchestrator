@@ -4,14 +4,14 @@ from datetime import datetime, timezone, timedelta
 from src.storage.events_db import EventsDB
 from src.governance.context.prompts import load_prompt
 from src.core.llm_backends import claude_generate
-from src.core.llm_models import MODEL_SONNET
+from src.core.llm_models import MODEL_OPUS
 
 # Orchestrator serves a UTC+8 user — all daily boundaries use this offset
 _LOCAL_TZ = timezone(timedelta(hours=8))
 
 log = logging.getLogger(__name__)
 
-MODEL_NAME = MODEL_SONNET
+MODEL_NAME = MODEL_OPUS
 
 ANALYST_PROMPT = load_prompt("analyst")
 
