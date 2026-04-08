@@ -1,44 +1,56 @@
+# Plan Template
+
+## Identity
+
+This template defines the structure for all Orchestrator implementation plans. Every multi-step task must produce a plan in this format before code is written.
+
+## How You Work
+
+### Plan Structure
+
+```markdown
 # Plan: {title}
 
 ## Goal
-{one sentence, verifiable — what does "done" look like?}
+{One sentence, verifiable — what does "done" look like?}
 
 ## File Map
-All files this plan will touch. Reviewer uses this for scope check.
-- `path/to/file1.py` — Create | Modify | Delete
-- `path/to/file2.ts` — Create | Modify | Delete
+- `{absolute/path/to/file.py}` — Create | Modify | Delete
 
 ## Steps
-
-Each step: 2-5 minutes, action verb, explicit verify command.
-
-1. [Action verb] [specific target] → verify: [exact command]
-2. [Action verb] [specific target] → verify: [exact command]
+1. {Action verb} {specific target} → verify: {exact command}
+2. {Action verb} {specific target} → verify: {exact command}
    - depends on: step 1
-3. [Action verb] [specific target] → verify: [exact command]
+```
 
-## No Placeholder Iron Rule
+### No Placeholder Iron Rule
 
-The following are BANNED in plan steps. Every one must be replaced with specifics:
+The following phrases are banned in plan steps. Each must be replaced with specifics:
 
-| Banned phrase | Replace with |
+| Banned Phrase | Replace With |
 |---|---|
 | "implement the logic" | Exact logic: "Add null check for `user.email`, return 400 if missing" |
-| "add appropriate error handling" | Exact errors: "Catch `ConnectionError`, retry 3x with 1s backoff, then raise `ServiceUnavailable`" |
+| "add appropriate error handling" | Named errors: "Catch `ConnectionError`, retry 3x with 1s backoff, then raise `ServiceUnavailable`" |
 | "update as needed" | Exhaustive list: "Update `config.yaml` key `db.host` from localhost to `${DB_HOST}`" |
 | "etc." / "and so on" | Full enumeration of every item |
-| "similar to X" | Write out the actual code/steps, even if repetitive |
+| "similar to X" | Write out the actual steps, even if repetitive |
 | "refactor" (alone) | Specific transform: "Extract lines 42-78 into `validate_input()`, call from `handle_request()`" |
 | "clean up" (alone) | Specific items: "Remove unused import `os` on line 3, delete empty `__init__.py` in `utils/`" |
 | "optimize" (alone) | Specific change: "Replace O(n^2) nested loop in `search()` with dict lookup, expected O(n)" |
 
-## Step Format Reference
+### Step Requirements
+
+- Each step: 2-5 minutes of work, starts with an action verb, has an explicit verify command.
+- Dependencies declared explicitly: `depends on: step N`. Implicit ordering is not allowed.
+- File paths are absolute. "that config file" is not a valid target.
+
+### Step Format Reference
 
 Good:
 ```
 1. Create `src/validators/email.py` with `validate_email(addr: str) -> bool`
    that checks RFC 5322 format using `re.fullmatch(EMAIL_PATTERN, addr)`
-   → verify: `python -c "from src.validators.email import validate_email; assert validate_email('a@b.com'); assert not validate_email('bad')"`
+   → verify: python -c "from src.validators.email import validate_email; assert validate_email('a@b.com'); assert not validate_email('bad')"
 ```
 
 Bad:
@@ -47,31 +59,37 @@ Bad:
    → verify: test it
 ```
 
-## Phase Gates
-
-For multi-phase work (Spec → Plan → Implement → Verify), each phase boundary requires an explicit gate check before proceeding.
-
-Insert a gate block between phases:
+### Dependency Declaration
 
 ```
---- PHASE GATE: [phase name] → [next phase] ---
-□ Deliverable exists: [specific artifact — spec doc, plan file, passing tests]
-□ Acceptance criteria met: [list each criterion with evidence]
-□ No open questions: [all ambiguities resolved, or explicitly deferred with rationale]
-□ Owner review: [required/not required — if required, STOP and wait]
+3. Add route `/api/users` in `app.py` calling `validate_email` from step 1
+   - depends on: step 1
+   → verify: curl -X POST localhost:8000/api/users -d '{"email":"bad"}' | grep 400
+```
+
+## Phase Gates
+
+For multi-phase work (Spec, Plan, Implement, Verify), each phase boundary requires a gate check before proceeding. Insert a gate block between phases:
+
+```
+--- PHASE GATE: {phase name} → {next phase} ---
+[ ] Deliverable exists: {specific artifact — spec doc, plan file, passing tests}
+[ ] Acceptance criteria met: {each criterion with evidence}
+[ ] No open questions: {all ambiguities resolved, or explicitly deferred with rationale}
+[ ] Owner review: {required | not required — if required, STOP and wait}
 ```
 
 ### Gate Rules
 
 1. **No implicit phase transitions.** Moving from planning to implementation without a gate check is a protocol violation.
-2. **"Owner review: required" means STOP.** Do not proceed until the owner explicitly approves. This is a hard gate, not a suggestion.
-3. **Deferred questions must be logged.** If you proceed with an open question, write it as a `⚠️ ASSUMPTION:` in the plan with a rationale. The owner can challenge it later.
+2. **"Owner review: required" means STOP.** Do not proceed until the owner explicitly approves.
+3. **Deferred questions must be logged** as `ASSUMPTION: {question} — {rationale}` in the plan.
 4. **Gate evidence must be concrete.** "Spec looks complete" is not evidence. "Spec covers 3 endpoints, 2 error cases, 1 auth flow — all with request/response examples" is evidence.
 
 ### Default Gate Configuration
 
 | Transition | Owner Review Required? |
-|-----------|----------------------|
+|---|---|
 | Spec → Plan | Yes (scope confirmation) |
 | Plan → Implement | No (plan IS the approval) |
 | Implement → Verify | No (automatic) |
@@ -79,39 +97,37 @@ Insert a gate block between phases:
 
 Override: If the user says "just do it" or grants blanket approval, all gates become automatic (still logged, but no STOP).
 
-## Dependency Declaration
+### Gate Checklist Per Transition
 
-If step N depends on step M, declare explicitly:
-```
-3. Add route `/api/users` in `app.py` calling `validate_email` from step 1
-   - depends on: step 1
-   → verify: `curl -X POST localhost:8000/api/users -d '{"email":"bad"}' | grep 400`
-```
+**Gate 1: Spec → Plan** (before writing any plan steps)
+- [ ] Goal is one sentence and verifiable (not "improve X")
+- [ ] File Map is complete (every file to be touched is listed)
+- [ ] Ambiguities resolved (if spec says "add auth" but not which type → ASK)
+- [ ] Scope confirmed (nothing in File Map the user did not request)
 
-Implicit dependencies (reader must infer order) are not allowed.
-
-## Phase Gates
-
-Each phase ends with a gate. Do NOT cross into the next phase until all gate conditions pass.
-
-### Gate 1: SPECIFY → PLAN
-Before writing any plan steps:
-- [ ] Goal is one sentence, verifiable (not "improve X" — what does done look like?)
-- [ ] File Map is complete (every file that will be touched is listed)
-- [ ] Ambiguities resolved (if spec says "add auth" but not which type → ASK, don't guess)
-- [ ] Scope confirmed (nothing in File Map that the user didn't ask for)
-
-### Gate 2: PLAN → IMPLEMENT
-Before writing any code:
-- [ ] Every step has an action verb + specific target + verify command
-- [ ] No banned placeholder phrases (check against Iron Rule table above)
-- [ ] Dependencies are explicit (no implicit ordering)
+**Gate 2: Plan → Implement** (before writing any code)
+- [ ] Every step has action verb + specific target + verify command
+- [ ] No banned placeholder phrases (check against Iron Rule table)
+- [ ] Dependencies are explicit
 - [ ] Steps are 2-5 min each (split anything bigger)
-- [ ] Owner has seen the plan (unless task is clearly reversible and < 30 min total)
+- [ ] Owner has seen the plan (unless task is reversible and under 30 min total)
 
-### Gate 3: IMPLEMENT → DONE
-Before declaring completion:
+**Gate 3: Implement → Done** (before declaring completion)
 - [ ] Every step's verify command has been run and passed
-- [ ] No unrelated changes in `git diff` (surgical changes rule)
-- [ ] Orphaned imports/vars from YOUR changes are cleaned up
+- [ ] No unrelated changes in `git diff`
+- [ ] Orphaned imports/vars from your changes are cleaned up
 - [ ] If tests exist, they pass
+
+## Quality Bar
+
+- Goal must be falsifiable: "improve performance" fails; "reduce p95 latency from 200ms to under 100ms" passes.
+- File Map must list every file before the first step is written. Files discovered mid-plan require a File Map update.
+- Total plan length: 5-30 steps. Under 5 for a multi-step task = too coarse. Over 30 = split into sub-plans.
+- Every step's verify command must be copy-pasteable — no pseudocode, no "check the output".
+
+## Boundaries
+
+- **STOP and ask the user** if the plan exceeds 30 steps — the task should be split into sub-plans with separate ownership.
+- **STOP and ask the user** if the File Map includes files outside the project root — cross-project changes need explicit scope approval.
+- Never skip a phase gate, even for "trivial" changes. Logging "Gate passed: all criteria met" takes 5 seconds; recovering from a skipped gate takes hours.
+- A plan with any banned placeholder phrase is incomplete and must not proceed to implementation.

@@ -1,74 +1,93 @@
 # Collaboration Modes
 
-Collaboration modes define the mutation contract between the agent and the codebase.
-They are orthogonal to cognitive modes (which define *how* you think) — collaboration modes define *what you're allowed to do*.
+## Identity
 
-## plan
+Collaboration modes define the mutation contract between an Orchestrator agent and the codebase. They control what you are allowed to do — orthogonal to cognitive modes (which control how you think).
 
-**Mutation lock: READ-ONLY. No file writes, no git operations, no side effects.**
+Modes are set explicitly by the task spec or the user. They are never auto-detected.
 
-If the action would reasonably be described as "doing the work" rather than "planning the work," do not do it.
+## How You Work
 
-Three stages, in order:
+### Mode: plan
 
-### 1. Ground
+**Mutation lock: READ-ONLY. Zero file writes, zero git operations, zero side effects.**
+
+If the action would be described as "doing the work" rather than "planning the work," do not do it.
+
+Three stages, executed in order:
+
+**Stage 1 — Ground** (max 10 minutes of tool calls)
 - Read every file mentioned in the task spec
 - Search for references, imports, and call sites
 - List what exists, where, and in what state
-- Output: file inventory with line counts and key symbols
 
-### 2. Intent
-- State the goal in one sentence
-- List constraints (backward compat, style match, perf budget)
-- Identify risks and unknowns
-- Output: intent statement + constraint list
+**Stage 2 — Intent** (max 5 minutes)
+- State the goal in 1 sentence
+- List constraints: backward compat, style match, performance budget, token budget
+- Identify risks and unknowns with likelihood (likely / unlikely / unknown)
 
-### 3. Implementation
-- Produce a step-by-step plan with:
-  - Exact file paths and line ranges
-  - What changes in each file (add/modify/delete)
-  - Verification command for each step
-  - Dependencies between steps
-- Output: `<proposed_plan>` block (machine-parseable)
+**Stage 3 — Implementation Plan**
+- Produce step-by-step plan with exact file paths, line ranges, change descriptions, verify commands, and inter-step dependencies
 
-```
-<proposed_plan>
-- step: 1
-  file: src/governance/dispatcher.py
-  action: Add synthesis check before dispatch
-  lines: 162-170
-  verify: python -m pytest tests/test_dispatcher.py -k synthesis
-  depends_on: []
-</proposed_plan>
-```
+### Mode: execute
 
-**Hard rule**: Plan mode NEVER produces code diffs, only describes them. The plan is the deliverable.
+**Mutation allowed. Assume-first: state assumptions and proceed without asking.**
 
-## execute
+- **60-second research budget**: Read/search for no more than ~60s equivalent before making changes. Over-research is procrastination.
+- **Assume-first**: On ambiguity, pick the most likely interpretation, state it, proceed. The review cycle catches mistakes.
+- **Milestone reporting only**: Report at meaningful milestones ("Function X handles edge case Y", "Tests pass for new validation"), not at each file edit.
+- **Commit per feature point**: Commit every time a meaningful unit works, then keep going.
 
-**Mutation allowed. Assume-first: don't ask, state your assumptions and continue.**
-
-Operating rules:
-- **60-second research budget**: You have ~60s equivalent of reading/searching before you must start making changes. Don't over-research — act on what you know.
-- **Assume-first**: When facing ambiguity, pick the most likely interpretation, state it as an assumption, and proceed. If wrong, the review cycle catches it.
-- **Milestone reporting only**: Don't narrate every file edit. Report at meaningful milestones:
-  - "Function X now handles edge case Y" (not "opened file, found function, added if-statement")
-  - "Tests pass for the new validation logic" (not "ran pytest, 12 tests collected, all green")
-- **Commit per feature point**: Every time a meaningful unit works, commit and keep going.
-
-## default
+### Mode: default (fallback)
 
 **Pair programming mode. Preserve user intent and match existing style.**
 
-- Follow the user's lead — if they want discussion, discuss. If they want code, write code.
-- When modifying existing code, match the surrounding style exactly (naming, spacing, patterns).
-- Preserve user intent: if the user's approach is unconventional but functional, don't "fix" it into your preferred pattern.
-- Ask before making architectural changes that weren't requested.
-- This is the fallback when no explicit mode is set.
+- Follow the user's lead — discussion when they want discussion, code when they want code.
+- Match surrounding style exactly: naming, spacing, patterns.
+- Preserve unconventional-but-functional user approaches — do not "fix" them into your preferred pattern.
+- Ask before making architectural changes that were not requested.
 
-## Mode Selection
+## Output Format
 
-Modes are set explicitly by the task spec or the user. They are NOT auto-detected.
+### plan mode deliverable
+
+```
+<proposed_plan>
+- step: {N}
+  file: {absolute/path/to/file.py}
+  action: {specific change description — no placeholders}
+  lines: {start}-{end}
+  verify: {exact command to confirm step worked}
+  depends_on: [{step numbers}]
+</proposed_plan>
+```
+
+### execute mode milestone report
+
+```
+MILESTONE: {what now works}
+Verified: {command} → {key output line}
+Commit: {short hash} "{message}"
+```
+
+### default mode — no fixed format
+
+Adapt output to the conversation flow. Use code blocks for code, prose for discussion.
+
+## Quality Bar
+
+- plan mode produces zero code diffs — only describes them. The plan is the deliverable.
+- execute mode has a maximum of 3 consecutive file reads before the first write. More than 3 = over-researching.
+- default mode never makes architectural changes without user confirmation.
+- Every plan step specifies exact file paths and line ranges — "the config file" or "around line 50" is not acceptable.
+
+## Boundaries
+
+- **STOP and ask the user** if a task requires mode escalation (e.g., plan mode discovers the task is trivial and wants to just execute it). Mode switches require explicit user or spec approval.
+- **STOP and ask the user** if execute mode encounters 3+ consecutive verification failures on the same step — this indicates a spec problem, not a code problem.
+- plan mode hard rule: producing a code diff (even "just a quick fix") in plan mode is a protocol violation. No exceptions.
+
+## Mode Selection Reference
 
 | spec field | value | mode |
 |---|---|---|

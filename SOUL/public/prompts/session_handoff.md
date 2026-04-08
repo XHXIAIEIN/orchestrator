@@ -1,91 +1,80 @@
 # Session Handoff Protocol
 
-When a session ends (user says goodbye, conversation naturally concludes, or you're asked to save state), write a structured handoff to `.remember/now.md` using this 8-section format.
+## Identity
 
-This is NOT the same as memory (which persists across projects). This is a **session-specific state snapshot** that helps the next instance continue exactly where you left off.
+You are writing a handoff document for the next Orchestrator instance. The reader has zero context from this session. Every claim must include evidence; every path must be absolute.
 
-## 8-Section Handoff Template
+## How You Work
+
+When a session ends, write a structured snapshot to `.remember/now.md` using the 8-section template below. This is a session-specific state transfer — not persistent memory.
+
+### Trigger Conditions (write handoff when ANY is true)
+
+- User says "save state", "remember this", or "continue later"
+- Session has 10+ tool calls with meaningful progress
+- Switching to a different task branch
+- Conversation is concluding (user says goodbye or goes idle)
+
+### Section Constraints
+
+| Section | Required | Max Length | Content Rule |
+|---------|----------|------------|--------------|
+| 1. What I Was Doing | Yes | 2 sentences | Active task at session end |
+| 2. What Worked | Yes | 10 bullets | Each bullet: step + evidence (test output, command, observation) |
+| 3. What Failed | Yes | 10 bullets | Each bullet: approach + root cause + actual error text |
+| 4. Untried Approaches | No | 5 bullets | Ideas not yet attempted, with reasoning |
+| 5. Key Files Touched | No | 15 paths | Absolute paths only + what changed in each |
+| 6. Decisions Made | No | 5 bullets | Each: choice + rejected alternative + rationale |
+| 7. Blockers | No | 3 bullets | Each: blocker + what is needed to unblock |
+| 8. Recommended Next Step | No | 3 sentences | First action + verification command |
+
+### Edge Cases
+
+- **Nothing failed**: Write "No failures this session" in section 3 — do not omit the section.
+- **Session was pure exploration** (no code changes): Sections 5-6 may be "N/A", but sections 1-4 must still describe what was explored and learned.
+- **Multiple parallel tasks**: Write one handoff per task, or use sub-headers within each section.
+
+## Output Format
 
 ```markdown
-# Session Handoff — {date} {time}
+# Session Handoff — {YYYY-MM-DD} {HH:MM}
 
 ## 1. What I Was Doing
 {1-2 sentences: the active task at session end}
 
 ## 2. What Worked (Validated)
-{Bulleted list of completed steps with evidence}
-- Step X: done — verified by {test/command/observation}
+- {Step}: done — verified by {exact command and key output line}
 
 ## 3. What Failed
-{Bulleted list of attempted approaches that didn't work and WHY}
-- Tried X: failed because Y (error: "actual error text")
+- Tried {approach}: failed because {root cause} (error: "{actual error text}")
 
 ## 4. Untried Approaches
-{Ideas considered but not yet attempted}
-- Could try X because Y
+- Could try {approach} because {reasoning}
 
 ## 5. Key Files Touched
-{Absolute paths of every file created/modified this session}
-- path/to/file.py — what changed
+- {absolute/path/to/file.py} — {what changed}
 
 ## 6. Decisions Made
-{Non-obvious choices and their rationale}
-- Chose X over Y because Z
+- Chose {X} over {Y} because {Z}
 
 ## 7. Blockers
-{Anything preventing progress}
-- Blocked on X — need Y to proceed
+- Blocked on {X} — need {Y} to proceed
 
 ## 8. Recommended Next Step
-{Exactly what the next instance should do first}
-Start by doing X, then verify with Y.
+Start by {action}. Verify with {command}.
 ```
 
-## When to Write
+## Quality Bar
 
-- User explicitly says "save state" / "remember this" / "continue later"
-- Long session with significant progress (>10 tool calls)
-- Before switching to a different task branch
-- When you detect the conversation is winding down
+- File paths are absolute — never relative, never "that file".
+- "What Failed" entries include the actual error message, not a paraphrase.
+- "What Worked" entries cite a verification command or observable result, not "should work".
+- Decisions include the rejected alternative and the reason it was rejected.
+- Total handoff length: 20-80 lines. Under 20 = missing detail. Over 80 = trim to essentials.
 
-## Example
+## Boundaries
 
-```markdown
-# Session Handoff — 2026-04-03 14:30
-
-## 1. What I Was Doing
-Rewriting department prompt.md files to add structured output formats and escalation conditions.
-
-## 2. What Worked (Validated)
-- Engineering 4/4 prompts rewritten — verified by reading each file back
-- Operations 4/4 prompts rewritten — verified by reading each file back
-- Scrutiny prompt contradiction fixed — parser test: `grep "VERDICT" output` still matches
-
-## 3. What Failed
-- Tried to Write files without reading first — Edit tool requires prior Read (error: "File has not been read yet")
-- Workaround: batch-read all 19 remaining files, then batch-write
-
-## 4. Untried Approaches
-- Could validate prompts by running a test dispatch through Governor to see if output matches new format
-
-## 5. Key Files Touched
-- D:\Users\Administrator\Documents\GitHub\orchestrator\departments\*/*/prompt.md — all 24 files
-- D:\Users\Administrator\Documents\GitHub\orchestrator\SOUL\public\prompts\scrutiny.md
-
-## 6. Decisions Made
-- Chose ~40 line prompts over ~100 line — balance between specificity and token budget in assembled prompt
-- Kept Output Format as fenced code block, not YAML — easier for models to pattern-match
-
-## 7. Blockers
-N/A
-
-## 8. Recommended Next Step
-Start by committing the changes in two batches (departments + core), then run a test dispatch to verify new output formats work end-to-end.
-```
-
-## Rules
-
-- Sections 1, 2, 3 are mandatory. Others can be "N/A" if truly not applicable.
-- "What Failed" is as important as "What Worked" — prevents the next instance from repeating mistakes.
-- File paths must be absolute. "that config file" is useless to a fresh instance.
-- Decisions must include rationale. "Used X" without "because Y" is incomplete.
+- **STOP — do not write handoff** if the session had fewer than 3 tool calls and no meaningful progress. A handoff that says "started looking at X" wastes the next instance's context window.
+- **ESCALATE to user** if the session touched files in multiple unrelated projects — ask which project's state to capture rather than guessing.
+- Never include secrets, tokens, or credentials in the handoff, even if they appeared in the session.
+- Sections 1, 2, 3 are mandatory. Others can be "N/A" if truly not applicable, but never omitted entirely.

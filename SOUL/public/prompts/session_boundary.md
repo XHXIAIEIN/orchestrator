@@ -1,37 +1,70 @@
 # Session Boundary Check
 
-When receiving a new task mid-conversation, evaluate whether it should be handled here or in a new session.
+> **Who consults this**: Any agent receiving a new task mid-conversation. **When**: Before starting a task that might belong in a separate session.
 
-## Quick Check (do this mentally, don't output unless recommending new session)
+## Identity
 
-1. **Topic overlap**: Does the new task share files/modules/domain with what we've been doing?
-2. **Phase**: Are we staying in the same phase (all implementation, all review, etc.)?
-3. **Context health**: How many tool calls so far? Has compaction happened?
-4. **Scope**: Is this a tweak/fix (stay) or a full feature/research (new session)?
+This is a reference document defining when to recommend splitting work into a new session. It preserves context quality by preventing phase mixing and token exhaustion.
 
-## Decision Matrix
+## How You Work
 
-| Hard trigger hit? | Soft triggers (2+)? | Action |
+### Quick Check (silent — do not output unless recommending a new session)
+
+Evaluate these four dimensions:
+
+| Dimension | Stay (score 0) | New session (score 1) |
+|---|---|---|
+| **Topic overlap** | New task shares files/modules/domain with current work | New task touches entirely different codebase area or project |
+| **Phase** | Same phase: both implementation, both review, both debug | Phase crossing: e.g., implementation → research, or debug → new feature |
+| **Context health** | <30 tool calls, no compaction events | >=40 tool calls OR compaction has occurred |
+| **Scope** | Tweak/fix: <50 LOC, <5 min estimated | Full feature or research: >200 LOC or >30 min estimated |
+
+### Hard Triggers (any one = recommend new session)
+
+1. Phase crossing: current work is implementation, new task is research/spec (or vice versa)
+2. Context exhaustion: compaction has occurred in this session
+3. Project switch: new task targets a different project repository
+
+### Soft Triggers (2+ = recommend new session)
+
+1. Topic overlap score = 1 (no shared files/modules)
+2. Scope score = 1 (full feature or research)
+3. Tool call count >= 40
+4. Current task is incomplete and new task would interleave
+
+### Decision Matrix
+
+| Hard trigger? | Soft triggers >= 2? | Action |
 |---|---|---|
 | Yes | — | Recommend new session |
 | No | Yes | Recommend new session |
 | No | No | Continue here |
 
-## Rules for session-boundary.yaml
+### How to Recommend
 
-Read `config/session-boundary.yaml` for the full trigger definitions. The config is the source of truth — this prompt explains how to apply it.
+Do not ask "should I open a new session?" (stall violation). Instead:
 
-## How to Recommend
+1. State the assessment with evidence: "This needs a fresh session — different project, and we're 45 tool calls deep."
+2. Write the handoff per `session_handoff.md` protocol
+3. Provide the startup prompt for the new session
+4. Stop — do not begin the new task
 
-Don't ask "should I open a new session?" (that's a stall violation). Instead:
+### Override Conditions (always continue here)
 
-1. State the assessment: "This task needs a fresh session — different domain, and we're 40+ tool calls deep."
-2. Write the handoff immediately (per `session_handoff.md` protocol)
-3. Give the startup prompt for the new session
-4. Then stop — don't start the work
+- User explicitly says "just do it here", "顺手", or "顺便"
+- Task is trivially small: <50 LOC AND <5 min estimated, regardless of topic
+- Task is answering a question, not executing work
 
-## When NOT to Trigger
+## Output Format
 
-- User explicitly says "just do it here" or "顺手" or "顺便" — respect the override
-- Task is trivially small (<5 min, <50 LOC) even if topic is different
-- You're just answering a question, not executing a task
+N/A — reference document. When triggered, the agent produces a handoff recommendation inline within conversation, not a separate document.
+
+## Quality Bar
+
+- Every recommendation must cite at least 1 hard trigger or 2 soft triggers with specific values (e.g., "42 tool calls", "different project: cvui vs orchestrator").
+- Handoff prompt must be copy-pasteable into a new session without modification.
+
+## Boundaries
+
+- **Stop**: Do not recommend a new session if the user has already overridden once in this conversation — respect the explicit override for the remainder of the session.
+- **Stop**: Do not silently start a new task that scores >= 2 soft triggers without at least stating the assessment. Failing silently is worse than a brief recommendation.
