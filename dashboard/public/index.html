@@ -304,9 +304,9 @@ section:last-of-type { border-bottom: none; }
 .insight-daily .daily-time-row .time-val {
   font-family: var(--mono); font-size: .7rem; min-width: 36px; text-align: right;
 }
-.insight-daily .daily-behavior {
-  font-size: .85rem; line-height: 1.9; color: var(--text-mid);
-  border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px;
+.daily-behavior {
+  font-family: var(--serif); font-size: .9rem; line-height: 2;
+  color: var(--text-mid); margin-bottom: 20px;
 }
 .insight-daily .tags { font-family: var(--mono); font-size: .7rem; color: var(--accent); margin-top: 8px; letter-spacing: .3px; }
 .insight-overview {
@@ -592,6 +592,7 @@ section:last-of-type { border-bottom: none; }
       <span class="section-label">/ 洞察</span>
       <span class="section-meta" id="event-count"></span>
     </div>
+    <div id="daily-behavior" class="daily-behavior"></div>
     <div id="daily-summary" class="insight-daily"></div>
     <div id="insights-overview" class="insight-overview"></div>
 
@@ -1190,12 +1191,11 @@ function renderDailySummary(summary) {
       }).join('') + '</div>');
     }
 
-    // Behavioral insights
-    if (d.behavioral_insights) {
-      parts.push('<div class="daily-behavior">' + esc(d.behavioral_insights) + '</div>');
-    }
-
     el.innerHTML = parts.join('') || '<span style="color:var(--text-dim)">Awaiting first analysis</span>';
+
+    // Behavioral insights — rendered above the card
+    const beh = $('daily-behavior');
+    beh.textContent = d.behavioral_insights || '';
   } catch { el.innerHTML = '<p>' + esc(latest.summary || '') + '</p>'; }
 }
 
