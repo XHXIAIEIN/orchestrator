@@ -34,6 +34,12 @@ def handle_command(text: str, chat_id: str, reply_fn, channel_source: str = "cha
         _cmd_channels(reply_fn, chat_id)
     elif cmd == "/wake":
         _cmd_wake(reply_fn, chat_id, args, channel_source)
+    elif cmd == "/quiet":
+        _cmd_quiet(reply_fn, chat_id, True)
+    elif cmd == "/loud":
+        _cmd_quiet(reply_fn, chat_id, False)
+    elif cmd == "/proactive":
+        _cmd_proactive(reply_fn, chat_id, args)
     else:
         reply_fn(chat_id, f"未知命令: {cmd}\n发送 /help 查看可用命令")
 
@@ -49,6 +55,9 @@ COMMANDS = {
     "/pending": "查看待审批任务",
     "/channels": "查看 channel 状态",
     "/wake": "查看/派发/控制 wake 任务",
+    "/quiet": "主动推送免打扰（紧急告警仍穿透）",
+    "/loud": "恢复主动推送",
+    "/proactive": "查看/控制主动推送 (on|off|status)",
     "/help": "显示帮助",
 }
 
@@ -219,3 +228,60 @@ def _cmd_wake(reply_fn, chat_id: str, args: str, channel_source: str):
             chat_id,
             f"Wake #{result['session_id']}（任务 #{result['task_id']}）{status_msg}",
         )
+
+
+def _get_throttle():
+    """Get the throttle gate from the shared ProactiveEngine."""
+    try:
+        from src.proactive.engine import get_proactive_engine
+        engine = get_proactive_engine()
+        if engine:
+            return engine.throttle
+    except Exception:
+        pass
+    from src.proactive.throttle import ThrottleGate
+    return ThrottleGate()
+
+
+def _cmd_quiet(reply_fn, chat_id: str, quiet: bool):
+    try:
+        gate = _get_throttle()
+        gate.set_quiet(quiet)
+        if quiet:
+            reply_fn(chat_id, "🔇 主动推送已静音\n紧急告警（容器挂了等）仍会穿透\n发送 /loud 恢复")
+        else:
+            reply_fn(chat_id, "🔊 主动推送已恢复")
+    except Exception as e:
+        reply_fn(chat_id, f"操作失败: {e}")
+
+
+def _cmd_proactive(reply_fn, chat_id: str, args: str):
+    args = args.strip().lower()
+    try:
+        gate = _get_throttle()
+        if args == "off":
+            gate.set_enabled(False)
+            reply_fn(chat_id, "主动推送已关闭\n发送 /proactive on 重新开启")
+        elif args == "on":
+            gate.set_enabled(True)
+            reply_fn(chat_id, "主动推送已开启")
+        else:
+            from src.storage.events_db import EventsDB
+            db = EventsDB()
+            stats = db.proactive_log_stats(hours=24)
+            logs = db.recent_proactive_logs(limit=5)
+            lines = [
+                "📡 主动推送状态\n",
+                f"  引擎: {'开启' if gate.is_enabled else '关闭'}",
+                f"  静音: {'是' if gate.is_quiet else '否'}",
+                f"  24h 推送: {stats['sent']} 条",
+                f"  24h 拦截: {stats['throttled']} 条",
+            ]
+            if logs:
+                lines.append("\n最近推送:")
+                for entry in logs:
+                    action_label = {"sent": "✅", "throttled": "🚫", "failed": "❌"}.get(entry["action"], "?")
+                    lines.append(f"  {action_label} {entry['signal_id']} — {(entry.get('message') or entry.get('reason') or '')[:60]}")
+            reply_fn(chat_id, "\n".join(lines))
+    except Exception as e:
+        reply_fn(chat_id, f"获取状态失败: {e}")

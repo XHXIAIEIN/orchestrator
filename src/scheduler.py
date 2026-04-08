@@ -121,6 +121,28 @@ def start():
     except Exception as e:
         log.warning(f"Channel layer init failed (non-fatal): {e}")
 
+    # ── Proactive Engine: 主动推送扫描 (Reverse Prompting) ──
+    try:
+        from src.proactive.engine import ProactiveEngine, set_proactive_engine
+        from src.proactive.config import SCAN_INTERVAL_MINUTES
+        from src.core.llm_router import LLMRouter
+
+        proactive_engine = ProactiveEngine(
+            db=db,
+            registry=channel_reg if 'channel_reg' in locals() else None,
+            llm_router=LLMRouter(),
+        )
+        set_proactive_engine(proactive_engine)
+        s.add_job(
+            lambda: proactive_engine.scan_cycle(),
+            "interval",
+            minutes=SCAN_INTERVAL_MINUTES,
+            id="proactive_scan",
+        )
+        log.info(f"ProactiveEngine: scanning every {SCAN_INTERVAL_MINUTES}min")
+    except Exception as e:
+        log.debug(f"ProactiveEngine init skipped: {e}")
+
     # BrowserRuntime — 可选，浏览器感官层
     browser_runtime = None
     try:
