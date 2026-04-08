@@ -73,6 +73,13 @@ def do_chat(chat_id: str, text: str, original_text: str,
         react_fn: 表情回应函数 react_fn(emoji)，None=不支持
     """
     try:
+        # ── Multi-agent broadcast: @cc @cx message ──
+        from src.channels.chat.broadcast import parse_broadcast
+        broadcast = parse_broadcast(text)
+        if broadcast:
+            _handle_broadcast(chat_id, text, broadcast, system_prompt, reply_fn, channel_source)
+            return
+
         from src.storage.events_db import _DEFAULT_DB
 
         db_path = _DEFAULT_DB
@@ -234,3 +241,49 @@ def save_to_inbox(text: str) -> tuple[str, int]:
     (inbox_dir / filename).write_text(text, encoding="utf-8")
 
     return f"/orchestrator/tmp/chat-inbox/{filename}", len(text)
+
+
+def _handle_broadcast(
+    chat_id: str,
+    original_text: str,
+    broadcast: tuple[list[str], str],
+    system_prompt: str,
+    reply_fn,
+    channel_source: str,
+):
+    """Handle multi-agent broadcast: @cc @cx message.
+
+    Stolen from WeClaw broadcastToAgents() (R45d):
+    parallel dispatch, first-come-first-served, labeled responses.
+    """
+    import asyncio
+    from src.channels.chat.broadcast import broadcast_to_agents, format_broadcast_responses
+    from src.channels.chat.db import save_message
+    from src.storage.events_db import _DEFAULT_DB
+
+    agent_names, message = broadcast
+    db_path = _DEFAULT_DB
+
+    save_message(db_path, chat_id, "user", original_text, chat_client=channel_source)
+
+    log.info("chat: broadcast to %s from %s", agent_names, chat_id[:16])
+
+    async def _run():
+        return await broadcast_to_agents(
+            user_id=chat_id,
+            agent_names=agent_names,
+            message=message,
+            system_prompt=system_prompt,
+        )
+
+    try:
+        responses = asyncio.run(_run())
+    except RuntimeError:
+        # Already in an event loop — use nest_asyncio or thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            responses = pool.submit(lambda: asyncio.run(_run())).result()
+
+    formatted = format_broadcast_responses(responses)
+    reply_fn(chat_id, formatted)
+    save_message(db_path, chat_id, "assistant", formatted, chat_client=channel_source)
