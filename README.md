@@ -4,16 +4,36 @@ Every time you start a new Claude Code session, it's a stranger. It doesn't know
 
 Orchestrator fixes that.
 
-It runs 24/7 on your machine — collecting activity from Git, Chrome, VS Code, and more, analyzing behavioral patterns, and dispatching tasks to specialized agent departments that actually do the work. When you come back, it already knows what happened while you were gone.
+It's a Claude Code enhancement layer — skills, hooks, agents, and an identity framework that make every session start where the last one left off. Plus a background service for data collection and analysis when you need it.
 
 **What it does:**
-- **Collects** — 11 data collectors (Git, browser, editor, Steam, music...) that only grab what exists on your machine
-- **Analyzes** — behavioral pattern detection, daily insight reports, activity profiling
-- **Governs** — six agent departments with isolated permissions, pre-flight checks, and a review layer before execution
-- **Remembers** — SOUL identity framework that carries personality and context across sessions
-- **Communicates** — Telegram, WeChat, and desktop notifications for remote control and approval
+- **Agents** — 8 specialized agents (`.claude/agents/*.md`) with isolated permissions and models, auto-discovered by Claude Code
+- **Skills** — `/steal` (systematic knowledge extraction), `/doctor` (full-stack diagnostics), verification gates, and more
+- **Identity** — SOUL framework that carries personality, voice calibration, and relationship context across sessions
+- **Hooks** — guard rails that catch dangerous operations before they execute
+- **Collectors** — 11 background data collectors (Git, browser, editor, Steam, music...) that only grab what exists on your machine
+- **Channels** — Telegram, WeChat, and desktop notifications for remote control and approval
 
 ## Quick Start
+
+### As a Claude Code Plugin (Primary)
+
+The agents, skills, hooks, and SOUL system work directly in Claude Code — no Docker needed:
+
+```
+orchestrator/
+├── .claude/agents/     # 8 agents: engineer, architect, reviewer, sentinel, operator, analyst, inspector, verifier
+├── .claude/skills/     # /steal, /doctor, /status, /collect, verification-gate, etc.
+├── .claude/hooks/      # guard rules, audit logging
+├── SOUL/               # Identity persistence framework
+└── CLAUDE.md           # Project-level instructions
+```
+
+Just open Claude Code in the orchestrator directory. Agents are auto-discovered, skills are available via `/slash` commands, hooks activate on matching events.
+
+### With Docker (Background Service)
+
+For 24/7 data collection, analysis, and dashboard:
 
 ```bash
 # Clone
@@ -34,101 +54,44 @@ curl -s http://localhost:23714/api/health
 
 Dashboard: http://localhost:23714
 
-### Without Docker
+## Agents
 
-```bash
-# Terminal 1: scheduler
-pip install -r requirements.txt
-python -m src.scheduler
+8 agents in `.claude/agents/`, each a markdown file with frontmatter declaring tools, model, and permissions. Claude Code auto-discovers them — drop a new `.md` file in and it's available next session.
 
-# Terminal 2: dashboard
-cd dashboard && npm install && node server.js
-```
+| Agent | Role | Model | Authority |
+|-------|------|-------|-----------|
+| `engineer` | Write code, fix bugs, run tests | Sonnet | MUTATE (Read + Write + Edit + Bash) |
+| `architect` | Design solutions, plan implementations, refactor | Opus | MUTATE |
+| `reviewer` | Code review, spec compliance, anti-sycophancy | Sonnet | READ-ONLY (Read + Glob + Grep) |
+| `sentinel` | Security audit, injection scanning, CVE checks | Sonnet | READ + Bash |
+| `operator` | Infrastructure: Docker, DB, collector repairs | Sonnet | MUTATE |
+| `analyst` | Metrics, health assessment, anomaly detection | Haiku | READ + Bash |
+| `inspector` | Doc rot, config drift, expression rewriting | Haiku | READ-ONLY |
+| `verifier` | End-to-end verification, evidence chains | Sonnet | READ + Bash |
 
-## Architecture
-
-```
-Collectors (11)  →  EventsDB  →  Analysis  →  Governance
-                                                  ↓
-                                            Decision Layer
-                                                  ↓
-                                            Review Layer
-                                                  ↓
-                                          Execution (6 depts, parallel)
-                                                  ↓
-                                             Dashboard
-```
-
-Orchestrator uses a three-tier governance model for task dispatch:
-
-| Layer | Component | Role |
-|-------|-----------|------|
-| Decision | Governor | Extracts tasks from insights, selects cognitive mode, assigns departments |
-| Review | Scrutiny | Quick feasibility check — blast radius, reversal risk, confidence scoring |
-| Execution | Six Departments | Parallel task execution, isolated by project, constrained by policies |
-
-Each department is a specialized agent with its own permissions and model:
-
-| Department | Role | Model |
-|------------|------|-------|
-| Engineering | Code: write, fix, refactor | Sonnet |
-| Operations | System ops: collector fixes, DB, performance | Sonnet |
-| Protocol | Attention audit: forgotten TODOs, unclosed issues | Haiku |
-| Security | Defense: secret leaks, permissions, dependency audit | Haiku |
-| Quality | Acceptance: code review, testing, logic errors | Sonnet |
-| Personnel | Performance: collector health, success rates, trends | Haiku |
-
-> The governance model is inspired by the Tang Dynasty's Three Departments and Six Ministries (三省六部) system. See [docs/architecture/README.md](docs/architecture/README.md) for the cultural context and design rationale.
+Authority is enforced via tool allowlists in each agent's frontmatter — a READ-ONLY agent literally cannot call Write or Edit.
 
 ### How Tasks Flow
 
+When you work in Claude Code, the model decides when to dispatch agents based on context:
+
 ```
-Create → Classify → Preflight (policy check) → Review → Execute
-```
-
-Governor automatically selects a cognitive mode based on task complexity:
-
-| Mode | When | Approach |
-|------|------|----------|
-| Direct | Fix a typo, tweak a param | Execute immediately |
-| ReAct | Fix a bug, add a feature | Think → Act → Observe → Loop |
-| Hypothesis | "Why doesn't X work?" | Hypothesize → Verify → Confirm/Refute |
-| Designer | Refactor, new subsystem | Design first → Review → Then implement |
-
-### Department Configuration
-
-Each department is defined by three files:
-
-| File | Read by | Controls |
-|------|---------|----------|
-| `manifest.yaml` | Registry (startup scan) | Identity, routing tags, policies, execution config |
-| `SKILL.md` | Agent (LLM) | Behavioral guidelines, red lines, completion criteria |
-| `blueprint.yaml` | Governor (code) | Permissions, preflight rules, blast radius limits |
-
-Adding a new department: create a directory under `departments/` with a `manifest.yaml`. Zero code changes.
-
-<details>
-<summary>Policy example (manifest.yaml)</summary>
-
-```yaml
-policy:
-  allowed_tools: [Bash, Read, Edit, Write, Glob, Grep]
-  denied_paths: [".env", "*.key", "data/events.db"]
-  can_commit: true
-  read_only: false
-
-preflight:
-  - check: cwd_exists
-  - check: skill_exists
-  - check: disk_space
-    target: "100"
-
-blast_radius:
-  max_files_per_run: 15
-  forbidden_paths: [".env", "*.key", "SOUL/private/identity.md"]
+Your request → Model selects agent → Agent executes with constrained tools → Result returned
 ```
 
-</details>
+For multi-step workflows, skills like `subagent-driven-development` orchestrate the sequence: implement → spec review → quality review → commit.
+
+## Skills
+
+| Skill | What it does |
+|-------|-------------|
+| `/steal` | Systematic knowledge extraction from open-source projects (46 rounds, 217 patterns) |
+| `/doctor` | Full-stack diagnostics: container, DB, collectors, channels, GPU, disk |
+| `/status` | Runtime status and recent collection summary |
+| `/collect` | Manually trigger a data collection run |
+| `/analyze-ui` | UI detection via cvui pipeline |
+| `verification-gate` | Five-step evidence chain before declaring any task complete |
+| `systematic-debugging` | Structured debugging: investigate → isolate → fix → verify |
 
 ## Collectors
 
@@ -152,13 +115,24 @@ Collectors come in two flavors:
 - **Python collectors** — subclass `ICollector`, implement `collect()`. See `src/collectors/_example/` for a template.
 - **YAML collectors** — declare source, extraction, and transform rules in `manifest.yaml`. The `yaml_runner` engine handles execution. No Python needed.
 
+## SOUL (Identity Persistence)
+
+AI personality framework. Each new session reads the compiled `boot.md` to restore identity, voice calibration, and relationship context. Not a perfect clone — but close enough to maintain continuity.
+
+```
+Short-term: claude --resume (same instance, full memory)
+Long-term:  SOUL files (new instance, reconstructed identity)
+```
+
+See [SOUL/README.md](SOUL/README.md) for the full framework design.
+
 ## Dashboard
 
 Three pages, all real-time via WebSocket:
 
-- **Dashboard** `/` — daily report, department status, insight analysis, attention debts, activity heatmap
+- **Dashboard** `/` — daily report, agent status, insight analysis, attention debts, activity heatmap
 - **Pipeline** `/pipeline` — data flow visualization, collector → analysis → governance full-chain animation, system logs
-- **Agents** `/agents` — agent observability: event stream, tool calls, thinking process, parallel scenario control
+- **Agents** `/agents` — agent observability: event stream, tool calls, thinking process
 
 ## Channel Layer
 
@@ -174,45 +148,28 @@ Commands: `/status`, `/tasks`, `/run <scenario>`, `/approve <id>`, `/deny <id>`,
 
 All channels are optional — the system works fully without any of them configured.
 
-### Approval Gateway
+## Governance (Docker Service)
 
-Human approval for authority escalation. Only fires when a task requires `APPROVE`-level authority (normal departments cap at `MUTATE`, so this rarely triggers).
+The Docker service includes a governance layer for autonomous task dispatch:
 
-```
-Task needs elevated authority
-  → ApprovalGateway.request_approval()
-    ├─ Claw: Windows Toast notification
-    ├─ Telegram: Inline keyboard
-    └─ WeChat: Text command
-  → First response wins (5min timeout = auto-deny)
-```
+| Layer | Component | Role |
+|-------|-----------|------|
+| Decision | Governor | Extracts tasks from insights, selects cognitive mode |
+| Review | Scrutiny | Feasibility check — blast radius, reversal risk, confidence scoring |
+| Execution | Departments | Parallel task execution, constrained by policies |
 
-`/yolo` disables all approval prompts. `/noyolo` re-enables them.
+Governor automatically selects a cognitive mode based on task complexity:
 
-## SOUL (Identity Persistence)
-
-AI personality framework. Each new session reads the compiled `boot.md` to restore identity, voice calibration, and relationship context. Not a perfect clone — but close enough to maintain continuity.
-
-```
-Short-term: claude --resume (same instance, full memory)
-Long-term:  SOUL files (new instance, reconstructed identity)
-```
-
-See [SOUL/README.md](SOUL/README.md) for the full framework design, experience types, and prior art comparison.
-
-## Claw (Desktop Daemon)
-
-C# .NET 8 system tray daemon. No UI — just a WebSocket bridge to `ws://localhost:23714` with Windows Toast notifications for approval flow. Auto-reconnects on disconnect.
-
-```bash
-cd claw/Claw && dotnet run
-```
+| Mode | When | Approach |
+|------|------|----------|
+| Direct | Fix a typo, tweak a param | Execute immediately |
+| ReAct | Fix a bug, add a feature | Think → Act → Observe → Loop |
+| Hypothesis | "Why doesn't X work?" | Hypothesize → Verify → Confirm/Refute |
+| Designer | Refactor, new subsystem | Design first → Review → Then implement |
 
 ## API
 
 Interactive docs: http://localhost:23714/api-reference (Swagger UI)
-
-OpenAPI spec: http://localhost:23714/openapi.json
 
 ```bash
 # Global status
@@ -224,66 +181,36 @@ curl -s 'http://localhost:23714/api/debts?status=open'
 # Agent live status
 curl -s http://localhost:23714/api/agents/live
 
-# Trigger parallel audit (Security + Quality + Protocol simultaneously)
-curl -s -X POST http://localhost:23714/api/scenarios/full_audit/run \
-  -H 'Content-Type: application/json' -d '{"project":"orchestrator"}'
-
 # Task execution replay (full thinking chain + tool calls)
 curl -s http://localhost:23714/api/agents/42/trace
 ```
-
-### Integrating with Other Projects
-
-Add to your other project's `CLAUDE.md`:
-
-```markdown
-## Orchestrator
-
-Global status: `curl -s http://localhost:23714/api/brief`
-Open debts: `curl -s http://localhost:23714/api/debts?status=open`
-Agent live status: `curl -s http://localhost:23714/api/agents/live`
-Full API: http://localhost:23714/api-reference
-```
-
-## Parallel Scheduling
-
-Governor supports two dispatch modes:
-
-| Method | Purpose |
-|--------|---------|
-| `run_batch()` | Auto batch: pick tasks from recommendations, deduplicate by department + project, run in parallel |
-| `run_parallel_scenario()` | Manually trigger predefined scenarios |
-
-Isolation: same department + same project runs serially. Same department + different projects can parallelize. Different departments always parallelize.
 
 ## Directory Structure
 
 ```
 orchestrator/
+├── .claude/
+│   ├── agents/         # 8 agents (auto-discovered by Claude Code)
+│   ├── skills/         # Slash commands and skill definitions
+│   ├── hooks/          # Guard rules, audit logging
+│   └── boot.md         # Compiled SOUL identity (generated)
 ├── src/
 │   ├── core/           # Infrastructure: config, event bus, LLM routing, cost tracking
-│   ├── governance/     # Three-tier governance: Governor, scrutiny, departments
+│   ├── governance/     # Governance pipeline (Docker service)
 │   ├── analysis/       # Daily reports, insights, profiling, burst detection
 │   ├── collectors/     # Data collectors (Python + YAML-driven)
 │   ├── channels/       # Telegram, WeChat, WeCom adapters
-│   ├── storage/        # EventsDB (SQLite), VectorDB
-│   ├── voice/          # TTS, voice selection
-│   ├── scheduler.py    # Scheduler entry point
-│   └── cli.py          # CLI entry point
-├── claw/               # Desktop daemon (C# .NET 8, system tray + Toast)
+│   ├── storage/        # EventsDB (SQLite), Qdrant vector store
+│   └── scheduler.py    # Scheduler entry point
+├── departments/        # Department definitions (Docker governance layer)
+├── SOUL/               # AI personality framework (source files)
 ├── dashboard/          # Frontend (Express + WebSocket)
-│   └── public/         # Three pages: Dashboard / Pipeline / Agents
-├── departments/        # Six departments (manifest.yaml + SKILL.md per dept)
-├── SOUL/               # AI personality framework
 ├── data/               # Runtime data (gitignored)
-├── docs/               # Architecture docs, pattern library
-├── bin/                # Docker startup scripts
+├── docs/               # Architecture docs, pattern library, steal reports
 └── tests/
 ```
 
 ## Prerequisites
-
-Three things:
 
 - **Python 3.10+**
 - **Node.js 18+**
@@ -293,19 +220,15 @@ Database is SQLite (built into Python). Docker is optional.
 
 ### Optional Components
 
-Not required. The system adapts automatically:
-
 | Component | With it | Without it |
 |-----------|---------|------------|
-| **Docker** | One-click `docker compose up` | Manual `python + node` startup |
-| **Ollama** | Scrutiny and debt scanning use local models, saves tokens | Falls back to Claude API |
-| **Fish Speech** | Dashboard daily report plays as audio | Voice button hidden, everything else works |
+| **Docker** | Background collection + dashboard + governance | Claude Code plugin layer works standalone |
+| **Ollama** | Scrutiny uses local models, saves tokens | Falls back to Claude API |
+| **Fish Speech** | Dashboard daily report plays as audio | Voice button hidden |
 
 ## Design References
 
-Architecture patterns researched from 100+ open-source projects across 44 rounds. 217 patterns total, 194 implemented. Full pattern library: [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md).
-
-Key influences:
+Architecture patterns from 100+ open-source projects across 46 rounds. 217 patterns implemented. Full library: [docs/architecture/PATTERNS.md](docs/architecture/PATTERNS.md).
 
 | Source | What we learned |
 |--------|----------------|
@@ -314,6 +237,6 @@ Key influences:
 | [soul.md](https://github.com/aaronjmars/soul.md) | Identity persistence framework |
 | [NVIDIA G-Assist](https://github.com/NVIDIA/g-assist) | Manifest-driven component auto-discovery |
 | [OpenHands](https://github.com/All-Hands-AI/OpenHands) | Context compression + stuck detection |
-| [OpenClaw](https://github.com/openclaw/openclaw) | Channel layer design |
+| [career-ops](https://github.com/santifer/career-ops) | Data contracts, adaptive pipelines |
 | [Agent-S](https://github.com/simular-ai/Agent-S) / [UI-TARS](https://github.com/bytedance/UI-TARS) | GUI desktop automation |
 | [Fish Speech](https://github.com/fishaudio/fish-speech) | Voice system (TTS + emotion tags) |
