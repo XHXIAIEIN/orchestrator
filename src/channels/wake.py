@@ -17,6 +17,22 @@ while _REPO_ROOT != _REPO_ROOT.parent and not ((_REPO_ROOT / "departments").is_d
 
 WAKE_WORK_DIR = _REPO_ROOT / "tmp" / "wake"
 
+
+def _execute_task(task_id: int, db: EventsDB):
+    """Kick off task execution via Governor in a background thread."""
+    import threading
+
+    def _run():
+        try:
+            from src.governance.governor import Governor
+            gov = Governor(db=db)
+            gov.execute_task_async(task_id)
+            log.info(f"wake: task #{task_id} dispatched to executor")
+        except Exception as e:
+            log.error(f"wake: task #{task_id} execution failed: {e}")
+
+    threading.Thread(target=_run, daemon=True, name=f"wake-exec-{task_id}").start()
+
 # Sub-commands reserved words — first token match
 _SUBCOMMANDS = {"cancel", "verbose", "quiet"}
 
@@ -51,6 +67,11 @@ def create_session(chat_id: str, spotlight: str, channel: str = "telegram",
     work_dir.mkdir(parents=True, exist_ok=True)
 
     log.info(f"wake: session #{session_id} created (task #{task_id}): {spotlight}")
+
+    # auto_approve → kick off execution immediately
+    if auto_approve:
+        _execute_task(task_id, db)
+
     return {"session_id": session_id, "task_id": task_id}
 
 
@@ -133,7 +154,7 @@ def parse_wake_command(args: str) -> tuple[str, str]:
 
 
 def on_task_approved(task_id: int, db: EventsDB = None):
-    """Callback: Governor approved a wake task → mark session as approved."""
+    """Callback: Governor approved a wake task → mark session as approved + execute."""
     db = db or EventsDB()
     session = db.get_wake_session_by_task(task_id)
     if not session:
@@ -141,6 +162,7 @@ def on_task_approved(task_id: int, db: EventsDB = None):
     if session["status"] == "pending":
         db.update_wake_session(session["id"], status="approved")
         log.info(f"wake: session #{session['id']} approved (task #{task_id})")
+        _execute_task(task_id, db)
 
 
 def on_task_denied(task_id: int, db: EventsDB = None):
