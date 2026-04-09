@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Orchestrator is an AI butler system — not running a program, but *being* the program. The Git repository is its body, collectors are its eyes, the analysis engine is its brain, the governance layer is its hands, the Dashboard is its face, and `events.db` is its memory. It interacts with its owner through multiple channels (Telegram, WeChat, local) and autonomously handles data collection, behavioral analysis, and task dispatch.
+Orchestrator is a Claude Code enhancement layer — agents, skills, hooks, and an identity framework that make every session contextually aware. The primary interface is `.claude/agents/*.md` (8 specialized agents auto-discovered by Claude Code) plus skills and hooks. A Docker background service handles data collection, analysis, and dashboard.
 
 ## Architecture Diagram
 
@@ -22,7 +22,7 @@ Orchestrator is an AI butler system — not running a program, but *being* the p
               ▼                ▼      │      ▼                ▼
        ┌────────────┐  ┌──────────┐  │  ┌───────────┐  ┌──────────┐
        │ collectors  │  │ storage  │  │  │ analysis  │  │governance│
-       │ git·steam·  │  │ EventsDB │  │  │ profiles  │  │ 6 depts  │
+       │ git·steam·  │  │ EventsDB │  │  │ profiles  │  │ dispatch │
        │ vscode·...  │  │ vectors  │  │  │ bursts    │  │          │
        └─────────────┘  └──────────┘  │  └───────────┘  └──────────┘
                                       │
@@ -44,7 +44,7 @@ Orchestrator is an AI butler system — not running a program, but *being* the p
 |--------|---------|-----------|------|
 | `collectors/` | Data collection, 11 sources (Git, Steam, VS Code, browser, etc.) | `base.py`, `registry.py`, `yaml_runner.py` | [collectors.md](modules/collectors.md) |
 | `storage/` | EventsDB + vector search + schema management + dedup/hotness scoring | `events_db.py`, `vector_db.py`, `_schema.py` | [storage.md](modules/storage.md) |
-| `governance/` | Three-tier execution: Governor + Scrutiny + six departments | `governor.py`, `departments/`, `dispatcher.py` | [governance.md](modules/governance.md) |
+| `governance/` | Task dispatch: Governor + Scrutiny + execution | `governor.py`, `dispatcher.py`, `executor.py` | [governance.md](modules/governance.md) |
 | `channels/` | Multi-channel interface: Telegram, WeChat, local chat | `telegram/`, `wechat/`, `formatter.py` | [channels.md](modules/channels.md) |
 | `desktop_use/` | GUI automation (Windows): ABC injection, CV+OCR perception | `engine.py`, `actions.py`, `perception.py` | [desktop-use.md](modules/desktop-use.md) |
 | `core/browser_*` | Chrome CDP wrapper, tab pool management | `browser_cdp.py`, `browser_navigation.py` | [browser-runtime.md](modules/browser-runtime.md) |
@@ -71,12 +71,12 @@ Orchestrator is an AI butler system — not running a program, but *being* the p
 
 - **ABC Injection** — All core components define interfaces through abstract base classes. `ScreenCapture`, `WindowManager`, `OCREngine`, `ActionExecutor` can all be swapped at construction time. No lock-in to any specific backend.
 
-- **Three-tier Governance** — Inspired by the Tang Dynasty's [Three Departments and Six Ministries](https://en.wikipedia.org/wiki/Three_Departments_and_Six_Ministries) (三省六部) system: a decision layer proposes, a review layer challenges, and an execution layer acts. Each department carries a `SKILL.md` (capability definition) + `manifest.yaml` (execution blueprint), with authority levels from `READ` to `APPROVE`. Tasks are evaluated for blast radius before dispatch. Cross-department coordination cost is an implicit tax. Management philosophy: [SOUL/management.md](../../SOUL/management.md).
+- **Two-Layer Agent Architecture** — Agents (WHO) and capabilities (WHAT) are separated. 8 agents in `.claude/agents/*.md` declare their identity, tools, model, and permissions via frontmatter — Claude Code auto-discovers them. The Docker governance layer (Governor → Scrutiny → Execution) provides an additional autonomous dispatch path. Authority levels from `READ` to `MUTATE` are enforced via tool allowlists. Management philosophy: [SOUL/management.md](../../SOUL/management.md).
 
 - **SOUL Inheritance** — `compiler.py` compiles identity source files into `boot.md`. New instances read it to restore judgment and attitude. Not imitation — inheritance. Short-term continuity uses `--resume` (same instance); long-term continuity uses SOUL files across instances. Details: [SOUL/README.md](../../SOUL/README.md).
 
 ## Knowledge Base
 
-- [PATTERNS.md](PATTERNS.md) — Pattern library (217 patterns from 44 rounds of research across 100+ open-source projects)
+- [PATTERNS.md](PATTERNS.md) — Pattern library (217 patterns from 46 rounds of research across 100+ open-source projects)
 - [ROADMAP.md](ROADMAP.md) — Implementation roadmap
 - [fact-expression-split.md](fact-expression-split.md) — Original research: anti-sycophancy architecture (fact-expression separation)
