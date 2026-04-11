@@ -29,6 +29,19 @@ except Exception as e:
 
 OUTPUT=""
 
+# ── 0.8 Onboarding Detection (R46 career-ops) ──
+# Silent prerequisite check — warn if critical User Layer files are missing.
+ONBOARD_ISSUES=""
+[ ! -f "$SOUL_DIR/private/identity.md" ] && ONBOARD_ISSUES="${ONBOARD_ISSUES}  - SOUL/private/identity.md missing\n"
+[ ! -f "$SOUL_DIR/private/relationship.md" ] && ONBOARD_ISSUES="${ONBOARD_ISSUES}  - SOUL/private/relationship.md missing\n"
+[ ! -f "$SOUL_DIR/private/experiences.jsonl" ] && ONBOARD_ISSUES="${ONBOARD_ISSUES}  - SOUL/private/experiences.jsonl missing\n"
+[ ! -f "$PROJECT_DIR/.env" ] && ONBOARD_ISSUES="${ONBOARD_ISSUES}  - .env not configured\n"
+[ ! -f "$PROJECT_DIR/config/channels.yml" ] && ONBOARD_ISSUES="${ONBOARD_ISSUES}  - config/channels.yml missing\n"
+
+if [ -n "$ONBOARD_ISSUES" ]; then
+    OUTPUT="$OUTPUT[onboard] Missing prerequisites:\n$ONBOARD_ISSUES"
+fi
+
 # ── 1. 系统状态 ──
 CONTAINER=$(docker ps --filter name=orchestrator --format "{{.Status}}" 2>/dev/null)
 if [ -n "$CONTAINER" ]; then
