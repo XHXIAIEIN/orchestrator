@@ -165,14 +165,40 @@ def on_task_approved(task_id: int, db: EventsDB = None):
         _execute_task(task_id, db)
 
 
-def on_task_denied(task_id: int, db: EventsDB = None):
-    """Callback: Governor denied a wake task → mark session as denied."""
+def on_task_denied(task_id: int, reason: str = "", db: EventsDB = None):
+    """Callback: Governor denied a wake task → mark session as denied.
+
+    R47 Archon steal: If reason is provided, it's a rejection with feedback.
+    The session can be retried with the rejection reason fed back to the agent.
+    """
     db = db or EventsDB()
     session = db.get_wake_session_by_task(task_id)
     if not session:
         return
-    db.finish_wake_session(session["id"], status="denied")
-    log.info(f"wake: session #{session['id']} denied (task #{task_id})")
+
+    # Track rejection count for the rejection loop
+    rejection_count = (session.get("rejection_count") or 0) + 1
+    max_rejections = 3  # Archon default
+
+    if rejection_count >= max_rejections:
+        db.finish_wake_session(session["id"], status="denied")
+        log.info(f"wake: session #{session['id']} denied after {rejection_count} rejections")
+        _notify(session, "denied")
+        return
+
+    if reason:
+        # Rejection with feedback — allow retry
+        db.update_wake_session(
+            session["id"],
+            status="rejected",
+            rejection_reason=reason,
+            rejection_count=rejection_count,
+        )
+        log.info(f"wake: session #{session['id']} rejected ({rejection_count}/{max_rejections}): {reason[:100]}")
+        _notify(session, "rejected", milestone={"msg": f"拒绝原因: {reason}\n可修改后重新提交 ({rejection_count}/{max_rejections})"})
+    else:
+        db.finish_wake_session(session["id"], status="denied")
+        log.info(f"wake: session #{session['id']} denied (task #{task_id})")
 
 
 def format_wake_notification(session: dict, event_type: str,

@@ -44,8 +44,14 @@
         ]
       },
       {
-        "matcher": "Bash",
-        "hooks": []
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/env-leak-scanner.sh",
+            "timeout": 3
+          }
+        ]
       },
       {
         "matcher": "Edit|Write|MultiEdit",
