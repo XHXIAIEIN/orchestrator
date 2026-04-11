@@ -89,3 +89,21 @@ class GracefulShutdown:
                 logger.error(
                     f"Threads refused to die: {[t.name for t in still_alive]}"
                 )
+
+    # ── R48 (Hermes v0.8): Self-Request Service Restart ──
+
+    def request_restart(self):
+        """Trigger graceful drain + self-restart.
+
+        Drains in-flight work via normal cleanup, then signals the process
+        manager (Docker/systemd) to restart by exiting with code 75 (EX_TEMPFAIL).
+        The container orchestrator sees a non-zero exit and restarts automatically.
+
+        This avoids force-kill which loses in-flight work.
+        """
+        logger.info("Self-restart requested: draining in-flight work...")
+        self._shutdown_started = True
+        self._stop_evt.set()
+        self.run_cleanup()
+        logger.info("Drain complete. Exiting with code 75 for restart.")
+        raise SystemExit(75)  # EX_TEMPFAIL — signals "restart me"

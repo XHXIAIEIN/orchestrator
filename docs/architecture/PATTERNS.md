@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 44 轮偷师，100+ 项目，217 模式。按主题域组织，不按来源。
+> 48 轮偷师，100+ 项目，245 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 226 |
-| ✅ Implemented | 203 |
+| Total patterns | 245 |
+| ✅ Implemented | 222 |
 | → Moved to other projects | 12 |
 | ⏸️ Shelved | 11 |
 
@@ -46,6 +46,9 @@
 | S25 | Self-Modification Gate (Editable/Fixed) | AutoAgent (R38b) | ✅ | `CLAUDE.md` Gate Functions | Eval baseline required before config change; editable/fixed boundary enforced |
 | S26 | Anti-Degradation Protocol | ClawHub (R14) | ✅ | `governance/safety/anti_degradation.py` | Pre-modification scoring gate: 4-dim weighted (freq×3/fail×3/burden×2/token×2), gate<50=reject, forbidden justifications |
 | S27 | Data Contract (User/System Layer) | career-ops (R46) | ✅ | `DATA_CONTRACT.md` | User Layer (never auto-modify) vs System Layer (safe to replace) vs Hybrid (merge only). All automation must consult this contract |
+| S28 | Env Leak Scanner | Archon (R47) | ✅ | `.claude/hooks/env-leak-scanner.sh` | Scan .env files for sensitive keys (API keys etc.) that might leak via Bun auto-load |
+| S29 | Error Classification (FATAL/TRANSIENT) | Archon (R47) | ✅ | `governance/executor.py` | Pattern-match errors: FATAL (never retry) vs TRANSIENT (exponential backoff). Prevents retry of permission/auth/syntax errors |
+| S30 | No-Evict-on-Fail Anti-Loop | Hermes v0.8 (R48) | ✅ | `governance/agent_cache.py` | Failed agent stays cached (quick error return). Only successful fallback evicts. Prevents fail→evict→recreate loops |
 
 ---
 
@@ -74,6 +77,9 @@
 | R19 | Hook Self-Check Bypass Prevention | Claudeception (R36c) | ✅ | `.claude/hooks/dispatch-gate.sh` | Force self-check hooks cannot be bypassed by passive matching |
 | R20 | MCP Server Health Check | entrix (R15) | ✅ | `src/core/mcp_health.py` | 3-state (healthy/degraded/unhealthy) + exponential backoff + auto-recovery |
 | R21 | Pipeline Integrity Chain | career-ops (R46) | ✅ | `bin/verify-steal.sh` | 6-check data integrity: report count, pattern totals, impl counts, missing locations, duplicate IDs, naming conventions |
+| R22 | Activity-Based Timeout | Hermes v0.8 (R48) | ✅ | `channels/activity_tracker.py` | Track last tool/API call time per task. Timeout on inactivity, not wall-clock. Active tasks survive long runs |
+| R23 | Heartbeat Propagation | Hermes v0.8 (R48) | ✅ | `channels/activity_tracker.py` | Child agent heartbeat propagates to parent. Parent stays active while child works |
+| R24 | Self-Request Service Restart | Hermes v0.8 (R48) | ✅ | `core/graceful_shutdown.py` | SIGUSR1/request_restart() → graceful drain → exit(75) for auto-restart. No in-flight work lost |
 
 ---
 
@@ -103,6 +109,8 @@
 | P20 | Rate Limiter (Token Bucket) | PraisonAI (R39) | ✅ | `core/rate_limiter.py` | Token bucket rate limiting for API calls |
 | P21 | Model-Aware Compaction Threshold | MachinaOS (R40) | ✅ | `governance/condenser/` | Context window threshold scaled by model capacity |
 | P22 | Fine-Grained Cost Tracking (4-dim) | MachinaOS (R40) | ✅ | `core/cost_tracking.py` | Separate input/output/cache/reasoning token cost tracking |
+| P23 | Delegation reasoning_effort | Hermes v0.8 (R48) | ✅ | `core/reasoning_effort.py` | 6-level reasoning (xhigh→none): parent uses opus, child uses haiku. Same task, different cognitive investment |
+| P24 | Credential Pool Lease/Release | Hermes v0.8 (R48) | ✅ | `core/credential_pool.py` | Multi API key pooling with exclusive lease, auto-release on timeout, load balancing |
 
 ---
 
@@ -234,6 +242,14 @@
 | O46 | Self-Contained Batch Prompt | career-ops (R46) | ✅ | `SOUL/public/prompts/batch_worker.md` | Zero-dependency worker template with placeholders. Enables N-way parallel without session state |
 | O47 | Dispatch Lock + State Resume | career-ops (R46) | ✅ | `governance/dispatch_lock.py` | PID lock (stale detection) + per-session state file + retry_failed() for interrupted tasks |
 | O48 | Safe System-Layer Update | career-ops (R46) | ✅ | `bin/update-system.sh` | Reads DATA_CONTRACT, only updates System Layer files from remote. Dry-run default + rollback |
+| O49 | DAG Workflow Orchestration | Archon (R47) | ✅ | `SOUL/public/prompts/dag_orchestration.md` | Topological sort + parallel layers + 6 node types + trigger_rule dependency control |
+| O50 | Approval Gate + Rejection Loop | Archon (R47) | ✅ | `governance/approval.py` | Workflow pause/resume with on_reject reason feedback + max_attempts |
+| O51 | Adversarial Development Loop | Archon (R47) | ✅ | `.claude/skills/adversarial-dev/SKILL.md` | Generator→Evaluator with 7/10 hard threshold. Evaluator is read-only |
+| O52 | Conversation Lock Manager | Archon (R47) | ✅ | `channels/conversation_lock.py` | Non-blocking per-conversation lock + queue + global concurrency cap |
+| O53 | Session State Machine | Archon (R47) | ✅ | `governance/session_fsm.py` | 5 states, 5 triggers, parent_session_id chain. Plan-to-execute auto-creates child session |
+| O54 | Smart PR Review Routing | Archon (R47) | ✅ | `governance/review_router.py` | Cheap classifier → PR type → relevant review agents only. Skip irrelevant agents |
+| O55 | Context Engine ABC | Hermes v0.8 (R48) | ✅ | `governance/condenser/context_engine.py` | Pluggable compression: init→should_compress→compress→finalize. Engine can provide own tools |
+| O56 | Plugin Hook Lifecycle (20 events) | Hermes v0.8 (R48) | ✅ | `core/lifecycle_hooks.py` | +4 session hooks: on_session_start/end/finalize/reset. Now independent from task hooks |
 
 ---
 
@@ -259,6 +275,13 @@
 | H16 | Onboarding Detection Flow | career-ops (R46) | ✅ | `.claude/hooks/session-start.sh` | Silent prerequisite check at session start (5 critical files). Missing → onboard warning |
 | H17 | Story Bank Accumulation | career-ops (R46) | ✅ | `SOUL/public/references/pattern-bank.md` | Cross-session curated pattern bank. Top patterns from 46 rounds, admission requires impl + validation |
 | H18 | Archetype-Adaptive Pipeline | career-ops (R46) | ✅ | `.claude/skills/steal/SKILL.md` | Target type (framework/self-evolving/module/survey/skill) drives analysis depth, P0 criteria, and output format per phase |
+| H19 | Fresh Context + Disk State Loop | Archon (R47) | ✅ | `SOUL/public/prompts/disk_state_loop.md` | Long tasks read state from disk each iteration. Bypasses context window limits for 15-60 iteration workflows |
+| H20 | Prime Context Injection | Archon (R47) | ✅ | `.claude/skills/prime/SKILL.md` | /prime reads key files + outputs <300 word scannable summary. Domain variants: docker/channel/soul/governance |
+| H21 | Confidence-Based Filtering | Archon (R47) | ✅ | `.claude/agents/reviewer.md` | Findings scored 0-100, only 80+ confidence reported. Prevents speculative padding |
+| H22 | Message Splitting + Markdown Fallback | Archon (R47) | ✅ | `channels/message_splitter.py` | 3-pass splitting (paragraph→line→hard). MarkdownV2 with plain text fallback |
+| H23 | Rule Scoping by Path | Archon (R47) | ✅ | `SOUL/public/prompts/rule_scoping.md` | Rules declare applies_to glob patterns. Module-specific > global. Safety rules always global |
+| H24 | Progressive Directory Discovery | Hermes v0.8 (R48) | ✅ | `governance/directory_discovery.py` | Agent learns project structure incrementally via tool use. Workspace hints injected into context |
+| H25 | Skill Config Interface | Hermes v0.8 (R48) | ✅ | `governance/skill_config.py` | Skills declare required config in frontmatter. Missing vars detected at load time |
 
 ---
 
@@ -364,11 +387,12 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 ## Priority Summary
 
-### Orchestrator — R1-R46 All Done ✅
+### Orchestrator — R1-R48 All Done ✅
 
-R1-R46 P0/P1/P2 patterns implemented as of 2026-04-11.
-R46 career-ops: 9 patterns (4 P0 + 5 P1) — Data Contract, File IPC, Integrity Chain, Adaptive Pipeline, Batch Prompt, Onboarding, Story Bank, Auto-Update, Lock+Resume.
-cvui patterns fully transferred to `cvui` repo — no longer tracked here. RAG pattern moved to `construct3-rag/docs/backlog.md`.
+R1-R48 P0/P1/P2 patterns implemented as of 2026-04-11.
+R47 Archon: 6 P0 + 8 P1 — DAG orchestration, approval gates, adversarial dev, disk state loop, env leak scanner, prime skill, confidence filtering, handoff, smart PR routing, message splitting, conversation lock, session FSM, error classification, rule scoping.
+R48 Hermes v0.8: 6 P0 + 5 P1 — Activity-based timeout, context engine ABC, reasoning effort, heartbeat propagation, no-evict anti-loop, session lifecycle hooks, directory discovery, credential pool, skill config, self-restart.
+cvui patterns fully transferred to `cvui` repo — no longer tracked here.
 
 ### Completion Log (2026-04-04 ~ 2026-04-05)
 

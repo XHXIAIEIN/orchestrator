@@ -133,13 +133,57 @@ if RetryPolicy is not None:
 # dataclass has been replaced.
 
 
+# ── R47 (Archon): Error Severity Classification ──
+# FATAL errors should never be retried. TRANSIENT errors use exponential backoff.
+FATAL_PATTERNS = [
+    "permission denied", "access denied", "authentication failed",
+    "invalid api key", "unauthorized", "forbidden",
+    "file not found", "module not found", "import error",
+    "syntax error", "indentation error", "name error",
+    "schema validation", "invalid configuration",
+]
+TRANSIENT_PATTERNS = [
+    "timeout", "connection reset", "connection refused",
+    "rate limit", "too many requests", "overloaded",
+    "502", "503", "504", "529",
+    "temporary failure", "try again", "service unavailable",
+]
+
+
+def classify_error_severity(output: str, exc: BaseException | None = None) -> str:
+    """Classify error as FATAL (never retry) or TRANSIENT (retry with backoff).
+
+    R47 (Archon): Pattern-match error messages for structured retry decisions.
+    Returns 'fatal', 'transient', or 'unknown'.
+    """
+    text = (output or "").lower()
+    if exc:
+        text += f" {type(exc).__name__}: {exc}".lower()
+
+    for pattern in FATAL_PATTERNS:
+        if pattern in text:
+            return "fatal"
+    for pattern in TRANSIENT_PATTERNS:
+        if pattern in text:
+            return "transient"
+    return "unknown"
+
+
 def _classify_failure(output: str, exc: BaseException | None = None) -> str:
     """Classify a failure output into a retry condition category.
 
     Enhanced with ChatDev 2.0 resilient_retry (Round 13): when an actual
     exception is provided, walks the __cause__/__context__ chain for deeper
     classification before falling back to string matching on output text.
+
+    R47 (Archon): FATAL errors are now classified separately and should
+    NOT be retried. Check classify_error_severity() before retry decisions.
     """
+    # ── Phase 0: FATAL check (R47 Archon) — skip retry entirely ──
+    severity = classify_error_severity(output, exc)
+    if severity == "fatal":
+        return "fatal"
+
     # ── Phase 1: Exception chain traversal (ChatDev 2.0) ──
     if exc is not None and resilient_should_retry and _DEFAULT_RESILIENT_POLICY:
         from src.core.resilient_retry import _iter_exception_chain, _extract_status_code

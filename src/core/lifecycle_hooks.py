@@ -1,9 +1,10 @@
-"""Lifecycle Hooks — 16-event registry (R38: Inspect AI steal).
+"""Lifecycle Hooks — 20-event registry (R38: Inspect AI steal, R48: session hooks).
 
 Unified hook system covering the full Orchestrator execution lifecycle:
 
   Batch layer:    on_batch_start, on_batch_end
   Task layer:     on_task_start, on_task_end
+  Session layer:  on_session_start, on_session_end, on_session_finalize, on_session_reset
   Rollout layer:  on_rollout_start, on_rollout_end
   Attempt layer:  on_attempt_start, on_attempt_end
   Context layer:  on_context_build, on_context_inject
@@ -58,7 +59,7 @@ class LimitExceededError(Exception):
         super().__init__(message or f"{limit_type} exceeded: {current}/{maximum}")
 
 
-# ── 16 Hook Points ──
+# ── 20 Hook Points ──
 
 HOOK_POINTS = frozenset({
     # Batch layer — multiple tasks dispatched together
@@ -67,6 +68,11 @@ HOOK_POINTS = frozenset({
     # Task layer — single task lifecycle
     "on_task_start",       # was on_task_dispatch
     "on_task_end",
+    # Session layer — wake/dispatch session lifecycle (R48)
+    "on_session_start",    # fired when a new wake/dispatch session begins
+    "on_session_end",      # fired when session completes (success or failure)
+    "on_session_finalize", # fired during cleanup phase (after end, for resource release)
+    "on_session_reset",    # fired when session state is cleared (for plugin state cleanup)
     # Rollout layer — retry envelope around attempts
     "on_rollout_start",
     "on_rollout_end",
@@ -91,8 +97,6 @@ HOOK_POINTS = frozenset({
 _ALIASES = {
     "pre_llm_call": "on_pre_llm",
     "post_llm_call": "on_post_llm",
-    "on_session_start": "on_task_start",
-    "on_session_end": "on_task_end",
     "on_task_dispatch": "on_task_start",
 }
 
