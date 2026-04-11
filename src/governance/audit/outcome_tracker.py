@@ -182,3 +182,86 @@ def _group_by_dept(outcomes: list[dict]) -> dict:
         dept: round(sum(scores) / len(scores), 3)
         for dept, scores in by_dept.items()
     }
+
+
+# ── R46 (career-ops): File-based IPC for Parallel Workers ──
+# Each sub-agent writes an intermediate result to its own file under
+# tmp/agent-output/{session}/. The main process merges them after all
+# workers finish, deduplicating by task_id.
+
+_AGENT_OUTPUT_DIR = _REPO_ROOT / "tmp" / "agent-output"
+
+
+def write_agent_intermediate(session_id: str, task_id: int | str,
+                             result: dict) -> Path:
+    """Write a sub-agent's intermediate result to an isolated file.
+
+    Each worker gets its own file — no concurrent write conflicts.
+    Returns the path written to.
+    """
+    session_dir = _AGENT_OUTPUT_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    path = session_dir / f"task-{task_id}.json"
+    payload = {
+        "task_id": task_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **result,
+    }
+    try:
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        log.warning("write_agent_intermediate: failed for task %s: %s", task_id, e)
+    return path
+
+
+def merge_agent_outputs(session_id: str, *, dedup_key: str = "task_id") -> list[dict]:
+    """Merge all intermediate results from a parallel session.
+
+    Deduplicates by `dedup_key` (keeps latest by timestamp).
+    Returns merged list sorted by task_id.
+    """
+    session_dir = _AGENT_OUTPUT_DIR / session_id
+    if not session_dir.exists():
+        return []
+
+    by_key: dict[str, dict] = {}
+    for f in session_dir.glob("task-*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            key = str(data.get(dedup_key, f.stem))
+            existing = by_key.get(key)
+            if existing is None or data.get("timestamp", "") > existing.get("timestamp", ""):
+                by_key[key] = data
+        except Exception as e:
+            log.warning("merge_agent_outputs: skipping %s: %s", f.name, e)
+
+    merged = sorted(by_key.values(), key=lambda d: str(d.get("task_id", "")))
+    log.info("merge_agent_outputs: session=%s, files=%d, merged=%d (deduped %d)",
+             session_id, len(list(session_dir.glob("task-*.json"))),
+             len(merged), len(list(session_dir.glob("task-*.json"))) - len(merged))
+    return merged
+
+
+def cleanup_agent_session(session_id: str) -> int:
+    """Remove all intermediate files for a completed session.
+
+    Returns number of files removed.
+    """
+    session_dir = _AGENT_OUTPUT_DIR / session_id
+    if not session_dir.exists():
+        return 0
+    count = 0
+    for f in session_dir.glob("*.json"):
+        try:
+            f.unlink()
+            count += 1
+        except Exception:
+            pass
+    try:
+        session_dir.rmdir()
+    except Exception:
+        pass
+    return count

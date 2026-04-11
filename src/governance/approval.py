@@ -743,6 +743,87 @@ class ApprovalGateway:
                 pass
 
 
+# ── R47: Workflow Approval Gate (Archon steal) ──────────────
+
+
+@dataclass
+class WorkflowGateResult:
+    """Result of a workflow-level approval gate.
+
+    Unlike tool-level approval (single tool call), workflow gates
+    pause an entire multi-step workflow until human decision.
+    On rejection, the rejection_reason is fed back so the agent
+    can revise its approach.
+    """
+    approved: bool
+    rejection_reason: str = ""        # human's feedback on why rejected
+    attempt: int = 1                  # which attempt this is (1-based)
+    max_attempts: int = 3             # fail after this many rejections
+    exhausted: bool = False           # True if max_attempts reached
+
+
+async def workflow_approval_gate(
+    gateway: "ApprovalGateway",
+    task_id: str,
+    gate_message: str,
+    on_reject_prompt: str = "",
+    max_attempts: int = 3,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> WorkflowGateResult:
+    """Pause a workflow for human approval with rejection loop.
+
+    Archon-inspired pattern (R47):
+    1. Send gate_message to user, pause and wait for approve/reject
+    2. If approved → return approved=True
+    3. If rejected with reason → return with rejection_reason
+       Caller should run on_reject_prompt (with $REJECTION_REASON substituted),
+       then call this gate again with attempt incremented
+    4. If max_attempts reached → return exhausted=True
+
+    Usage in executor:
+        for attempt in range(1, max_attempts + 1):
+            result = await workflow_approval_gate(
+                gateway, task_id, "Review the implementation?",
+                on_reject_prompt="User rejected because: $REJECTION_REASON. Revise.",
+                max_attempts=3,
+            )
+            if result.approved:
+                break
+            if result.exhausted:
+                # give up
+                break
+            # Handle rejection: run on_reject_prompt with reason
+            revised_prompt = on_reject_prompt.replace("$REJECTION_REASON", result.rejection_reason)
+            # ... execute revised_prompt ...
+    """
+    decision = await gateway.request_approval(
+        task_id=task_id,
+        description=gate_message,
+        authority_level=4,
+        timeout=timeout,
+    )
+
+    # Check for structured decision with reason
+    with gateway._lock:
+        req = gateway._requests.get(task_id)
+
+    reason = ""
+    if req and req.structured_decision:
+        reason = req.structured_decision.reason
+
+    if decision == "approve":
+        return WorkflowGateResult(approved=True, attempt=1, max_attempts=max_attempts)
+
+    # Rejected or timed out
+    return WorkflowGateResult(
+        approved=False,
+        rejection_reason=reason or "no reason provided",
+        attempt=1,  # caller tracks actual attempt number
+        max_attempts=max_attempts,
+        exhausted=False,  # caller checks attempt >= max_attempts
+    )
+
+
 # ── Singleton ──
 
 _gateway: Optional[ApprovalGateway] = None

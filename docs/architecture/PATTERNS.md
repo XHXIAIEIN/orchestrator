@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 217 |
-| ✅ Implemented | 194 |
+| Total patterns | 226 |
+| ✅ Implemented | 203 |
 | → Moved to other projects | 12 |
 | ⏸️ Shelved | 11 |
 
@@ -45,6 +45,7 @@
 | S24 | VBR Gate (Verify Before Reporting) | proactive-agent (R23) | ✅ | `.claude/hooks/vbr-gate.sh` | Stop hook: detect completion claims without verification evidence |
 | S25 | Self-Modification Gate (Editable/Fixed) | AutoAgent (R38b) | ✅ | `CLAUDE.md` Gate Functions | Eval baseline required before config change; editable/fixed boundary enforced |
 | S26 | Anti-Degradation Protocol | ClawHub (R14) | ✅ | `governance/safety/anti_degradation.py` | Pre-modification scoring gate: 4-dim weighted (freq×3/fail×3/burden×2/token×2), gate<50=reject, forbidden justifications |
+| S27 | Data Contract (User/System Layer) | career-ops (R46) | ✅ | `DATA_CONTRACT.md` | User Layer (never auto-modify) vs System Layer (safe to replace) vs Hybrid (merge only). All automation must consult this contract |
 
 ---
 
@@ -72,6 +73,7 @@
 | R18 | PreCompact Behavioral Checkpoint | PUA (R35) | ✅ | `.claude/hooks/pre-compact.sh` | Before compaction: dump tried approaches, eliminated hypotheses, failure count to disk. Bridges memory gap |
 | R19 | Hook Self-Check Bypass Prevention | Claudeception (R36c) | ✅ | `.claude/hooks/dispatch-gate.sh` | Force self-check hooks cannot be bypassed by passive matching |
 | R20 | MCP Server Health Check | entrix (R15) | ✅ | `src/core/mcp_health.py` | 3-state (healthy/degraded/unhealthy) + exponential backoff + auto-recovery |
+| R21 | Pipeline Integrity Chain | career-ops (R46) | ✅ | `bin/verify-steal.sh` | 6-check data integrity: report count, pattern totals, impl counts, missing locations, duplicate IDs, naming conventions |
 
 ---
 
@@ -228,6 +230,10 @@
 | O42 | Channel-Reducer State Model | LangGraph (R43) | ✅ | `src/governance/channel_reducer.py` | 10 channel types with reducer aggregation + AfterFinish variants |
 | O43 | Superstep BSP (deterministic parallel) | LangGraph (R43) | ✅ | `src/governance/group_orchestration.py` | Bulk Synchronous Parallel: aggregate→dispatch→barrier |
 | O44 | Interrupt-Resume Mapping | LangGraph (R43) | ✅ | `src/governance/approval.py` | xxh3 ID-based interrupt points with request/resume/await lifecycle |
+| O45 | File-based IPC for Parallel Workers | career-ops (R46) | ✅ | `governance/audit/outcome_tracker.py` | write_agent_intermediate() + merge_agent_outputs() + dedup by task_id. Crash-safe: each worker writes own file |
+| O46 | Self-Contained Batch Prompt | career-ops (R46) | ✅ | `SOUL/public/prompts/batch_worker.md` | Zero-dependency worker template with placeholders. Enables N-way parallel without session state |
+| O47 | Dispatch Lock + State Resume | career-ops (R46) | ✅ | `governance/dispatch_lock.py` | PID lock (stale detection) + per-session state file + retry_failed() for interrupted tasks |
+| O48 | Safe System-Layer Update | career-ops (R46) | ✅ | `bin/update-system.sh` | Reads DATA_CONTRACT, only updates System Layer files from remote. Dry-run default + rollback |
 
 ---
 
@@ -250,6 +256,9 @@
 | H13 | Session Handoff Protocol | CC (R28) | ✅ | `SOUL/public/prompts/session_handoff.md` | Structured inter-session state transfer |
 | H14 | Anti-Rationalization Hook (dynamic) | PUA (R35) | ✅ | `.claude/hooks/error-detector.sh` (L2-L4 injections) | Static rationalization-immunity.md upgraded to dynamic: hook injects counter-arguments at escalation thresholds |
 | H15 | Failure-Mode → Methodology Switch Chain | PUA (R35) | ✅ | `SOUL/public/prompts/methodology_router.md` | Same error repeating → RCA; different errors → isolate; going in circles → Working Backwards; giving up → Search First |
+| H16 | Onboarding Detection Flow | career-ops (R46) | ✅ | `.claude/hooks/session-start.sh` | Silent prerequisite check at session start (5 critical files). Missing → onboard warning |
+| H17 | Story Bank Accumulation | career-ops (R46) | ✅ | `SOUL/public/references/pattern-bank.md` | Cross-session curated pattern bank. Top patterns from 46 rounds, admission requires impl + validation |
+| H18 | Archetype-Adaptive Pipeline | career-ops (R46) | ✅ | `.claude/skills/steal/SKILL.md` | Target type (framework/self-evolving/module/survey/skill) drives analysis depth, P0 criteria, and output format per phase |
 
 ---
 
@@ -355,10 +364,10 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 ## Priority Summary
 
-### Orchestrator — R1-R45 P0 All Done ✅
+### Orchestrator — R1-R46 All Done ✅
 
-R1-R45 P0/P1/P2 patterns implemented as of 2026-04-08.
-R44 MemPalace implemented. R45a-d (Graphify + DocMason + Channels) implemented.
+R1-R46 P0/P1/P2 patterns implemented as of 2026-04-11.
+R46 career-ops: 9 patterns (4 P0 + 5 P1) — Data Contract, File IPC, Integrity Chain, Adaptive Pipeline, Batch Prompt, Onboarding, Story Bank, Auto-Update, Lock+Resume.
 cvui patterns fully transferred to `cvui` repo — no longer tracked here. RAG pattern moved to `construct3-rag/docs/backlog.md`.
 
 ### Completion Log (2026-04-04 ~ 2026-04-05)
