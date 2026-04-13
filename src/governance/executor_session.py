@@ -44,6 +44,12 @@ try:
 except ImportError:
     parse_progress = None
 
+# Activity-based timeout tracker (R48 Hermes v0.8)
+try:
+    from src.channels.activity_tracker import get_activity_tracker as _get_activity_tracker
+except ImportError:
+    _get_activity_tracker = None
+
 # WAL — Write-Ahead Log for session state persistence (Round 14 ClawHub)
 try:
     from src.governance.audit.wal import scan_for_signals, write_wal_entry, load_session_state
@@ -491,6 +497,13 @@ class AgentSessionRunner:
                                                       "alive", pct, full_text[:100])
                         except Exception:
                             pass
+
+                # ── Activity Tracker: touch on every agent turn (R48) ──
+                if _get_activity_tracker is not None:
+                    try:
+                        _get_activity_tracker().touch(task_id)
+                    except Exception:
+                        pass
 
                 # ── Taint Tracking: 标记工具输出 ──
                 if taint and tool_calls:

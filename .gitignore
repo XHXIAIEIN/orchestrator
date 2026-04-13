@@ -7,6 +7,7 @@ SOUL/private/
 .claude/hooks/state/
 .claude/boot.md
 .claude/context/
+.remember/
 .superpowers/
 data/
 !data/knowledge/
