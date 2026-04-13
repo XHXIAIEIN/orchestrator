@@ -299,31 +299,71 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
 
     # ── 对话 ────────────────────────────────────────────────────────────────
 
-    def _start_chat(self, chat_id: str, text: str, original_text: str = "",
-                    media: list | None = None,
-                    msg_id: int | None = None):
-        """启动对话线程（带 typing 指示器）。"""
-        # 构建 react 回调，让 LLM 可以通过 tool 给用户消息加表情
+    def _do_chat_with_streaming(self, chat_id: str, text: str,
+                                original_text: str = "",
+                                media: list | None = None,
+                                msg_id: int | None = None,
+                                cancelled_fn=None):
+        """Core chat logic with typing indicator + R49 BlockStreamer.
+
+        Runs synchronously — caller is responsible for threading.
+        """
+        # 构建 react 回调
         def react_fn(emoji: str):
             if msg_id:
                 self._set_reaction(chat_id, msg_id, emoji)
 
-        def _chat_with_typing():
-            typing_stop = self._keep_typing(chat_id)
-            try:
-                chat_engine.do_chat(
-                    chat_id, text, original_text,
-                    self._get_system_prompt(),
-                    lambda cid, txt, **kw: self._reply_media(cid, txt, **kw),
-                    "telegram",
-                    permission_check_fn=lambda cid, tool: ch_cfg.user_can(cid, tool),
-                    media=media,
-                    react_fn=react_fn,
-                )
-            finally:
-                typing_stop.set()
+        typing_stop = self._keep_typing(chat_id)
 
-        threading.Thread(target=_chat_with_typing, name="tg-chat", daemon=True).start()
+        # R49: BlockStreamer for progressive delivery
+        streamer = None
+        on_chunk = None
+        if ch_cfg.BLOCK_STREAMING == "on":
+            from src.channels.block_streamer import BlockStreamer
+            streamer = BlockStreamer(
+                send_fn=lambda txt: self._send_text(chat_id, txt),
+                min_chars=ch_cfg.BLOCK_STREAMING_MIN_CHARS,
+                max_chars=ch_cfg.BLOCK_STREAMING_MAX_CHARS,
+                idle_s=ch_cfg.BLOCK_STREAMING_IDLE_S,
+            )
+            on_chunk = streamer.push
+
+        try:
+            chat_engine.do_chat(
+                chat_id, text, original_text,
+                self._get_system_prompt(),
+                lambda cid, txt, **kw: self._reply_media(cid, txt, **kw),
+                "telegram",
+                permission_check_fn=lambda cid, tool: ch_cfg.user_can(cid, tool),
+                media=media,
+                react_fn=react_fn,
+                on_chunk=on_chunk,
+                cancelled_fn=cancelled_fn,
+            )
+            # R49: Flush any remaining buffered text
+            if streamer:
+                streamer.flush_sync()
+        finally:
+            typing_stop.set()
+
+    def _start_chat_sync(self, chat_id: str, text: str, original_text: str = "",
+                         media: list | None = None,
+                         msg_id: int | None = None,
+                         cancelled_fn=None):
+        """Synchronous chat — called from dispatch thread (R49).
+
+        Used by _process_message which manages its own threading + lock lifecycle.
+        """
+        self._do_chat_with_streaming(chat_id, text, original_text, media, msg_id, cancelled_fn)
+
+    def _start_chat(self, chat_id: str, text: str, original_text: str = "",
+                    media: list | None = None,
+                    msg_id: int | None = None,
+                    cancelled_fn=None):
+        """Async chat — spawns a thread. Used for non-dispatch paths (reactions, etc)."""
+        def _run():
+            self._do_chat_with_streaming(chat_id, text, original_text, media, msg_id, cancelled_fn)
+        threading.Thread(target=_run, name="tg-chat", daemon=True).start()
 
     # ── 平台提示 ──────────────────────────────────────────────────────────
 

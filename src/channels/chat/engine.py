@@ -59,7 +59,7 @@ def build_system_prompt(platform_rules: str) -> str:
 def do_chat(chat_id: str, text: str, original_text: str,
             system_prompt: str, reply_fn, channel_source: str = "channel",
             permission_check_fn=None, media: list = None,
-            react_fn=None):
+            react_fn=None, on_chunk=None, cancelled_fn=None):
     """对话主循环 — 闲聊走本地模型，需要工具时走 Claude API。
 
     Args:
@@ -71,6 +71,8 @@ def do_chat(chat_id: str, text: str, original_text: str,
         channel_source: 来源标识（"telegram" / "wechat"）
         permission_check_fn: 权限检查 fn(chat_id, tool_name) -> bool，None=全放行
         react_fn: 表情回应函数 react_fn(emoji)，None=不支持
+        on_chunk: R49 BlockStreamer callback — on_chunk(text_delta) for progressive delivery
+        cancelled_fn: R49 steer mode — returns True if task was cancelled
     """
     try:
         # ── Multi-agent broadcast: @cc @cx message ──
@@ -156,8 +158,19 @@ def do_chat(chat_id: str, text: str, original_text: str,
 
         max_rounds = ch_cfg.TOOL_USE_MAX_ROUNDS
         final_reply = ""
+        # R49: streaming enabled when on_chunk callback is provided
+        use_streaming = on_chunk is not None
 
-        for _ in range(max_rounds):
+        for round_idx in range(max_rounds):
+            # R49 steer mode: check cancellation before each round
+            if cancelled_fn and cancelled_fn():
+                log.info(f"chat: cancelled (steer mode) for {chat_id[:16]}")
+                return
+
+            # Tool-use rounds are always non-streaming (need full response to execute tools).
+            # Final round (no tool_calls) uses streaming when on_chunk is set.
+            # Strategy: try non-streaming first; if no tool_calls AND streaming enabled,
+            # redo as streaming for progressive delivery.
             response = client.messages.create(
                 model=ch_cfg.CHAT_MODEL,
                 max_tokens=ch_cfg.CHAT_MAX_TOKENS,
@@ -186,6 +199,12 @@ def do_chat(chat_id: str, text: str, original_text: str,
                     '', final_reply, flags=_re.DOTALL).strip()
 
             if not tool_calls:
+                # R49: If streaming and we got a final reply, feed it through on_chunk
+                # for BlockStreamer progressive delivery. The non-streaming response
+                # is already complete, but we simulate chunking for the streamer.
+                # Future optimization: use stream=True on the last round.
+                if use_streaming and final_reply:
+                    _feed_reply_to_streamer(final_reply, on_chunk)
                 break
 
             messages.append({"role": "assistant", "content": response.content})
@@ -208,12 +227,18 @@ def do_chat(chat_id: str, text: str, original_text: str,
             messages.append({"role": "user", "content": tool_results})
 
         if final_reply:
-            log.info(f"chat: sending reply ({len(final_reply)} chars) to {chat_id[:16]}...")
-            try:
-                reply_fn(chat_id, final_reply)
-                log.info(f"chat: reply sent successfully")
-            except Exception as re:
-                log.error(f"chat: reply_fn failed: {re}", exc_info=True)
+            if not use_streaming:
+                # Non-streaming path: send full reply at once (original behavior)
+                log.info(f"chat: sending reply ({len(final_reply)} chars) to {chat_id[:16]}...")
+                try:
+                    reply_fn(chat_id, final_reply)
+                    log.info(f"chat: reply sent successfully")
+                except Exception as re:
+                    log.error(f"chat: reply_fn failed: {re}", exc_info=True)
+            else:
+                # Streaming path: BlockStreamer handles delivery via on_chunk,
+                # caller is responsible for flush. Just log.
+                log.info(f"chat: streamed reply ({len(final_reply)} chars) to {chat_id[:16]}")
             save_message(db_path, chat_id, "assistant", final_reply, chat_client=channel_source)
         else:
             log.warning(f"chat: no final_reply for {chat_id[:16]}...")
@@ -226,6 +251,30 @@ def do_chat(chat_id: str, text: str, original_text: str,
             reply_fn(chat_id, f"出了点问题: {e}")
         except Exception:
             pass
+
+
+# ── R49: Streaming helper ────────────────────────────────────────────────────
+
+def _feed_reply_to_streamer(text: str, on_chunk, chunk_size: int = 80):
+    """Feed a complete reply through on_chunk in simulated chunks.
+
+    Since Claude API tool-use rounds are non-streaming, we simulate chunking
+    for BlockStreamer by splitting at paragraph boundaries. This gives a
+    progressive delivery feel even without true streaming.
+
+    Future: use stream=True on the final (no-tool) round for real streaming.
+    """
+    # Split at paragraph boundaries for natural chunking
+    paragraphs = text.split("\n\n")
+    for i, para in enumerate(paragraphs):
+        if i > 0:
+            on_chunk("\n\n")
+        # For long paragraphs, further split into smaller chunks
+        if len(para) > chunk_size * 3:
+            for j in range(0, len(para), chunk_size):
+                on_chunk(para[j:j + chunk_size])
+        else:
+            on_chunk(para)
 
 
 # ── 工具函数 ──────────────────────────────────────────────────────────────────
