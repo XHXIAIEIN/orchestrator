@@ -60,6 +60,13 @@ WEBHOOK_TIMEOUT = _int("CHANNEL_WEBHOOK_TIMEOUT", 5)
 READ_ALLOW_PATHS = _list("CHANNEL_READ_ALLOW_PATHS", "/orchestrator,/git-repos")
 BURST_WINDOW = 2  # 秒，连续消息间隔低于此值时合并到 debounce 缓冲
 
+# ── R49 Qwen Code: Dispatch Mode + Block Streaming ──
+DISPATCH_MODE = _str("CHANNEL_DISPATCH_MODE", "steer")  # collect/steer/followup
+BLOCK_STREAMING = _str("CHANNEL_BLOCK_STREAMING", "off")  # on/off
+BLOCK_STREAMING_MIN_CHARS = _int("CHANNEL_BLOCK_STREAMING_MIN_CHARS", 400)
+BLOCK_STREAMING_MAX_CHARS = _int("CHANNEL_BLOCK_STREAMING_MAX_CHARS", 1000)
+BLOCK_STREAMING_IDLE_S = float(_str("CHANNEL_BLOCK_STREAMING_IDLE_S", "1.5"))
+
 # ── 用户权限 ──
 # 格式: "chat_id:role,chat_id:role" — role: admin (full) / viewer (query+chat only)
 # 向后兼容: 如果只设了 TELEGRAM_CHAT_ID 没设 ALLOWED_USERS，自动当 admin
