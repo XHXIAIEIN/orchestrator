@@ -4,16 +4,16 @@
 # PostToolUse call after compaction and re-injects critical identity + rules.
 # Flag is consumed on first detection so the payload fires exactly once.
 
-FLAG_FILE="/tmp/orchestrator-post-compact-pending"
+source "$(dirname "$0")/lib/state.sh"
 
 # Drain stdin (required for all PostToolUse hooks)
 head -c 65536 > /dev/null
 
 # Nothing to do if compaction has not just occurred
-[ -f "$FLAG_FILE" ] || exit 0
+state_has "compact.pending" || exit 0
 
 # Consume the flag — fire once only
-rm -f "$FLAG_FILE"
+state_del "compact.pending"
 
 # Re-injection payload (target: <500 tokens)
 echo "=== POST-COMPACTION CONTEXT RESTORE ==="

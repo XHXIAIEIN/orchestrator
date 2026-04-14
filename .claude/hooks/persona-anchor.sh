@@ -2,16 +2,14 @@
 # Hook: PostToolUse — persona anchor + anti-stall heartbeat
 # Reads config from config/stall-patterns.yaml for anchor examples
 
-COUNTER_FILE="/tmp/orchestrator-persona-counter"
+source "$(dirname "$0")/lib/state.sh"
 SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CONFIG="$SCRIPT_DIR/config/stall-patterns.yaml"
 
 # Consume stdin (not used, but must drain)
 head -c 65536 > /dev/null
 
-COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
-COUNT=$((COUNT + 1))
-echo $COUNT > "$COUNTER_FILE"
+COUNT=$(state_incr "session.tool-count")
 
 # Every 5 calls: anti-stall reminder loaded from config
 if [ $((COUNT % 5)) -eq 0 ]; then
