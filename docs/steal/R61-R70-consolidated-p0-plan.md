@@ -4,6 +4,20 @@
 **分支**: steal/round-deep-rescan-r60
 **报告总量**: 15份，10,544行，覆盖15个项目的原子级代码分析
 
+## Implementation Status (2026-04-14)
+
+| # | 模式 | 状态 | Commit |
+|---|------|------|--------|
+| 2 | CSO description 规范审计 | ✅ 完成 | `14b3699` 7/9 skills trimmed |
+| 3 | Iron Law 代码围栏 | ✅ 完成 | `2153432` verification-gate + systematic-debugging |
+| 4 | SUBAGENT-STOP 标签 | ✅ 完成 | `2153432` persona + doctor + prime |
+| 8 | Nonce boundary + HTML strip | ✅ 完成 | `14b3699` boundary_nonce.py |
+| 29 | 结构化错误反馈 | ✅ 完成 | `14b3699` guard-redflags.sh 14 patterns |
+| 30 | Budget 优雅摘要 | ✅ 完成 | `14b3699` context-threshold-stop.py |
+| 31 | Sentinel 完成字符串 | ✅ 完成 | `14b3699` dispatch-gate.sh DONE/PARTIAL/STUCK |
+| 32 | LoopCounter 硬性上限 | ✅ 完成 | `14b3699` loop-detector.sh + guard-redflags.sh 双 hook |
+| 33 | 子 agent 并行强制 | ✅ 完成 | `14b3699` dispatch-gate.sh PARALLEL MANDATE |
+
 ## 总览
 
 | Round | 项目 | 类型 | 行数 | P0数 | 核心发现 |
