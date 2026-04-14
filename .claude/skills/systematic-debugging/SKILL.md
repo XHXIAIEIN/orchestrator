@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description: "Structured debugging workflow: investigate → isolate → fix → verify. Use when encountering any bug, test failure, or unexpected behavior."
+description: "Structured root-cause debugging protocol. Use when encountering any bug, test failure, or unexpected behavior."
 ---
 
 # Systematic Debugging Protocol

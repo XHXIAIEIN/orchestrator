@@ -1,6 +1,6 @@
 ---
 name: verification-gate
-description: "Five-step evidence chain before declaring any task complete. Use before committing, creating PRs, or claiming work is done."
+description: "Evidence-gated completion check. Use before committing, creating PRs, or claiming work is done."
 ---
 
 # Verification Gate Protocol

@@ -1,6 +1,6 @@
 ---
 name: steal
-description: "Systematic knowledge extraction from open-source projects. Use when: user shares a repo/link to study, says 偷师/steal/学习/研究, or wants to analyze another project's patterns for adoption."
+description: "Systematic knowledge extraction from open-source projects. Trigger on 偷师/steal/学习/研究 or when analyzing external repos."
 ---
 
 # Steal — Systematic Knowledge Extraction

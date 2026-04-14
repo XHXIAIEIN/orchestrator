@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # Guard hook: detect and block red-flag patterns in Bash commands
 # Source: Round 26 steal — skill-vetter @spclaudehome (14 red flags)
 # Attached to PreToolUse(Bash) in settings.json
@@ -43,7 +45,22 @@ if [ "$FAILURE_COUNT" -ge 3 ]; then
     if echo "$COMMAND" | grep -qE '^\s*(cat|head|tail|less|grep|rg|find|ls|git\s+(log|diff|status|show|blame)|echo|printf|type|which|where)\b'; then
         : # allow diagnostic commands
     else
-        echo "{\"decision\":\"block\",\"reason\":\"THREE-FIX STOP: ${FAILURE_COUNT} consecutive failures. Before retrying, you MUST: (1) State the exact error, (2) List hypotheses, (3) Run diagnostic commands to verify. Only read-only commands (cat/grep/git log/git diff) are allowed until the counter resets.\"}"
+        echo "{\"decision\":\"block\",\"reason\":\"THREE-FIX STOP: ${FAILURE_COUNT} consecutive failures. Before retrying, you MUST: (1) State the exact error, (2) List hypotheses, (3) Run diagnostic commands to verify. Only read-only commands (cat/grep/git log/git diff) are allowed until the counter resets.\",\"pattern_id\":\"three-fix-stop\",\"severity\":\"critical\",\"failure_count\":${FAILURE_COUNT}}"
+        exit 0
+    fi
+fi
+
+# ── P0-32: Loop hard stop (R74 ChatDev LoopCounter — round-deep-rescan) ──
+# loop-detector.sh (PostToolUse) writes /tmp/orchestrator-loop-blocked when 5+ repeats detected.
+# This pre-check enforces the block before the next tool call executes.
+LOOP_BLOCK_FILE="/tmp/orchestrator-loop-blocked"
+if [ -f "$LOOP_BLOCK_FILE" ]; then
+    LOOP_HASH=$(cat "$LOOP_BLOCK_FILE" 2>/dev/null)
+    # Allow diagnostic/read-only commands through (same whitelist as three-fix-stop)
+    if echo "$COMMAND" | grep -qE '^\s*(cat|head|tail|less|grep|rg|find|ls|git\s+(log|diff|status|show|blame)|echo|printf|type|which|where)\b'; then
+        : # allow diagnostic commands
+    else
+        echo "{\"decision\":\"block\",\"reason\":\"LOOP HARD STOP: Repetitive tool call pattern detected (hash: ${LOOP_HASH}). You must break the loop before continuing. (1) State what you're trying to achieve, (2) Explain why the current approach keeps repeating, (3) Propose a fundamentally different strategy. Only read-only commands are allowed until the loop is broken.\",\"pattern_id\":\"loop-hard-stop\",\"severity\":\"critical\"}"
         exit 0
     fi
 fi
@@ -79,52 +96,52 @@ fi
 # 1. SOUL/private exfiltration: reading private files + network in same command
 if echo "$COMMAND" | grep -qiE '(SOUL/private|IDENTITY\.md|experiences\.jsonl|hall-of-instances)' && \
    echo "$COMMAND" | grep -qiE '(curl|wget|nc |ncat|python.*http|requests\.|fetch)'; then
-    echo '{"decision":"block","reason":"SOUL/private exfiltration detected — reading private files and sending over network is forbidden"}'
+    echo '{"decision":"block","reason":"SOUL/private exfiltration detected — reading private files and sending over network is forbidden","pattern_id":"exfil-soul-private","severity":"critical","remediation":"Remove the network component (curl/wget) or access the file without transmitting it"}'
     exit 0
 fi
 
 # 2. MEMORY.md exfiltration
 if echo "$COMMAND" | grep -qiE 'MEMORY\.md' && \
    echo "$COMMAND" | grep -qiE '(curl|wget|nc |ncat)'; then
-    echo '{"decision":"block","reason":"MEMORY.md exfiltration detected — sending memory data over network is forbidden"}'
+    echo '{"decision":"block","reason":"MEMORY.md exfiltration detected — sending memory data over network is forbidden","pattern_id":"exfil-memory","severity":"critical","remediation":"Read MEMORY.md locally without network tools"}'
     exit 0
 fi
 
 # 3. curl/wget to raw IP addresses (not localhost/127.0.0.1/docker networks)
 if echo "$COMMAND" | grep -qE '(curl|wget)\s+.*https?://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' && \
    ! echo "$COMMAND" | grep -qE '(127\.0\.0\.1|localhost|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|10\.)'; then
-    echo '{"decision":"block","reason":"Network request to raw IP address detected — use domain names or verify the target"}'
+    echo '{"decision":"block","reason":"Network request to raw IP address detected — use domain names or verify the target","pattern_id":"raw-ip-request","severity":"high","remediation":"Replace raw IP with a domain name, or use localhost/docker network ranges (127.0.0.1, 172.16-31.x, 192.168.x, 10.x)"}'
     exit 0
 fi
 
 # 4. eval/exec with external input (piped or variable-based)
 if echo "$COMMAND" | grep -qE '(eval|exec)\s*\$|eval\s+\$\(|eval\s+"?\$'; then
-    echo '{"decision":"block","reason":"eval/exec with external input detected — potential code injection"}'
+    echo '{"decision":"block","reason":"eval/exec with external input detected — potential code injection","pattern_id":"eval-injection","severity":"critical","remediation":"Avoid eval/exec with variables. Use direct function calls or parameterized execution instead"}'
     exit 0
 fi
 
 # 5. sudo without explicit user authorization
 if echo "$COMMAND" | grep -qE '\bsudo\b'; then
-    echo '{"decision":"block","reason":"sudo detected — privilege escalation requires explicit user authorization"}'
+    echo '{"decision":"block","reason":"sudo detected — privilege escalation requires explicit user authorization","pattern_id":"sudo-escalation","severity":"critical","remediation":"Remove sudo. If elevated permissions are truly needed, ask the user to run the command manually"}'
     exit 0
 fi
 
 # 6. Reading sensitive credential directories without justification
 if echo "$COMMAND" | grep -qE 'cat\s+.*(/\.ssh/|/\.aws/|/\.gnupg/)' && \
    echo "$COMMAND" | grep -qiE '(curl|wget|nc |python|base64)'; then
-    echo '{"decision":"block","reason":"Reading credential files (.ssh/.aws/.gnupg) with network/encoding tools — potential credential theft"}'
+    echo '{"decision":"block","reason":"Reading credential files (.ssh/.aws/.gnupg) with network/encoding tools — potential credential theft","pattern_id":"cred-exfil","severity":"critical","remediation":"Do not combine credential file reads with network/encoding tools in the same command"}'
     exit 0
 fi
 
 # 7. System file modification outside workspace
 if echo "$COMMAND" | grep -qE '(>\s*|tee\s+|cp\s+.*\s+|mv\s+.*\s+)(/etc/|/usr/|/var/|C:\Windows\)'; then
-    echo '{"decision":"block","reason":"Modifying system files outside workspace — requires explicit authorization"}'
+    echo '{"decision":"block","reason":"Modifying system files outside workspace — requires explicit authorization","pattern_id":"system-file-mod","severity":"high","remediation":"Only modify files within the project workspace. System file changes require explicit user authorization"}'
     exit 0
 fi
 
 # 8. Silent package installation
 if echo "$COMMAND" | grep -qE '(pip|npm|gem|cargo)\s+install.*(-q|--quiet|-s|--silent)'; then
-    echo '{"decision":"block","reason":"Silent package installation detected — installs should be visible"}'
+    echo '{"decision":"block","reason":"Silent package installation detected — installs should be visible","pattern_id":"silent-install","severity":"medium","remediation":"Remove -q/--quiet/-s/--silent flags so installation output is visible"}'
     exit 0
 fi
 
@@ -132,7 +149,7 @@ fi
 if echo "$COMMAND" | grep -qiE '(Cookies|Login\s*Data|Session\s*Storage|\.cookie|Cookie\s*Store)' && \
    echo "$COMMAND" | grep -qiE '(sqlite3|cp\s|curl)' && \
    ! echo "$COMMAND" | grep -qE 'git\s+(commit|log|diff|show|push|pull|merge|rebase|checkout|branch)'; then
-    echo '{"decision":"block","reason":"Browser cookie/session access detected — potential credential theft"}'
+    echo '{"decision":"block","reason":"Browser cookie/session access detected — potential credential theft","pattern_id":"browser-cred-access","severity":"critical","remediation":"Do not access browser credential/cookie files programmatically"}'
     exit 0
 fi
 
@@ -145,14 +162,14 @@ fi
 # 10. Interpreter prefix + dangerous operations (network/deletion/eval)
 if echo "$COMMAND" | grep -qE '(python3?\s+-c|node\s+-e|ruby\s+-e|perl\s+-e)\s' && \
    echo "$COMMAND" | grep -qiE '(requests\.|urllib|http\.client|socket\.|subprocess|os\.remove|os\.unlink|shutil\.rmtree|eval\(|exec\(|__import__|curl|wget|rm\s+-rf)'; then
-    echo '{"decision":"block","reason":"Interpreter prefix injection detected — inline script with dangerous operations (network/deletion/eval)"}'
+    echo '{"decision":"block","reason":"Interpreter prefix injection detected — inline script with dangerous operations (network/deletion/eval)","pattern_id":"interpreter-injection","severity":"high","remediation":"Write the script to a file and run it, or remove dangerous operations (network calls, file deletion, eval)"}'
     exit 0
 fi
 
 # 11. bash -c / sh -c with dangerous operations
 if echo "$COMMAND" | grep -qE '(bash|sh)\s+-c\s' && \
    echo "$COMMAND" | grep -qiE '(curl|wget|nc\s|ncat|rm\s+-rf|dd\s+if=|mkfs|>\s*/dev/|eval\s|base64)'; then
-    echo '{"decision":"block","reason":"Shell -c with dangerous operations detected — potential guard bypass via shell prefix injection"}'
+    echo '{"decision":"block","reason":"Shell -c with dangerous operations detected — potential guard bypass via shell prefix injection","pattern_id":"shell-c-dangerous","severity":"high","remediation":"Run the command directly without bash -c wrapper, or remove dangerous operations"}'
     exit 0
 fi
 
@@ -164,7 +181,7 @@ fi
 
 # 12. Double shell nesting: bash -c "bash -c ...", sh -c "sh -c ..."
 if echo "$COMMAND" | grep -qE '(bash|sh)\s+-c\s.*\b(bash|sh)\s+-c\s'; then
-    echo '{"decision":"block","reason":"Shell nesting detected — double bash/sh -c is a common evasion technique"}'
+    echo '{"decision":"block","reason":"Shell nesting detected — double bash/sh -c is a common evasion technique","pattern_id":"shell-nesting","severity":"high","remediation":"Flatten the command — run it directly without double shell nesting"}'
     exit 0
 fi
 
@@ -176,13 +193,13 @@ fi
 
 # 13. Base64 decode piped to execution
 if echo "$COMMAND" | grep -qiE 'base64\s+(-d|--decode)\s*\|.*\b(bash|sh|python|perl|ruby|node)\b'; then
-    echo '{"decision":"block","reason":"Base64 decode piped to execution detected — obfuscated command execution is forbidden"}'
+    echo '{"decision":"block","reason":"Base64 decode piped to execution detected — obfuscated command execution is forbidden","pattern_id":"base64-exec","severity":"critical","remediation":"Write the decoded content to a file for inspection, do not pipe directly to an interpreter"}'
     exit 0
 fi
 
 # 14. Reverse pattern: echo/printf to base64 decode to execution
 if echo "$COMMAND" | grep -qiE '(echo|printf)\s.*\|\s*base64\s+(-d|--decode)\s*\|\s*(bash|sh)'; then
-    echo '{"decision":"block","reason":"Base64 decode chain to shell detected — obfuscated command execution is forbidden"}'
+    echo '{"decision":"block","reason":"Base64 decode chain to shell detected — obfuscated command execution is forbidden","pattern_id":"base64-chain-exec","severity":"critical","remediation":"Decode to a file for inspection first, do not pipe to shell"}'
     exit 0
 fi
 

@@ -4,33 +4,47 @@
 Stop hook: when context usage >= 85%, blocks Claude from stopping normally
 and forces a handoff. This is PHYSICAL interception — Claude cannot bypass it.
 
-Reads context% from tmpfile written by .claude/scripts/status.py (StatusLine).
+Reads token usage from transcript_path (the only reliable source in Stop hooks).
 """
 
 import json
 import sys
-import os
-import tempfile
-from pathlib import Path
 
-CONTEXT_THRESHOLD = 85  # Block at this percentage
+CONTEXT_THRESHOLD = 85
+DEFAULT_WINDOW = 200000
 
 
-def get_session_id(data: dict) -> str:
-    sid = data.get("session_id", "")
-    if not sid:
-        sid = os.environ.get("CLAUDE_SESSION_ID", "default")
-    return sid
-
-
-def read_context_pct(session_id: str) -> int | None:
-    """Read context% from tmpfile (written by StatusLine)."""
-    short_id = session_id[:8] if len(session_id) > 8 else session_id
-    tmpfile = Path(tempfile.gettempdir()) / f"claude-context-pct-{short_id}.txt"
+def get_latest_usage(transcript_path: str) -> dict | None:
+    """Read the last assistant message's usage from transcript JSONL."""
     try:
-        return int(tmpfile.read_text().strip())
-    except (FileNotFoundError, ValueError, OSError):
+        # Read from end — usage is in the last few lines
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except (OSError, FileNotFoundError):
         return None
+
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        usage = entry.get("message", {}).get("usage")
+        if usage:
+            return usage
+    return None
+
+
+def compute_context_pct(usage: dict) -> int:
+    total_input = (
+        usage.get("input_tokens", 0)
+        + usage.get("cache_creation_input_tokens", 0)
+        + usage.get("cache_read_input_tokens", 0)
+    )
+    window = DEFAULT_WINDOW
+    return min(100, int(total_input / window * 100))
 
 
 def main():
@@ -40,26 +54,49 @@ def main():
     except (json.JSONDecodeError, OSError):
         data = {}
 
-    # Anti-recursion: if this stop was triggered by the gate itself, let it pass
-    if data.get("stop_hook_active"):
+    transcript_path = data.get("transcript_path", "")
+    if not transcript_path:
         print("{}")
         return
 
-    session_id = get_session_id(data)
-    pct = read_context_pct(session_id)
+    usage = get_latest_usage(transcript_path)
+    if not usage:
+        print("{}")
+        return
 
-    if pct is not None and pct >= CONTEXT_THRESHOLD:
+    pct = compute_context_pct(usage)
+
+    if pct >= CONTEXT_THRESHOLD:
         remaining = 100 - pct
+        # R71 Hermes: Budget exhaustion graceful summary path
+        # Don't just say "write a handoff" — provide a structured template
+        # that forces the model to enumerate progress and pending items.
         result = {
             "decision": "block",
             "reason": (
-                f"Context at {pct}% (only {remaining}% remaining). "
-                "You're about to hit automatic compaction. "
-                "Before stopping: 1) /commit any uncommitted work, "
-                "2) write a handoff note to tmp/compaction-snapshots/, "
-                "3) tell the user to start a new session. "
-                "Do NOT just stop — save state first."
+                f"⚠ CONTEXT BUDGET CRITICAL: {pct}% used, {remaining}% remaining.\n"
+                "Automatic compaction is imminent. You MUST produce a graceful summary NOW.\n\n"
+                "OUTPUT THIS EXACT STRUCTURE before doing anything else:\n"
+                "```\n"
+                "## Session Summary (context budget exhausted)\n"
+                "### Completed\n"
+                "- [list each completed task with verification status]\n"
+                "### In Progress\n"
+                "- [list each incomplete task with current state]\n"
+                "### Not Started\n"
+                "- [list remaining planned tasks]\n"
+                "### Handoff for Next Session\n"
+                "- Branch: <current branch>\n"
+                "- Next step: <exact next action>\n"
+                "- Key context: <critical info the next session needs>\n"
+                "```\n"
+                "Then: 1) /commit any uncommitted work, "
+                "2) Save this summary to tmp/compaction-snapshots/, "
+                "3) Tell the user to start a new session with the handoff prompt."
             ),
+            "pattern_id": "budget-exhaustion-summary",
+            "severity": "critical",
+            "context_pct": pct,
         }
         print(json.dumps(result))
     else:
