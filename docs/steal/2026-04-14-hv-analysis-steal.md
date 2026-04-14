@@ -106,3 +106,17 @@ Layer 0: Routing      │ 研究对象类型判断 → 自适应维度权重
 4. **路径依赖分析是 steal 报告的隐藏维度**：我们当前的六维扫描关注"项目现在怎么做的"，但不系统追问"他们为什么被困在这个做法里"。加入路径依赖分析后，我们可以区分"值得学的主动选择"和"不得不用的历史包袱" — 这直接提升 pattern extraction 的准确性。
 
 5. **中文 prompt 是反模式**：hv-analysis 全部 SKILL.md 内容用中文编写（description、指令、方法论），但 LLM 对英文指令的理解和遵循度更高。正确做法是英文指令 + 中文输出要求分离（如我们 CLAUDE.md 的 "These instructions are in English for prompt efficiency, but all output must be in Chinese"）。此外，该 skill 未使用 `$ARGUMENTS` 参数化、未设 `context: fork`（研究任务耗时 13min 应隔离执行）、未设 `allowed-tools`、未使用 `when_to_use` 字段分离触发词。对照 https://code.claude.com/docs/en/skills 官方最佳实践，有多处不合规。
+
+---
+
+## Implementation Status
+
+2 commits:
+- `e1bc88b` (main): R58 HV-Analysis — schema gate + path dependency lens
+- `1bfc628` (merged from steal/r57-context-compaction): wire schema gate + style guard + adaptive state analysis into steal SKILL.md
+
+| Pattern | Where | What |
+|---------|-------|------|
+| Post-Generation Validation | `steal-schema.json` | Completeness gate enforced after report generation |
+| Anti-Corporate-Speak | `.claude/skills/steal/SKILL.md` | 10-item banned buzzword table with concrete replacements |
+| Adaptive State Analysis | `.claude/skills/steal/SKILL.md` | 3-state branching (gap/delta/overlap) for "Our Current State" section |

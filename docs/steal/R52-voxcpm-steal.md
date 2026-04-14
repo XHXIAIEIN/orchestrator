@@ -312,3 +312,15 @@ while retry_badcase_times < retry_badcase_max_times:
 4. **双轨残差架构的含义**：base_lm 做语义，residual_lm 在 base_lm 输出上做声学细化。两个 LM 的 hidden 加权后送进 DiT。这个模式（粗粒度模型 + 细粒度残差）可以用在 agent planning 上：快模型做 outline，慢模型做 detail fill-in，而不是一个模型做所有事。
 
 5. **控制指令内联是 prompt engineering，不是架构**。`(control)text` 的括号前缀格式是训练时约定的，推理时直接使用。这提醒我们：给模型加"steering signal"的最简单方式往往是 prefix 约定，不需要额外 embedding 或 adapter。
+
+---
+
+## Implementation Status
+
+3 P0 patterns implemented in commit `f8e1c13`:
+
+| Pattern | File | What |
+|---------|------|------|
+| Generator cleanup (next_and_close) | `src/core/gen_cleanup.py`, `src/core/agent_client.py`, `src/governance/executor_session.py` | Wrap async generators in try/finally + aclose() to prevent resource leaks on early break (6 break paths in executor, exception paths in agent_client) |
+| Prompt cache separation | `src/channels/chat/engine.py` | System prompt uses `cache_control: {"type": "ephemeral"}` — static per session, reused across multi-round tool-use (~90% cost savings on cached prefix) |
+| BlockStreamer lookahead buffer | `src/channels/block_streamer.py`, `src/channels/config.py`, `src/channels/telegram/channel.py` | Adapted VoxCPM streaming_prefix_len overlap pattern — force-split searches configurable lookahead zone (200 chars) for natural break points before hard-cutting |

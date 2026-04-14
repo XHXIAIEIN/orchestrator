@@ -434,3 +434,12 @@ Claude Code 通过 `input.transcript_path` 提供当前会话的完整 JSONL tra
 ### 5. Context compaction 的终极解决方案不是防御——是避免
 
 1M token 窗口、session 分段（30-60 分钟）、TLDR read gate、agent output 文件隔离——这些不是 compaction 防御，是**减少 context 消耗速率**的手段。如果 context 消耗速率足够低，compaction 永远不会触发。真正的策略是：降低消耗速率（TLDR gate, agent isolation）+ 延迟触发阈值（1M window, AUTOCOMPACT_PCT_OVERRIDE）+ 优化压缩（compact template）+ 防御性验证（PostCompact health check）的四层组合。
+
+---
+
+## Implementation Status
+
+Report committed in `f0eb577`. This is a docs-only steal report (industry survey of context compaction patterns). Related prior implementations:
+- R50 Caveman: flag-file IPC library (`d649689`) — cross-hook state sharing infra
+- R56 Harness Engineering: post-compaction re-injection hook (`cd36329`)
+- `.claude/scripts/compact-restore.py`, `pre-compact.py`, `status.py` added in `1c2f9a6` — operational scripts for context management
