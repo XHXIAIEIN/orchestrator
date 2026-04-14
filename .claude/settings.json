@@ -1,4 +1,8 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "python3 .claude/scripts/status.py"
+  },
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -28,6 +32,17 @@
             "type": "command",
             "command": "bash .claude/hooks/block-protect.sh scan",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/scripts/compact-restore.py",
+            "timeout": 10,
+            "statusMessage": "Restoring context after compaction..."
           }
         ]
       }
@@ -87,6 +102,12 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/context-threshold-stop.py",
+            "timeout": 5,
+            "statusMessage": "Checking context threshold..."
+          },
           {
             "type": "command",
             "command": "bash .claude/hooks/commit-reminder.sh",
@@ -166,8 +187,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/pre-compact.sh",
-            "timeout": 10
+            "command": "python3 .claude/scripts/pre-compact.py",
+            "timeout": 15
           }
         ]
       }
