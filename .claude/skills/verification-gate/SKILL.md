@@ -5,7 +5,9 @@ description: "Evidence-gated completion check. Use before committing, creating P
 
 # Verification Gate Protocol
 
-**IRON LAW: No completion claim without evidence. "Should work" is not evidence.**
+```
+IRON LAW: NO COMPLETION CLAIM WITHOUT EVIDENCE. "Should work" IS NOT EVIDENCE.
+```
 
 Before declaring ANY task complete, you MUST pass all five steps in order:
 

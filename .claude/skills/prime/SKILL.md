@@ -5,6 +5,11 @@ user_invocable: true
 argument-hint: "[docker|channel|soul|governance]"
 ---
 
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+Prime injects main-agent project context — subagents receive context from their dispatch prompt.
+</SUBAGENT-STOP>
+
 # Prime — Context Injection
 
 Rapidly load project context for the requested domain and output a scannable summary. This is NOT documentation — it's active context injection that makes your next actions more informed.

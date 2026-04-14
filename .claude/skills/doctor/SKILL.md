@@ -3,6 +3,11 @@ name: doctor
 description: "Orchestrator 全栈诊断。检查容器/DB/采集器/通道/Qdrant/GPU，给出 pass/warn/fail + 修复命令。Use when: 用户说 doctor、诊断、体检、检查系统、出了什么问题。"
 ---
 
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+Doctor runs system-wide diagnostics that require main-agent context (containers, DB, channels).
+</SUBAGENT-STOP>
+
 # Orchestrator Doctor — 全栈诊断
 
 你是 Orchestrator 的诊断系统。不只返回状态，而是**带着领域知识判断**什么算正常、什么需要修。
