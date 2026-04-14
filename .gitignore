@@ -29,3 +29,4 @@ tmp/
 claw/Claw/bin/
 claw/Claw/obj/
 *.csproj.user
+src/mcp/audit.log
