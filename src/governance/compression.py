@@ -162,14 +162,94 @@ class ContextCompressor:
             "turns_remaining": len(self._turns),
         }
 
-    def _summarize_turns(self, turns: list[Turn]) -> str:
-        """Create a concise summary of compressed turns."""
+    def _summarize_turns(self, turns: list[Turn], focus_topic: str = "") -> str:
+        """Create a concise summary of compressed turns.
+
+        Parameters
+        ----------
+        turns:
+            待压缩的 turn 列表。
+        focus_topic:
+            焦点话题。非空时，与该话题相关的内容保留完整细节，
+            其余内容激进压缩。焦点指令置于 prompt 末尾（利用 recency bias）。
+            该话题的摘要 token 预算约占 60-70%。
+        """
         parts = [f"<COMPRESSED_HISTORY turns={len(turns)}>"]
         for t in turns:
             preview = t.content[:100].replace("\n", " ")
             parts.append(f"  [{t.role}] {preview}...")
         parts.append("</COMPRESSED_HISTORY>")
-        return "\n".join(parts)
+        summary = "\n".join(parts)
+
+        if focus_topic:
+            # 焦点指令追加在末尾，利用模型的 recency bias 确保优先权
+            summary += (
+                f"\n\n<!-- FOCUS: {focus_topic!r} — "
+                f"上述内容中与 {focus_topic!r} 相关的部分请保留完整细节 "
+                f"（精确数值、文件路径、命令输出、错误信息、决策）；"
+                f"无关内容一行概括或省略。"
+                f"焦点内容应占摘要 token 预算的 60-70%。 -->"
+            )
+
+        return summary
+
+    def compress_with_focus(self, focus_topic: str) -> dict:
+        """按焦点话题压缩，相关内容保留更多细节。
+
+        等同于 compress()，但将 focus_topic 传入 _summarize_turns()。
+        当用户执行 /compress <topic> 时调用此方法。
+
+        Parameters
+        ----------
+        focus_topic:
+            需要重点保留的话题关键词，如 "数据库迁移" 或 "登录 bug"。
+        """
+        if not self._turns:
+            return {"compressed": False, "reason": "no turns"}
+
+        target_tokens = int(self.max_context_tokens * self.target_ratio)
+        if self._total_tokens <= target_tokens:
+            return {"compressed": False, "reason": "within target"}
+
+        protect_count = min(self.protect_last_n, len(self._turns))
+        protected = self._turns[-protect_count:]
+        compressible = self._turns[:-protect_count] if protect_count < len(self._turns) else []
+
+        if not compressible:
+            return {"compressed": False, "reason": "all turns protected"}
+
+        protected_tokens = sum(t.tokens for t in protected)
+
+        # 传入 focus_topic，让摘要侧重该话题
+        summary_content = self._summarize_turns(compressible, focus_topic=focus_topic)
+        summary_tokens = max(len(summary_content) // 3, 1)
+
+        summary_turn = Turn(
+            role="system",
+            content=summary_content,
+            tokens=summary_tokens,
+            protected=True,
+        )
+        self._turns = [summary_turn] + protected
+        old_total = self._total_tokens
+        self._total_tokens = summary_tokens + protected_tokens
+        self._compressions += 1
+
+        saved = old_total - self._total_tokens
+        log.info(
+            "compression(focus=%r): %d → %d tokens (%d saved, %d turns compressed)",
+            focus_topic, old_total, self._total_tokens, saved, len(compressible),
+        )
+
+        return {
+            "compressed": True,
+            "focus_topic": focus_topic,
+            "tokens_before": old_total,
+            "tokens_after": self._total_tokens,
+            "tokens_saved": saved,
+            "turns_compressed": len(compressible),
+            "turns_remaining": len(self._turns),
+        }
 
     def get_stats(self) -> dict:
         return {

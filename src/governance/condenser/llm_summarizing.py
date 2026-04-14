@@ -40,6 +40,17 @@ SUMMARIZE_PROMPT = """\
 {events_text}
 """
 
+# 焦点话题附加指令 — 追加在 prompt 末尾，利用 recency bias 确保优先权
+# 60-70% token 预算分配给焦点话题，其余激进压缩（来自 hermes v0.9 R59）
+_FOCUS_TOPIC_SUFFIX = """\
+
+FOCUS TOPIC: "{focus_topic}"
+用户请求本次压缩 **优先保留** 与 "{focus_topic}" 相关的所有信息。
+对于与 "{focus_topic}" 相关的内容：保留完整细节——精确数值、文件路径、
+命令输出、错误信息、决策过程。
+对于与 "{focus_topic}" 无关的内容：一行概括或直接省略（若完全无关）。
+焦点话题内容应占摘要 token 预算的 60-70%。"""
+
 
 class LLMSummarizingCondenser(Condenser):
     """Compress middle events using a lightweight LLM call.
@@ -63,7 +74,18 @@ class LLMSummarizingCondenser(Condenser):
         self.keep_head = keep_head
         self.keep_tail = keep_tail
 
-    def condense(self, view: View) -> View:
+    def condense(self, view: View, focus_topic: str = "") -> View:
+        """压缩中间事件，可选焦点话题。
+
+        Parameters
+        ----------
+        view:
+            待压缩的事件视图。
+        focus_topic:
+            非空时，与该话题相关的内容保留完整细节，
+            其余内容激进压缩（60-70% 预算分给焦点）。
+            对应用户执行 /compress <topic> 的场景。
+        """
         if len(view) <= self.threshold:
             return view
 
@@ -72,20 +94,31 @@ class LLMSummarizingCondenser(Condenser):
         middle = events[self.keep_head : -self.keep_tail]
         tail = events[-self.keep_tail :]
 
-        summary_text = self._summarize(middle)
+        summary_text = self._summarize(middle, focus_topic=focus_topic)
 
         summary_event = Event(
             id=-1,
             event_type="system",
             source="condenser:llm",
             content=summary_text,
-            metadata={"condensed_count": len(middle), "strategy": "llm_summarizing"},
+            metadata={
+                "condensed_count": len(middle),
+                "strategy": "llm_summarizing",
+                "focus_topic": focus_topic or None,
+            },
             condensed=True,
         )
         return View(head + [summary_event] + tail)
 
-    def _summarize(self, events: list[Event]) -> str:
-        """Attempt LLM summary, fall back to mechanical compression."""
+    def _summarize(self, events: list[Event], focus_topic: str = "") -> str:
+        """Attempt LLM summary, fall back to mechanical compression.
+
+        Parameters
+        ----------
+        focus_topic:
+            非空时在 prompt 末尾追加焦点指令，利用 recency bias 确保
+            模型优先保留焦点话题内容（60-70% token 预算）。
+        """
         events_text = "\n".join(
             f"[{e.event_type}:{e.source}] {e.content[:200]}" for e in events
         )
@@ -93,9 +126,13 @@ class LLMSummarizingCondenser(Condenser):
         if self.llm_fn:
             try:
                 prompt = SUMMARIZE_PROMPT.format(events_text=events_text[:4000])
+                # 焦点指令追加在末尾，利用 recency bias（来自 hermes v0.9 R59）
+                if focus_topic:
+                    prompt += _FOCUS_TOPIC_SUFFIX.format(focus_topic=focus_topic)
                 result = self.llm_fn(prompt)
                 if result and len(result) > 20:
-                    return f"[LLM摘要: {len(events)} 事件压缩]\n{result}"
+                    label = f"[LLM摘要({focus_topic}): {len(events)} 事件压缩]" if focus_topic else f"[LLM摘要: {len(events)} 事件压缩]"
+                    return f"{label}\n{result}"
             except Exception as e:
                 log.warning(f"LLM condenser failed, falling back: {e}")
 
