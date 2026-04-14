@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "orchestrator-memory": {
+      "command": "python3",
+      "args": ["-m", "src.mcp.memory_server"],
+      "cwd": "${workspaceRoot}",
+      "description": "Orchestrator memory system — buffer, recent, archive, core, public. SOUL/private/ is never exposed.",
+      "env": {}
+    }
+  }
+}
