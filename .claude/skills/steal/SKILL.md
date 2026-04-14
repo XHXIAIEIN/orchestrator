@@ -15,11 +15,11 @@ Core mindset (from 39 rounds of practice):
 
 ## Pre-flight
 
-1. **Branch gate**: Current branch MUST match `steal/*` or `round/*`. If not:
-   ```
-   git checkout -b steal/<topic>
-   ```
-   The dispatch-gate hook blocks `[STEAL]` work on other branches.
+1. **Branch gate** *(hard rule — no exceptions)*: Steal work MUST happen on a `steal/*` or `round/*` branch. **Never modify files on any other branch.**
+   - Check current branch: `git branch --show-current`
+   - If not on `steal/*` or `round/*` → **immediately create and switch**: `git checkout -b steal/<topic>`
+   - Do NOT ask the user whether to create the branch. Do NOT proceed with any file writes until you are on the correct branch.
+   - The dispatch-gate hook also blocks `[STEAL]` work on other branches as a safety net, but the skill itself must enforce this before the hook even fires.
 
 2. **Identify target**: URL, repo name, or local path. If user gave multiple links, process ALL — don't skip any for seeming "unrelated" (breadth rule: a traffic sign detector's tiling strategy might be exactly what a UI detector needs).
 
@@ -70,7 +70,12 @@ The target type is NOT just documentation — it drives execution behavior acros
 
 For each target:
 
-1. **Clone or browse** the repo (`gh repo clone` to `D:/Agent/tmp/steal/<topic>/`)
+1. **Clone the repo** *(mandatory — browsing GitHub is NOT sufficient)*:
+   ```
+   gh repo clone <owner/repo> D:/Agent/.steal/<topic>/
+   ```
+   Then `cd` into it and read actual source files. GitHub web view hides too much context (cross-file references, directory structure, test fixtures). If the repo is too large to clone (>2GB), use `--depth 1` for a shallow clone, but still clone.
+
 2. **Map architecture** — entry points, core abstractions, data flow. Open with a one-sentence positioning: not what the project does, but **problem space + solution pattern** (e.g., "A Meta-Agent that auto-iterates on its own harness overnight").
 3. **Six-dimensional scan** — systematically probe each dimension:
 
@@ -83,7 +88,19 @@ For each target:
 | **Failure / Recovery** | Failure classification taxonomy, doom loop detection, revert-then-issue patterns, escalation chains |
 | **Quality / Review** | Eval loops, anti-sycophancy measures, evidence-based gates, reviewer separation |
 
-4. **Find the clever bits** — the parts where the author solved something non-obvious. Specifically:
+4. **Depth layers** *(anti-shallow-steal rule)* — six-dimensional scan catches WHAT exists, this step catches HOW it actually runs. For each non-trivial module, trace through these layers:
+
+   | Layer | What to trace | How to find it | Common shallow-steal failure |
+   |-------|--------------|----------------|------------------------------|
+   | **调度层 (Orchestration)** | Who calls whom, in what order, with what concurrency model? Event loop? Queue? DAG? | Entry point → follow the call chain. `grep -r "async\|await\|queue\|dispatch\|schedule\|worker"` | Only noting "it has an agent loop" without tracing the actual dispatch logic |
+   | **实践层 (Implementation)** | The actual algorithm/data structure behind the abstraction. Not "it uses a cache" — what eviction policy? What key scheme? | Read the core module's longest function. That's usually where the real logic lives. | Describing the interface but not the implementation |
+   | **消费层 (Consumption)** | How are outputs consumed downstream? API? CLI? SDK? Event stream? What format contracts exist? | `grep -r "return\|yield\|emit\|publish\|response"` in core modules. Check test files for expected output shapes. | Ignoring how results flow to the end user/next system |
+   | **状态层 (State)** | Where does state live? Memory? DB? File? How is it persisted, versioned, and recovered? | Look for: ORM models, JSON/YAML serialization, checkpoint logic, migration files | "It saves state" without showing the schema or recovery path |
+   | **边界层 (Boundary)** | Input validation, auth, rate limiting, error boundaries between modules | Entry points, middleware, decorator patterns, try/catch blocks at module boundaries | Only stealing the happy path, ignoring how errors propagate |
+
+   A steal report that only covers the 边界层 (defensive programming) is incomplete. The 调度层 and 实践层 are where the real architectural insights live.
+
+5. **Find the clever bits** — the parts where the author solved something non-obvious. Specifically:
    - Core loop / orchestration logic
    - Error handling / recovery patterns (failure taxonomy?)
    - State management / persistence (checkpoint? WAL?)
@@ -292,6 +309,8 @@ These thoughts mean you're about to produce a shallow steal report:
 | "P2 is fine for this" | Downgrading to avoid implementation work is the #1 rationalization in steal reports. | Re-check P0 criteria: does it fill a gap? Is it < 2h? If yes, it's P0. |
 | "We're already better" | Overconfidence kills learning. Even if overall architecture is stronger, individual patterns can be superior. | Find the ONE thing they do better. Every project has at least one. |
 | "I don't have time for the six-dimensional scan" | Skipping dimensions = missing patterns. Security and failure recovery are the most commonly skipped — and the most valuable. | Do all six. Empty dimensions are fine. Skipped dimensions are not. |
+| "I can analyze this from the GitHub page" | GitHub web view hides cross-file context, directory structure, and test fixtures. You'll only see the surface. | Clone the repo. `cd` into it. Read actual source files. Trace call chains across files. |
+| "The defensive programming patterns are the main takeaway" | Defensive programming (input validation, error handling) is the easiest layer to spot and the shallowest to steal. The real value is in orchestration logic, state management, and consumption patterns. | Trace through all 5 depth layers. If your report only covers 边界层, it's incomplete. |
 
 ## Rules
 
@@ -308,7 +327,8 @@ These thoughts mean you're about to produce a shallow steal report:
 ### Execution
 - **Agent dispatch for large repos**: Use sub-agents to parallelize (one per major module). Tag all agent prompts with `[STEAL]` at the start
 - **Commit per meaningful unit**: Report → plan → implementation batches, each a separate commit
-- **Clone to tmp**: `D:/Agent/tmp/steal/<topic>/`, not in the orchestrator repo
+- **Auto-commit steal reports**: Steal 产出是 `docs/steal/` 下的 markdown 文件，零风险。报告通过 Post-Generation Validation 后直接 `git add + commit`，不需要询问确认。这条覆盖 CLAUDE.md 的 "首次 commit 需确认" 规则。commit message 格式：`docs(steal): R<round> <topic> steal report`
+- **Clone to tmp**: `D:/Agent/.steal/<topic>/`, not in the orchestrator repo
 
 ### Meta-cognition
 - **Track the trend**: Across 39 rounds, we've observed: early reports focus on features, mid-stage on closed loops, late-stage on governance. When analyzing, ask: "Is this project still thinking about features, or has it evolved to think about self-governance?"
