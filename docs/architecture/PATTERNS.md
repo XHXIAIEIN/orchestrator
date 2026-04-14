@@ -1,6 +1,6 @@
 # Pattern Library
 
-> 48 轮偷师，100+ 项目，245 模式。按主题域组织，不按来源。
+> 49 轮偷师，100+ 项目，249 模式。按主题域组织，不按来源。
 >
 > 每个模式只出现一次。跨轮重复的模式合并为单条，在 Notes 中标注演进。
 
@@ -8,8 +8,8 @@
 
 | Metric | Count |
 |--------|-------|
-| Total patterns | 245 |
-| ✅ Implemented | 222 |
+| Total patterns | 249 |
+| ✅ Implemented | 226 |
 | → Moved to other projects | 12 |
 | ⏸️ Shelved | 11 |
 
@@ -250,6 +250,10 @@
 | O54 | Smart PR Review Routing | Archon (R47) | ✅ | `governance/review_router.py` | Cheap classifier → PR type → relevant review agents only. Skip irrelevant agents |
 | O55 | Context Engine ABC | Hermes v0.8 (R48) | ✅ | `governance/condenser/context_engine.py` | Pluggable compression: init→should_compress→compress→finalize. Engine can provide own tools |
 | O56 | Plugin Hook Lifecycle (20 events) | Hermes v0.8 (R48) | ✅ | `core/lifecycle_hooks.py` | +4 session hooks: on_session_start/end/finalize/reset. Now independent from task hooks |
+| O57 | Channel Dispatch Modes (collect/steer/followup) | Qwen Code (R49) | ✅ | `channels/conversation_lock.py` | Three concurrent message handling modes per channel. collect=batch, steer=interrupt, followup=queue |
+| O58 | BlockStreamer Progressive Delivery | Qwen Code (R49) | ✅ | `channels/block_streamer.py` | Three-threshold chunked streaming (minChars/maxChars/idleMs). Delivers partial output as it generates |
+| O59 | Stream-JSON Bridge | Qwen Code (R49) | ✅ | `channels/agent_bridge.py` | NDJSON streaming via Popen + BlockStreamer pipeline. Replaces batch subprocess.run |
+| O60 | Cron Deterministic Jitter | Qwen Code (R49) | ✅ | `scheduler.py` | `hash(job_id) % 90` second offset for cron jobs. Same id = same offset across restarts. Prevents thundering herd |
 
 ---
 
@@ -387,11 +391,13 @@ These patterns appeared across multiple rounds and are consolidated above:
 
 ## Priority Summary
 
-### Orchestrator — R1-R48 All Done ✅
+### Orchestrator — R1-R49 All Done ✅
 
-R1-R48 P0/P1/P2 patterns implemented as of 2026-04-11.
+All 49 rounds closed as of 2026-04-14.
+R46 career-ops: 4 P0 + 5 P1 — Data contract, file-based IPC, pipeline integrity chain, archetype-adaptive pipeline, batch worker, onboarding detection, story bank, auto-update, lock+resume.
 R47 Archon: 6 P0 + 8 P1 — DAG orchestration, approval gates, adversarial dev, disk state loop, env leak scanner, prime skill, confidence filtering, handoff, smart PR routing, message splitting, conversation lock, session FSM, error classification, rule scoping.
 R48 Hermes v0.8: 6 P0 + 5 P1 — Activity-based timeout, context engine ABC, reasoning effort, heartbeat propagation, no-evict anti-loop, session lifecycle hooks, directory discovery, credential pool, skill config, self-restart.
+R49 Qwen Code: 3 P0 code + 1 P0 ref-only + 1 P1 — Channel dispatch modes, BlockStreamer, stream-JSON bridge, cron deterministic jitter.
 cvui patterns fully transferred to `cvui` repo — no longer tracked here.
 
 ### Completion Log (2026-04-04 ~ 2026-04-05)

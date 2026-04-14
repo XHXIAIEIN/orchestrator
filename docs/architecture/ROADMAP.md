@@ -211,9 +211,26 @@ R41-R45 偷师 + 主动推送 + 通道安全。含 prompt 全量升级、MemPala
 | 107 | Proactive Engine (Signal + Throttle + Generator) | — | Reverse Prompting | ✅ | `src/proactive/` |
 | 108 | Daily Report + Profile Opus Upgrade | — | Analysis | ✅ | `src/analysis/` |
 
+## Sprint 9: R46-R49 Steal Closure (2026-04-08 ~ 2026-04-14)
+
+R46-R49 偷师收尾。Career-ops pipeline 模式、Archon DAG/审批/对抗开发、Hermes v0.8 活动追踪/上下文引擎、Qwen Code Channel 调度/流式投递。全部 49 轮关闭。
+
+| # | Pattern | ID | Source | Status | Target |
+|---|---------|-----|--------|--------|--------|
+| 109 | Data Contract + Pipeline Integrity | — | R46 career-ops | ✅ | `DATA_CONTRACT.md` + `bin/verify-steal.sh` |
+| 110 | File-based IPC + Dispatch Lock | — | R46 career-ops | ✅ | `governance/audit/outcome_tracker.py` + `dispatch_lock.py` |
+| 111 | Archetype-Adaptive Pipeline | — | R46 career-ops | ✅ | `.claude/skills/steal/SKILL.md` |
+| 112 | DAG Orchestration + Approval Gate | — | R47 Archon | ✅ | `governance/approval.py` + prompts |
+| 113 | Adversarial Dev + Confidence Filtering | — | R47 Archon | ✅ | `.claude/skills/adversarial-dev/` |
+| 114 | Activity Tracker + Heartbeat | — | R48 Hermes v0.8 | ✅ | `channels/activity_tracker.py` |
+| 115 | Context Engine ABC + reasoning_effort | — | R48 Hermes v0.8 | ✅ | `governance/condenser/context_engine.py` |
+| 116 | Channel Dispatch Modes | — | R49 Qwen Code | ✅ | `channels/conversation_lock.py` |
+| 117 | BlockStreamer + Stream-JSON Bridge | — | R49 Qwen Code | ✅ | `channels/block_streamer.py` + `agent_bridge.py` |
+| 118 | Cron Deterministic Jitter | — | R49 Qwen Code | ✅ | `src/scheduler.py` |
+
 ## Remaining Work
 
-**Orchestrator 本体：** Sprint 1-8 全部 108 项已完成 ✅
+**Orchestrator 本体：** Sprint 1-9 全部 118 项已完成 ✅ / 49 轮偷师全部关闭 ✅
 
 **cvui 包（独立仓库 `D:\Users\Administrator\Documents\GitHub\cvui`）：**
 - 🔲 V1: VLM Zone Stage
