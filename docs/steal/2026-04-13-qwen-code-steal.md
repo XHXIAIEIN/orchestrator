@@ -420,3 +420,29 @@ claude --output-format stream-json -p "message"
 | Typing indicator | `onPromptStart/End` hook + 4s interval | `_keep_typing` 线程 + 4s interval | **一致**: 已覆盖 |
 | Message splitting | `splitHtmlForTelegram` (4096 limit) | `message_splitter.split_message` (多平台) | **我们更好**: 支持三轮切分 |
 | Access control | `SenderGate` + `GroupGate` + `PairingStore` | `ch_cfg.ALLOWED_USERS` + `user_can()` | **待定**: pairing 模式有趣但非必需 |
+
+## Round Closure (2026-04-14)
+
+**Status: ✅ CLOSED**
+
+### Implemented (4 P0 + 1 P1 = 5 patterns)
+| # | Pattern | File | Commit |
+|---|---------|------|--------|
+| P0#1 | Channel Dispatch Modes | `src/channels/conversation_lock.py` | 902236d |
+| P0#2 | BlockStreamer | `src/channels/block_streamer.py` | 902236d |
+| P0#3 | Stream-JSON Bridge | `src/channels/agent_bridge.py` | 902236d |
+| P0#4 | Tool Concurrency Partitioning | ref-only (Claude Code built-in) | — |
+| P1#3 | Cron Deterministic Jitter | `src/scheduler.py` `_jitter_seconds()` | this session |
+
+### Closed ref-only (4 P1 + 5 P2 = 9 patterns)
+| Pattern | Reason |
+|---------|--------|
+| Arena 多模型竞赛 | Only use Claude; ~6h for no practical value |
+| Microcompaction 空闲清理 | condenser configurable.py already handles this |
+| Approval Mode Inheritance | CC subagent permissions not in our control |
+| Envelope Normalization | Channel layer not being rebuilt yet |
+| Multi-Provider ModelRegistry | Only use Claude |
+| Extension Marketplace | CC has plugin system |
+| WebUI Adapter | No WebUI requirement |
+| Java SDK | Python ecosystem |
+| Community GitHub Workflows | Scale too small |

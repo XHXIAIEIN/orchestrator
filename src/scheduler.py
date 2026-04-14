@@ -37,35 +37,43 @@ def _init_db(retries: int = 5, delay: float = 3.0) -> EventsDB:
     return EventsDB(DB_PATH)
 
 
+def _jitter_seconds(job_id: str, cap: int = 90) -> int:
+    """Deterministic jitter: hash(job_id) % cap.  Spreads cron jobs across
+    a window so they don't all fire at second-0.  Same id → same offset,
+    so restarts don't shuffle the schedule.  (R49 Qwen Code — Cron Jitter)"""
+    return hash(job_id) % cap
+
+
 def start():
     db = _init_db()
     s = BlockingScheduler()
 
+    # ── Core jobs — cron jobs get deterministic second-offset to avoid thundering herd ──
     s.add_job(lambda: run_job("collectors", run_collectors, db), "interval", hours=1, id="collectors")
-    s.add_job(lambda: run_job("analysis", run_analysis, db), "cron", hour=4, timezone="Asia/Shanghai", id="analysis")
+    s.add_job(lambda: run_job("analysis", run_analysis, db), "cron", hour=4, second=_jitter_seconds("analysis"), timezone="Asia/Shanghai", id="analysis")
     s.add_job(lambda: run_job("profile_periodic", profile_periodic, db), "interval", hours=6, id="profile_periodic")
-    s.add_job(lambda: run_job("profile_daily", profile_daily, db), "cron", hour=6, timezone="Asia/Shanghai", id="profile_daily")
+    s.add_job(lambda: run_job("profile_daily", profile_daily, db), "cron", hour=6, second=_jitter_seconds("profile_daily"), timezone="Asia/Shanghai", id="profile_daily")
     s.add_job(lambda: run_job("debt_scan", debt_scan, db), "interval", hours=12, id="debt_scan")
     s.add_job(lambda: run_job("debt_resolve", debt_resolve, db), "interval", hours=12, start_date="2026-01-01 01:00:00", timezone="Asia/Shanghai", id="debt_resolve")
-    s.add_job(lambda: run_job("performance_report", performance_report, db), "cron", hour=8, timezone="Asia/Shanghai", id="performance_report")
+    s.add_job(lambda: run_job("performance_report", performance_report, db), "cron", hour=8, second=_jitter_seconds("performance_report"), timezone="Asia/Shanghai", id="performance_report")
     s.add_job(lambda: run_job("voice_refresh", voice_refresh, db), "interval", days=7, id="voice_refresh")
-    s.add_job(lambda: run_job("memory_hygiene", memory_hygiene, db), "cron", day_of_week="sun", hour=6, timezone="Asia/Shanghai", id="memory_hygiene")
-    s.add_job(lambda: run_job("experience_cull", experience_cull, db), "cron", hour=3, timezone="Asia/Shanghai", id="experience_cull")
-    s.add_job(lambda: run_job("skill_evolution", skill_evolution, db), "cron", day_of_week="mon", hour=9, timezone="Asia/Shanghai", id="skill_evolution")
-    s.add_job(lambda: run_job("policy_suggestions", policy_suggestions, db), "cron", hour=7, timezone="Asia/Shanghai", id="policy_suggestions")
-    s.add_job(lambda: run_job("weekly_audit", weekly_audit, db), "cron", day_of_week="wed", hour=10, timezone="Asia/Shanghai", id="weekly_audit")
-    s.add_job(lambda: run_job("skill_vetting", skill_vetting, db), "cron", day_of_week="sat", hour=9, timezone="Asia/Shanghai", id="skill_vetting")
-    s.add_job(lambda: run_job("hotness_sweep", hotness_sweep, db), "cron", hour=5, timezone="Asia/Shanghai", id="hotness_sweep")
+    s.add_job(lambda: run_job("memory_hygiene", memory_hygiene, db), "cron", day_of_week="sun", hour=6, second=_jitter_seconds("memory_hygiene"), timezone="Asia/Shanghai", id="memory_hygiene")
+    s.add_job(lambda: run_job("experience_cull", experience_cull, db), "cron", hour=3, second=_jitter_seconds("experience_cull"), timezone="Asia/Shanghai", id="experience_cull")
+    s.add_job(lambda: run_job("skill_evolution", skill_evolution, db), "cron", day_of_week="mon", hour=9, second=_jitter_seconds("skill_evolution"), timezone="Asia/Shanghai", id="skill_evolution")
+    s.add_job(lambda: run_job("policy_suggestions", policy_suggestions, db), "cron", hour=7, second=_jitter_seconds("policy_suggestions"), timezone="Asia/Shanghai", id="policy_suggestions")
+    s.add_job(lambda: run_job("weekly_audit", weekly_audit, db), "cron", day_of_week="wed", hour=10, second=_jitter_seconds("weekly_audit"), timezone="Asia/Shanghai", id="weekly_audit")
+    s.add_job(lambda: run_job("skill_vetting", skill_vetting, db), "cron", day_of_week="sat", hour=9, second=_jitter_seconds("skill_vetting"), timezone="Asia/Shanghai", id="skill_vetting")
+    s.add_job(lambda: run_job("hotness_sweep", hotness_sweep, db), "cron", hour=5, second=_jitter_seconds("hotness_sweep"), timezone="Asia/Shanghai", id="hotness_sweep")
     s.add_job(lambda: run_job("sync_vectors", sync_vectors, db), "interval", hours=1, id="sync_vectors")
 
     # ── Proactive push engine ──
     s.add_job(lambda: run_job("proactive_scan", proactive_scan, db), "interval", minutes=5, id="proactive_scan")
-    s.add_job(lambda: run_job("proactive_daily", proactive_daily_digest, db), "cron", hour=9, timezone="Asia/Shanghai", id="proactive_daily")
-    s.add_job(lambda: run_job("proactive_weekly", proactive_weekly_digest, db), "cron", day_of_week="mon", hour=9, minute=30, timezone="Asia/Shanghai", id="proactive_weekly")
+    s.add_job(lambda: run_job("proactive_daily", proactive_daily_digest, db), "cron", hour=9, second=_jitter_seconds("proactive_daily"), timezone="Asia/Shanghai", id="proactive_daily")
+    s.add_job(lambda: run_job("proactive_weekly", proactive_weekly_digest, db), "cron", day_of_week="mon", hour=9, minute=30, second=_jitter_seconds("proactive_weekly"), timezone="Asia/Shanghai", id="proactive_weekly")
 
     # ── Evolution Loop ──
     s.add_job(lambda: run_job("evolution_cycle", evolution_cycle, db), "interval", minutes=30, id="evolution_cycle")
-    s.add_job(lambda: run_job("steal_patrol", steal_patrol, db), "cron", day_of_week="wed", hour=14, timezone="Asia/Shanghai", id="steal_patrol")
+    s.add_job(lambda: run_job("steal_patrol", steal_patrol, db), "cron", day_of_week="wed", hour=14, second=_jitter_seconds("steal_patrol"), timezone="Asia/Shanghai", id="steal_patrol")
 
     # ── Agent Cron: 部门级定时任务 (Round 16 LobeHub) ──
     try:
@@ -161,6 +169,40 @@ def start():
 
     db.write_log("调度器已启动，采集：每小时，日报：每日04:00，画像分析：每6小时+每日06:00，债务扫描：每12小时，债务解决：每12小时(+1h offset)，吏部绩效：每日08:00，声音池：每7天，技能演进：每周一09:00，策略建议：每日07:00，每周审计(兵部+吏部+礼部)：每周三10:00，主动推送：每5分钟扫描+每日09:00日报+每周一09:30周报，进化循环：每30分钟，偷师巡查：每周三14:00", "INFO", "scheduler")
     log.info("Scheduler started. Collectors: hourly. Analysis: daily 04:00 CST. Debt scan: every 12 hours.")
+
+    # ── Zombie Task Reaper: 定时清理卡死任务 ──
+    # Fix: _reap_zombie_tasks 原来只在 dispatch 时触发，没有新任务就永远不会清理。
+    # 现在独立定时跑，确保 stuck tasks 不会永久占满线程池。
+    try:
+        from src.governance.dispatcher import TaskDispatcher
+        from src.governance.scrutiny import Scrutinizer
+        _reaper_dispatcher = TaskDispatcher(db=db, scrutinizer=Scrutinizer(db=db))
+
+        def _reap_zombie_tasks():
+            try:
+                _reaper_dispatcher._reap_zombie_tasks()
+            except Exception as e:
+                log.warning(f"ZombieReaper: error during reap cycle: {e}")
+
+        s.add_job(_reap_zombie_tasks, "interval", minutes=1, id="zombie_task_reaper")
+        log.info("ZombieReaper: enabled, checking every 1 minute")
+    except Exception as e:
+        log.warning(f"ZombieReaper init failed (non-fatal): {e}")
+
+    # ── Startup Cleanup: 清理上次运行残留的 running 任务 ──
+    try:
+        running_tasks = db.get_running_tasks()
+        if running_tasks:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            for t in running_tasks:
+                db.update_task(t["id"], status="failed",
+                               output="startup cleanup: task was running when container restarted",
+                               finished_at=now)
+                log.warning(f"Startup cleanup: marked stale task #{t['id']} as failed")
+            log.info(f"Startup cleanup: cleared {len(running_tasks)} stale running tasks")
+    except Exception as e:
+        log.warning(f"Startup cleanup failed (non-fatal): {e}")
 
     # 启动后跑一次初始采集 + 债务扫描
     log.info("Running initial collection...")

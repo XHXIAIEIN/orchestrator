@@ -100,7 +100,10 @@ def _needs_fact_expression_split(spec: dict) -> bool:
 
 
 CLAUDE_TIMEOUT = 300
-STALE_THRESHOLD = CLAUDE_TIMEOUT + 120
+# Max blueprint timeout is 900s (enforce_timeout_constraint cap).
+# Add generous buffer for retries + backoff + cleanup.
+# Old value was 420s which was shorter than max allowed task timeout.
+STALE_THRESHOLD = 1200  # 20 minutes — well above 900s cap + retry overhead
 MAX_CONCURRENT = 3
 MAX_CONCURRENT_SUBAGENTS = int(os.environ.get("MAX_CONCURRENT_SUBAGENTS", "5"))
 
