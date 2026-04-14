@@ -6,6 +6,8 @@
 
 ## Implementation Status (2026-04-14)
 
+### Tier 1 + Tier 1+ (10/10 完成)
+
 | # | 模式 | 状态 | Commit |
 |---|------|------|--------|
 | 2 | CSO description 规范审计 | ✅ 完成 | `14b3699` 7/9 skills trimmed |
@@ -17,6 +19,20 @@
 | 31 | Sentinel 完成字符串 | ✅ 完成 | `14b3699` dispatch-gate.sh DONE/PARTIAL/STUCK |
 | 32 | LoopCounter 硬性上限 | ✅ 完成 | `14b3699` loop-detector.sh + guard-redflags.sh 双 hook |
 | 33 | 子 agent 并行强制 | ✅ 完成 | `14b3699` dispatch-gate.sh PARALLEL MANDATE |
+
+### Tier 2 (8/9 完成, #13 Runtime DI 延后)
+
+| # | 模式 | 状态 | 实现文件 |
+|---|------|------|---------|
+| 9 | 双层循环检测 (Hash+频率) | ✅ 完成 | `src/governance/safety/loop_detection.py` |
+| 10 | 三态熔断器 + 指数退避 | ✅ 完成 | `src/core/circuit_breaker.py` |
+| 11 | 时间分层记忆合成 | ✅ 完成 | `SOUL/tools/memory_synthesizer.py` (enhanced) |
+| 12 | 两阶段时间检索 SQL | ✅ 完成 | `src/storage/temporal_recall.py` |
+| 13 | Runtime 对象 DI 注入 | ⏳ 延后 | 跨模块重构，需单独 session |
+| 14 | xxh3 内容寻址缓存 | ✅ 完成 | `src/governance/content_cache.py` |
+| 15 | Protected file 三态检查 | ✅ 完成 | `.claude/hooks/config-protect-3state.sh` |
+| 16 | Working Path Lock | ✅ 完成 | `src/governance/working_path_lock.py` |
+| 17 | Idle Timeout 死锁检测 | ✅ 完成 | `src/governance/safety/idle_timeout.py` |
 
 ## 总览
 

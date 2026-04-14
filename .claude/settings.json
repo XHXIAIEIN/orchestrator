@@ -1,8 +1,4 @@
 {
-  "statusLine": {
-    "type": "command",
-    "command": "python3 .claude/scripts/status.py"
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -40,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/scripts/compact-restore.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/scripts/compact-restore.py\"",
             "timeout": 10,
             "statusMessage": "Restoring context after compaction..."
           }
@@ -83,6 +79,11 @@
           },
           {
             "type": "command",
+            "command": "bash .claude/hooks/config-protect-3state.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/block-protect.sh check",
             "timeout": 5
           }
@@ -104,7 +105,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/context-threshold-stop.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/context-threshold-stop.py\"",
             "timeout": 5,
             "statusMessage": "Checking context threshold..."
           },
@@ -187,7 +188,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/scripts/pre-compact.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/scripts/pre-compact.py\"",
             "timeout": 15
           }
         ]
