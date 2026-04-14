@@ -1,0 +1,122 @@
+{
+  "$schema": "Steal Report Output Schema — R58 (inspired by HV-Analysis)",
+  "version": "1.0",
+  "description": "Structural completeness gate for steal reports. Every field must be explicitly filled or marked N/A with reason. Empty/skipped fields are treated as incomplete.",
+  "report_header": {
+    "round": "string — R<N>",
+    "title": "string — <Project Name> Steal Report",
+    "source": "string — repo URL or article URL",
+    "stars": "number | null",
+    "license": "string",
+    "date": "date — YYYY-MM-DD",
+    "category": "enum: Framework | Self-Evolving | Module | Survey | Skill-System"
+  },
+  "tldr": "string — Problem space + solution pattern in 1-2 sentences. NOT what the project does — why it's worth stealing from.",
+  "architecture_overview": {
+    "layer_count": "number — typically 3-5",
+    "layers": [
+      {
+        "name": "string",
+        "role": "string — what this layer does",
+        "key_components": ["string"]
+      }
+    ]
+  },
+  "six_dimensional_scan": {
+    "description": "Each dimension must be explicitly assessed. Empty = 'N/A: <reason>', not skipped.",
+    "security_governance": {
+      "findings": ["string"],
+      "status": "enum: Novel | Covered | N/A",
+      "na_reason": "string | null — required if status is N/A"
+    },
+    "memory_learning": {
+      "findings": ["string"],
+      "status": "enum: Novel | Covered | N/A",
+      "na_reason": "string | null"
+    },
+    "execution_orchestration": {
+      "findings": ["string"],
+      "status": "enum: Novel | Covered | N/A",
+      "na_reason": "string | null"
+    },
+    "context_budget": {
+      "findings": ["string"],
+      "status": "enum: Novel | Covered | N/A",
+      "na_reason": "string | null"
+    },
+    "failure_recovery": {
+      "findings": ["string"],
+      "status": "enum: Novel | Covered | N/A",
+      "na_reason": "string | null"
+    },
+    "quality_review": {
+      "findings": ["string"],
+      "status": "enum: Novel | Covered | N/A",
+      "na_reason": "string | null"
+    }
+  },
+  "path_dependency": {
+    "description": "R58 addition — assess what locked the project into its current path",
+    "locking_decisions": ["string — early choices that locked direction"],
+    "missed_forks": ["string — key points where alternative paths existed"],
+    "self_reinforcement": "string — what mechanisms deepen the current path",
+    "lesson_for_us": "string — learn the chosen path (copy) or learn from the lock-in (avoid)"
+  },
+  "steal_sheet": {
+    "p0_must_steal": [
+      {
+        "pattern_name": "string",
+        "mechanism": "string — the actual how, with code snippet reference",
+        "our_current_state": "string — what we have now",
+        "adaptation": "string — specific files/modules to modify",
+        "effort": "string — ~Xh estimate",
+        "comparison_matrix": {
+          "capabilities": [
+            {
+              "name": "string",
+              "their_impl": "string",
+              "our_impl": "string",
+              "gap_size": "enum: Large | Medium | Small | None",
+              "action": "enum: Steal | Enhance | Skip"
+            }
+          ]
+        },
+        "triple_validation": {
+          "cross_domain": { "pass": "boolean", "evidence": "string" },
+          "generative_power": { "pass": "boolean", "evidence": "string" },
+          "exclusivity": { "pass": "boolean", "evidence": "string" },
+          "score": "string — e.g. 3/3, 2/3"
+        },
+        "knowledge_irreplaceability": {
+          "categories_hit": ["enum: pitfall_memory | judgment_heuristics | relationship_graph | hidden_context | failure_memory | unique_behavioral_patterns"],
+          "score": "number — count of categories"
+        }
+      }
+    ],
+    "p1_worth_doing": [
+      {
+        "pattern_name": "string",
+        "mechanism": "string",
+        "adaptation": "string",
+        "effort": "string"
+      }
+    ],
+    "p2_reference_only": [
+      {
+        "pattern_name": "string",
+        "mechanism": "string",
+        "why_ref_only": "string"
+      }
+    ]
+  },
+  "gaps_identified": [
+    {
+      "dimension": "string",
+      "their_coverage": "string",
+      "our_coverage": "string",
+      "gap_size": "enum: Large | Medium | Small | None"
+    }
+  ],
+  "adjacent_discoveries": ["string — libraries, techniques, communities, structural transfer opportunities"],
+  "meta_insights": ["string — strategic observations that transcend individual patterns"]
+}

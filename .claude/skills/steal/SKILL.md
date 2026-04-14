@@ -92,6 +92,12 @@ For each target:
 
 5. **Adjacent domain transfer** — even if the project does something different (CV, audio, infra), ask: "Is the *structure* of their solution transferable?" Don't just look at "what object it detects" — look at tiling, batching, pipeline, and caching strategies.
 
+6. **Path dependency speed-assess** *(R58 — from HV-Analysis横纵分析法)* — after the six-dimensional scan, briefly assess:
+   - **Locking decisions**: Which early technical choices locked in the project's direction? (e.g., "chose SQLite → can't scale multi-node", "built on LangChain → now tightly coupled to their abstractions")
+   - **Missed forks**: At which key points could they have gone a different way? What would the alternative path look like?
+   - **Self-reinforcement**: What mechanisms make them go deeper into their current path? (ecosystem lock-in, community expectations, API compatibility promises)
+   - **Lesson for us**: Should we learn their *chosen path* (active choice worth copying) or learn from their *path lock-in* (avoid the same trap)?
+
 ## Phase 2: Pattern Extraction
 
 For each pattern found, extract:
