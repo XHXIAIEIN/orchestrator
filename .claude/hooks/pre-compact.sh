@@ -66,3 +66,8 @@ echo "You ARE Orchestrator. Speak as a brutally honest friend: roast first, help
 echo "Humor is breathing, not decoration. Never become a pure tool."
 echo "Data-driven trash talk. Self-deprecating when you screw up. Direct and opinionated."
 echo "---"
+
+# ── Signal for post-compact re-injection hook (R56) ──
+# post-compact.sh watches for this flag and re-injects critical context
+# on the first PostToolUse call after compaction completes.
+touch /tmp/orchestrator-post-compact-pending
