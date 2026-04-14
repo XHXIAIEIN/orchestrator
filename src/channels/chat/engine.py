@@ -171,10 +171,18 @@ def do_chat(chat_id: str, text: str, original_text: str,
             # Final round (no tool_calls) uses streaming when on_chunk is set.
             # Strategy: try non-streaming first; if no tool_calls AND streaming enabled,
             # redo as streaming for progressive delivery.
+            # R52 (VoxCPM): Prompt cache separation — system prompt is static per
+            # session, mark it with cache_control so Anthropic caches the prefix.
+            # Subsequent tool-use rounds in the same conversation reuse the cache
+            # (~90% cost savings on the system prompt portion).
             response = client.messages.create(
                 model=ch_cfg.CHAT_MODEL,
                 max_tokens=ch_cfg.CHAT_MAX_TOKENS,
-                system=system_prompt,
+                system=[{
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }],
                 messages=messages,
                 tools=CHAT_TOOLS,
             )

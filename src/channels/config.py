@@ -66,6 +66,7 @@ BLOCK_STREAMING = _str("CHANNEL_BLOCK_STREAMING", "off")  # on/off
 BLOCK_STREAMING_MIN_CHARS = _int("CHANNEL_BLOCK_STREAMING_MIN_CHARS", 400)
 BLOCK_STREAMING_MAX_CHARS = _int("CHANNEL_BLOCK_STREAMING_MAX_CHARS", 1000)
 BLOCK_STREAMING_IDLE_S = float(_str("CHANNEL_BLOCK_STREAMING_IDLE_S", "1.5"))
+BLOCK_STREAMING_LOOKAHEAD = _int("CHANNEL_BLOCK_STREAMING_LOOKAHEAD", 200)  # R52: overlap buffer lookahead
 
 # ── 用户权限 ──
 # 格式: "chat_id:role,chat_id:role" — role: admin (full) / viewer (query+chat only)

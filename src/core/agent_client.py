@@ -33,7 +33,10 @@ async def _agent_query_async(
             agent_env["CLAUDE_CODE_GIT_BASH_PATH"] = bash_path
 
     text_parts: list[str] = []
-    async for message in query(
+    # R52 (VoxCPM): Wrap async generator in try/finally to ensure cleanup.
+    # Bare `async for` over query() leaks the generator if consumer breaks
+    # early (e.g., task cancelled, exception) — aclose() forces GeneratorExit.
+    gen = query(
         prompt=prompt,
         options=ClaudeAgentOptions(
             system_prompt=system_prompt or None,
@@ -44,18 +47,22 @@ async def _agent_query_async(
             cwd=cwd or "/tmp",
             **({"env": agent_env} if agent_env else {}),
         ),
-    ):
-        if isinstance(message, AssistantMessage):
-            for block in (message.content or []):
-                if getattr(block, "type", None) == "text":
-                    text_parts.append(getattr(block, "text", ""))
-        elif isinstance(message, ResultMessage):
-            if message.is_error:
-                error_msg = message.result or "unknown error"
-                log.error("agent_query: SDK returned error: %s", error_msg[:500])
-                raise RuntimeError(f"Agent SDK error: {error_msg[:500]}")
-            if message.result:
-                return message.result
+    )
+    try:
+        async for message in gen:
+            if isinstance(message, AssistantMessage):
+                for block in (message.content or []):
+                    if getattr(block, "type", None) == "text":
+                        text_parts.append(getattr(block, "text", ""))
+            elif isinstance(message, ResultMessage):
+                if message.is_error:
+                    error_msg = message.result or "unknown error"
+                    log.error("agent_query: SDK returned error: %s", error_msg[:500])
+                    raise RuntimeError(f"Agent SDK error: {error_msg[:500]}")
+                if message.result:
+                    return message.result
+    finally:
+        await gen.aclose()
     return "\n".join(text_parts)
 
 

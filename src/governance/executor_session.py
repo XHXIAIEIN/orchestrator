@@ -386,7 +386,11 @@ class AgentSessionRunner:
             complexity = min(1.0, len(prompt) / 50_000)  # normalize: 50K chars ≈ max complexity
             tb = ThinkingBudget.adaptive(complexity=complexity)
             thinking_tracker.start(str(task_id), tb)
-        async for message in query(
+        # R52 (VoxCPM): Store generator reference for guaranteed cleanup on early break.
+        # Bare `async for` over query() may leak the generator if the consumer
+        # breaks early (stuck detection, doom loop, supervisor terminate, freeze breaker).
+        # We store the reference and call aclose() in a finally block after the loop.
+        _query_gen = query(
             prompt=prompt,
             options=ClaudeAgentOptions(
                 cwd=task_cwd,
@@ -396,7 +400,9 @@ class AgentSessionRunner:
                 max_turns=max_turns,
                 **({"env": agent_env} if agent_env else {}),
             ),
-        ):
+        )
+        try:
+          async for message in _query_gen:
             if isinstance(message, AssistantMessage):
                 turn += 1
                 thinking = []
@@ -705,6 +711,9 @@ class AgentSessionRunner:
                     "is_error": is_error_final,
                 })
                 self._log_event(task_id, "agent_result", result_data)
+        finally:
+            # R52 (VoxCPM): Ensure generator cleanup on any exit path (break, exception, normal end).
+            await _query_gen.aclose()
 
         # ── R39: ThinkingTracker — finish tracking ──
         if thinking_tracker:

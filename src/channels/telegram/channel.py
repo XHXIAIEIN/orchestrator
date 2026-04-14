@@ -325,6 +325,7 @@ class TelegramChannel(TelegramSender, TelegramHandler, TelegramAPI, Channel):
                 min_chars=ch_cfg.BLOCK_STREAMING_MIN_CHARS,
                 max_chars=ch_cfg.BLOCK_STREAMING_MAX_CHARS,
                 idle_s=ch_cfg.BLOCK_STREAMING_IDLE_S,
+                lookahead=ch_cfg.BLOCK_STREAMING_LOOKAHEAD,  # R52: overlap buffer
             )
             on_chunk = streamer.push
 

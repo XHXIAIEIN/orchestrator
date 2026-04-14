@@ -42,11 +42,20 @@ class BlockStreamer:
         min_chars: int = DEFAULT_MIN_CHARS,
         max_chars: int = DEFAULT_MAX_CHARS,
         idle_s: float = DEFAULT_IDLE_S,
+        lookahead: int = 0,
     ):
+        """
+        Args:
+            lookahead: R52 (VoxCPM) overlap buffer — when force-splitting at max_chars,
+                allow searching up to max_chars + lookahead for a better break point
+                (paragraph/newline/space). This prevents mid-word splits at the cost of
+                slightly longer blocks. 0 = disabled (original behavior).
+        """
         self._send_fn = send_fn
         self._min_chars = min_chars
         self._max_chars = max_chars
         self._idle_s = idle_s
+        self._lookahead = lookahead
 
         self._buffer = ""
         self._lock = threading.Lock()
@@ -82,8 +91,21 @@ class BlockStreamer:
     def _check_emit(self) -> None:
         """Check triggers and emit blocks. Called with self._lock held."""
         # Trigger 1: Force-split if buffer exceeds maxChars
+        # R52 (VoxCPM): When lookahead > 0, try to find a better break point
+        # in the lookahead zone (max_chars..max_chars+lookahead) before falling
+        # back to the hard break at max_chars. This is the "sliding window decode
+        # with overlap" pattern adapted for text: prefer natural boundaries even
+        # if the block is slightly longer than max_chars.
         while len(self._buffer) >= self._max_chars:
             bp = self._find_break_point(self._buffer, self._max_chars)
+            # If we hit a hard cut (no natural boundary found) and lookahead is enabled,
+            # search the lookahead zone for a better break point
+            if self._lookahead > 0 and bp == self._max_chars:
+                soft_limit = min(len(self._buffer), self._max_chars + self._lookahead)
+                lookahead_bp = self._find_break_point(self._buffer, soft_limit)
+                if lookahead_bp < soft_limit:
+                    # Found a natural boundary in the lookahead zone
+                    bp = lookahead_bp
             self._emit_block(self._buffer[:bp])
             self._buffer = self._buffer[bp:]
 
