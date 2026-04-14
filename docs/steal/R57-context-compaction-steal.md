@@ -439,7 +439,16 @@ Claude Code 通过 `input.transcript_path` 提供当前会话的完整 JSONL tra
 
 ## Implementation Status
 
-Report committed in `f0eb577`. This is a docs-only steal report (industry survey of context compaction patterns). Related prior implementations:
-- R50 Caveman: flag-file IPC library (`d649689`) — cross-hook state sharing infra
+4-layer defense fully wired across 3 commits:
+
+| Layer | What | Commit | File(s) |
+|-------|------|--------|---------|
+| L1: Monitor | StatusLine context% display | `a448ae6` | `.claude/scripts/status.py` → `settings.json` statusLine |
+| L2: Gate | Stop hook @85% — physical block, forces handoff | `a448ae6` | `.claude/hooks/context-threshold-stop.py` → `settings.json` Stop hook |
+| L3: Restore | SessionStart(compact) restore with ALIVE/WEAK/SILENT health check | `a448ae6` | `.claude/scripts/compact-restore.py` → `settings.json` SessionStart matcher |
+| L4: Pre-save | PreCompact transcript parser (upgraded from bash to Python) | `a448ae6` | `.claude/scripts/pre-compact.py` → `settings.json` PreCompact hook |
+
+Prior infra:
+- R50 Caveman: flag-file IPC library (`d649689`) — cross-hook state sharing
 - R56 Harness Engineering: post-compaction re-injection hook (`cd36329`)
-- `.claude/scripts/compact-restore.py`, `pre-compact.py`, `status.py` added in `1c2f9a6` — operational scripts for context management
+- Scripts + report: `1c2f9a6`, `f0eb577`
