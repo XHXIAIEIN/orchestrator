@@ -29,7 +29,9 @@ fi
 
 # Auto-detect: [STEAL] without branch is already handled above.
 # For non-tagged tasks, check context pressure via tool call counter.
-TOOL_COUNT=$(cat /tmp/orchestrator-persona-counter 2>/dev/null || echo 0)
+source "$(dirname "$0")/lib/state.sh"
+TOOL_COUNT=$(state_get "session.tool-count")
+TOOL_COUNT=${TOOL_COUNT:-0}
 if [ "$TOOL_COUNT" -gt 50 ]; then
     echo "SESSION PRESSURE: $TOOL_COUNT tool calls in this session. Before starting a new major task, evaluate if it should be a fresh session (read SOUL/public/prompts/session_boundary.md). Trivial tasks are fine to continue."
 fi
