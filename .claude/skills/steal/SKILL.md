@@ -173,6 +173,18 @@ For every P0 pattern, include a diff against our current implementation:
 
 "Already covered" is never a valid shortcut without this evidence.
 
+### Adaptive State Analysis *(R58 — Scenario Branching for "Our Current State")*
+
+When filling the "Our Current State" column for P0 patterns, branch your analysis based on coverage state:
+
+| State | Analysis template |
+|-------|------------------|
+| **We don't have it** (gap) | Describe the gap impact: what failure modes or missed opportunities result from not having this? Name the exact files where it would be implemented. |
+| **We have partial** (delta) | Show the diff: what subset do we cover? What specific edge cases or capabilities are missing? Quote our code vs theirs side by side. |
+| **We have it** (overlap) | Don't skip — compare edge case handling, error paths, and performance characteristics. Their impl may cover scenarios ours doesn't. If truly equivalent, state the evidence (grep output, code comparison) and mark Action as Skip. |
+
+The default "freeform text" approach lets analysts write vague summaries. These templates force specificity.
+
 ## Phase 3: Output — Steal Report
 
 Write to `docs/steal/<date>-<topic>-steal.md`:
@@ -221,6 +233,37 @@ Write to `docs/steal/<date>-<topic>-steal.md`:
 ## Meta Insights
 <1-5 strategic observations that transcend individual patterns. The kind of insight that changes how you think about the problem space, not just how you solve one feature.>
 ```
+
+### Post-Generation Validation *(R58 — Schema-Driven Completeness Gate)*
+
+After writing the report, validate against `references/steal-schema.json`:
+
+1. **Header completeness**: All fields in `report_header` filled (round, title, source, stars, license, date, category)
+2. **Six-dimensional scan**: Every dimension has `status` set. If `N/A`, `na_reason` is mandatory — empty/skipped dimensions are treated as **incomplete report**
+3. **Path dependency**: `locking_decisions`, `missed_forks`, `self_reinforcement`, `lesson_for_us` all present (can be brief for simple projects, but cannot be absent)
+4. **P0 rigor**: Every P0 pattern has `comparison_matrix`, `triple_validation` (with score), and `knowledge_irreplaceability` (with categories_hit)
+5. **Gaps**: At least 4 of 6 dimensions addressed in `gaps_identified` (remaining 2 can be `N/A` with reason)
+
+If any check fails, fix before committing. The schema is the definition of "done", not the Markdown template.
+
+### Style Guard *(R58 — Anti-Corporate-Speak)*
+
+Steal reports must be concrete and specific. The following are **banned in report text** — their presence signals the analysis has degenerated into buzzwords:
+
+| Banned | Replace with |
+|--------|-------------|
+| 赋能 | State what it enables, specifically |
+| 抓手 | Name the actual mechanism |
+| 打造闭环 | Describe the feedback loop with entry/exit points |
+| 生态 (as buzzword) | Name the specific components and their relationships |
+| 沉淀 | State what was captured and where it's stored |
+| 落地 | Describe the implementation: which files, which functions |
+| 对齐 | State what was compared and the specific delta |
+| 拉通 | Name the systems connected and the integration point |
+| "深度融合" | Describe the actual integration mechanism |
+| "全面覆盖" | List what's covered and what's not |
+
+Rule: if you can't replace the buzzword with a concrete noun + verb, the sentence doesn't say anything.
 
 ## Phase 4: Index Update
 
