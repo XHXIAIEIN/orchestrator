@@ -32,7 +32,12 @@ class TelegramHandler:
     def _process_message(self, chat_id: str, text: str,
                          attachments: list[MediaAttachment],
                          msg_id: int | None = None):
-        """Route a (possibly batched) message to chat engine."""
+        """Route a (possibly batched) message to chat engine.
+
+        R49: Integrates dispatch mode (collect/steer/followup) from ConversationLockManager.
+        Debounce (rapid-fire merge) happens upstream; dispatch mode handles
+        new messages arriving while the LLM is still generating a response.
+        """
         if not text and attachments:
             text = self._describe_media(attachments)
 
@@ -40,13 +45,71 @@ class TelegramHandler:
         text = wrap_untrusted_block(text, label="telegram_message",
                                     source=f"telegram/{chat_id}")
 
-        if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
-            file_path, char_count = chat_engine.save_to_inbox(text)
-            preview = text[:80].replace("\n", " ")
-            ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
-            self._start_chat(chat_id, ref, original_text=text, media=attachments, msg_id=msg_id)
-        else:
-            self._start_chat(chat_id, text, media=attachments, msg_id=msg_id)
+        # R49: Dispatch mode — check if conversation is already active
+        from src.channels.conversation_lock import get_conversation_lock, DispatchMode
+        lock_mgr = get_conversation_lock()
+        mode_str = ch_cfg.DISPATCH_MODE.lower()
+        mode = {"collect": DispatchMode.COLLECT, "steer": DispatchMode.STEER,
+                "followup": DispatchMode.FOLLOWUP}.get(mode_str, DispatchMode.FOLLOWUP)
+
+        status = lock_mgr.try_acquire(chat_id, mode=mode, message_text=text)
+        log.info(f"telegram: dispatch {chat_id[:16]} mode={mode_str} status={status.status}")
+
+        if status.status == "buffered":
+            # collect mode: message buffered, will be coalesced when active finishes
+            return
+        elif status.status == "steering":
+            # steer mode: active task will be cancelled via cancelled_fn
+            # Wait briefly for the active task to notice the cancellation
+            import time as _time
+            _time.sleep(0.5)
+            # Re-acquire after cancel (the previous task should have released)
+            for _ in range(10):  # wait up to 5s
+                retry = lock_mgr.try_acquire(chat_id, mode=mode, message_text=text)
+                if retry.status == "started":
+                    break
+                _time.sleep(0.5)
+            else:
+                log.warning(f"telegram: steer timeout for {chat_id[:16]}, proceeding anyway")
+            # Prepend cancellation context (stolen from Qwen Code ChannelBase.ts:336)
+            text = f"[The user sent a new message while you were working. Their previous request has been cancelled.]\n\n{text}"
+        elif status.status == "queued-conversation":
+            # followup mode: queued, will be processed when current finishes
+            # Store text for later processing
+            log.info(f"telegram: queued message for {chat_id[:16]} (position {status.position})")
+            return
+        elif status.status == "queued-capacity":
+            log.warning(f"telegram: at capacity, queuing {chat_id[:16]}")
+            return
+        elif status.status == "rejected":
+            log.warning(f"telegram: rejected message for {chat_id[:16]} (queue full)")
+            return
+        # status == "started" → proceed normally
+
+        # Build cancelled_fn for steer mode support in do_chat
+        cancelled_fn = lambda: lock_mgr.is_cancelled(chat_id)
+
+        def _chat_and_release():
+            """Wrapper that releases the lock and drains collect buffer after chat completes."""
+            try:
+                if len(text) > ch_cfg.LONG_MSG_THRESHOLD:
+                    file_path, char_count = chat_engine.save_to_inbox(text)
+                    preview = text[:80].replace("\n", " ")
+                    ref = f'[用户发送了长消息 ({char_count}字)，已保存到 {file_path}，预览: "{preview}..."]'
+                    self._start_chat_sync(chat_id, ref, original_text=text, media=attachments,
+                                          msg_id=msg_id, cancelled_fn=cancelled_fn)
+                else:
+                    self._start_chat_sync(chat_id, text, media=attachments,
+                                          msg_id=msg_id, cancelled_fn=cancelled_fn)
+            finally:
+                # Release lock and check for buffered messages (collect mode)
+                lock_mgr.release(chat_id)
+                coalesced = lock_mgr.drain_buffer(chat_id)
+                if coalesced:
+                    log.info(f"telegram: draining collect buffer for {chat_id[:16]}")
+                    self._process_message(chat_id, coalesced, [], msg_id=None)
+
+        threading.Thread(target=_chat_and_release, name="tg-dispatch", daemon=True).start()
 
     def _handle_reaction(self, reaction: dict):
         """Handle user adding a reaction to a message — feed it into chat as context."""

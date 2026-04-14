@@ -18,8 +18,11 @@ try:
 except ImportError:
     RatioCompressionCondenser = None
 
+from .context_engine import ContextEngine, DefaultContextEngine, CompressResult
+
 __all__ = [
     "Condenser", "View", "Event",
+    "ContextEngine", "DefaultContextEngine", "CompressResult",
     "RecentEventsCondenser",
     "AmortizedForgettingCondenser",
     "LLMSummarizingCondenser",

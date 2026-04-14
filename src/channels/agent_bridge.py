@@ -18,7 +18,7 @@ import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Callable, Optional
 
 from src.channels.agent_discovery import (
     AgentProfile, AgentProtocol, get_discovered_agents,
@@ -209,6 +209,10 @@ class CLIBridge(AgentBridge):
     Universal fallback. Works with any agent that accepts a prompt as argument.
     Supports --resume for session continuity where available.
 
+    R49 upgrade: chat_stream() uses --output-format stream-json for progressive
+    delivery via BlockStreamer. Stolen from Qwen Code AcpBridge NDJSON pattern,
+    adapted to use Claude Code's native stream-json output.
+
     Stolen from WeClaw cli_agent.go: stream-json parsing, session resume.
     """
 
@@ -218,22 +222,24 @@ class CLIBridge(AgentBridge):
         super().__init__(profile)
         self._session_id: str = ""
 
-    async def chat(self, message: str, system_prompt: str = "") -> AgentResponse:
-        t0 = time.monotonic()
+    def _build_cmd(self, message: str, system_prompt: str = "",
+                   stream_json: bool = False) -> list[str]:
+        """Build CLI command with common flags."""
         cmd = [self.profile.binary_path]
-
-        # Add flags based on capabilities
         if self.profile.supports_dangerously_skip:
             cmd.append("--dangerously-skip-permissions")
-
         if self._session_id and self.profile.supports_resume:
             cmd.extend(["--resume", self._session_id])
-
         if system_prompt:
             cmd.extend(["--system-prompt", system_prompt])
-
-        # Prompt as the last positional argument
+        if stream_json:
+            cmd.extend(["--output-format", "stream-json"])
         cmd.extend(["--print", message])
+        return cmd
+
+    async def chat(self, message: str, system_prompt: str = "") -> AgentResponse:
+        t0 = time.monotonic()
+        cmd = self._build_cmd(message, system_prompt)
 
         try:
             loop = asyncio.get_event_loop()
@@ -286,6 +292,95 @@ class CLIBridge(AgentBridge):
         except Exception as e:
             return AgentResponse(
                 text="", agent_name=self.profile.name,
+                protocol=AgentProtocol.CLI,
+                error=str(e),
+                elapsed_s=time.monotonic() - t0,
+            )
+
+    def chat_stream_sync(self, message: str, system_prompt: str = "",
+                         on_chunk: 'Callable[[str], None] | None' = None,
+                         cancelled_fn: 'Callable[[], bool] | None' = None,
+                         ) -> AgentResponse:
+        """Streaming variant — calls on_chunk for each text delta.
+
+        Uses --output-format stream-json for NDJSON event parsing.
+        Falls back to non-streaming chat() if stream-json is not supported.
+
+        R49 stolen from Qwen Code AcpBridge.handleSessionUpdate:
+        parse NDJSON events, extract text chunks, forward to BlockStreamer.
+
+        Args:
+            message: User message text.
+            system_prompt: Optional system prompt.
+            on_chunk: Callback for each text chunk (for BlockStreamer.push).
+            cancelled_fn: Returns True if the current task was cancelled (steer mode).
+        """
+        t0 = time.monotonic()
+        cmd = self._build_cmd(message, system_prompt, stream_json=True)
+        chunks: list[str] = []
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=self._cwd,
+                env=dict(os.environ),
+            )
+
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Check cancellation (steer mode)
+                if cancelled_fn and cancelled_fn():
+                    proc.kill()
+                    return AgentResponse(
+                        text="".join(chunks),
+                        agent_name=self.profile.name,
+                        protocol=AgentProtocol.CLI,
+                        session_id=self._session_id,
+                        elapsed_s=time.monotonic() - t0,
+                        error="cancelled",
+                    )
+
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                event_type = event.get("type", "")
+
+                if event_type == "assistant":
+                    subtype = event.get("subtype", "")
+                    if subtype == "text":
+                        content = event.get("content", "")
+                        if content:
+                            chunks.append(content)
+                            if on_chunk:
+                                on_chunk(content)
+
+                elif event_type == "result":
+                    # Final result — extract session_id
+                    self._session_id = event.get("session_id", self._session_id)
+
+            proc.wait(timeout=10)
+
+            return AgentResponse(
+                text="".join(chunks),
+                agent_name=self.profile.name,
+                protocol=AgentProtocol.CLI,
+                session_id=self._session_id,
+                elapsed_s=time.monotonic() - t0,
+            )
+
+        except Exception as e:
+            log.warning("cli_bridge: stream chat failed for %s: %s", self.profile.name, e)
+            return AgentResponse(
+                text="".join(chunks),
+                agent_name=self.profile.name,
                 protocol=AgentProtocol.CLI,
                 error=str(e),
                 elapsed_s=time.monotonic() - t0,
