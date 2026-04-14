@@ -2,6 +2,9 @@
 Session Pool — reuse agent sessions to preserve KV cache.
 
 Stolen from: WeClaw ACP session reuse + MinLi KV Cache analysis (R45d)
+R60 MinerU: dual-event wait pattern for graceful shutdown — manager_wakeup
+event broadcasts to all blocked chat() callers so they exit immediately
+instead of timing out.
 
 Key insight: same-session continuous dialogue vs frequent new sessions = 3-5x
 cost difference due to KV cache hits. This pool maps (user, agent) → bridge
@@ -13,6 +16,7 @@ For HTTP bridges, this means conversation history is maintained client-side.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -47,17 +51,40 @@ class PoolEntry:
         return time.monotonic() - self.last_used
 
 
+def _detect_max_sessions() -> int:
+    """R60 MinerU P0-5: resource-adaptive session cap.
+
+    Instead of hardcoding 50, scale by available system memory.
+    Each bridge session costs ~20-50MB. Conservative: 1 session per 100MB available.
+    """
+    try:
+        import psutil
+        avail_mb = psutil.virtual_memory().available / (1024 * 1024)
+        # Reserve 2GB for OS + other processes, then 1 session per 100MB
+        usable_mb = max(0, avail_mb - 2048)
+        computed = int(usable_mb / 100)
+        # Clamp to [10, 200] range
+        return max(10, min(200, computed))
+    except ImportError:
+        return MAX_SESSIONS  # psutil not available, use default
+
+
 class SessionPool:
     """Pool of agent bridge sessions, keyed by (user_id, agent_name).
 
     Reuses existing bridges when the same user talks to the same agent,
     preserving session state and KV cache. Evicts idle sessions.
+
+    R60 MinerU: dual-event shutdown — _shutdown_event wakes all blocked callers.
+    R60 MinerU: resource-adaptive max_sessions via _detect_max_sessions().
     """
 
-    def __init__(self, ttl_s: int = SESSION_TTL_S, max_sessions: int = MAX_SESSIONS):
+    def __init__(self, ttl_s: int = SESSION_TTL_S, max_sessions: Optional[int] = None):
         self._pool: dict[str, PoolEntry] = {}
         self._ttl_s = ttl_s
-        self._max_sessions = max_sessions
+        self._max_sessions = max_sessions if max_sessions is not None else _detect_max_sessions()
+        self._shutdown_event = asyncio.Event()
+        log.info("session_pool: max_sessions=%d (resource-adaptive)", self._max_sessions)
 
     @staticmethod
     def _key(user_id: str, agent_name: str) -> str:
@@ -141,9 +168,33 @@ class SessionPool:
         system_prompt: str = "",
         profile: Optional[AgentProfile] = None,
     ) -> AgentResponse:
-        """Convenience: get-or-create bridge, then chat."""
+        """Convenience: get-or-create bridge, then chat.
+
+        R60 MinerU: dual-event wait — if shutdown fires during chat,
+        raises RuntimeError immediately instead of hanging until timeout.
+        """
+        if self._shutdown_event.is_set():
+            raise RuntimeError("SessionPool is shutting down")
+
         bridge = self.get_or_create(user_id, agent_name, profile)
-        return await bridge.chat(message, system_prompt)
+
+        # Race the chat coroutine against the shutdown event
+        chat_task = asyncio.ensure_future(bridge.chat(message, system_prompt))
+        shutdown_task = asyncio.ensure_future(self._shutdown_event.wait())
+
+        done, pending = await asyncio.wait(
+            {chat_task, shutdown_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for p in pending:
+            p.cancel()
+
+        if shutdown_task in done:
+            chat_task.cancel()
+            raise RuntimeError("SessionPool shutdown during chat")
+
+        return chat_task.result()
 
     async def reset(self, user_id: str, agent_name: str) -> bool:
         """Reset a specific session (e.g. on /new command)."""
@@ -167,9 +218,17 @@ class SessionPool:
         return len(keys)
 
     async def close_all(self) -> None:
-        """Shut down all pooled sessions."""
-        for entry in self._pool.values():
-            await entry.bridge.close()
+        """Shut down all pooled sessions.
+
+        R60 MinerU: broadcast shutdown event FIRST, then close bridges.
+        Any chat() blocked in asyncio.wait will see the event and exit immediately.
+        """
+        self._shutdown_event.set()
+        for key, entry in list(self._pool.items()):
+            try:
+                await entry.bridge.close()
+            except Exception as e:
+                log.warning("session_pool: error closing %s: %s", key, e)
         self._pool.clear()
         log.info("session_pool: closed all sessions")
 

@@ -20,21 +20,55 @@ BURST_WINDOW_MINUTES = 15
 BURST_THRESHOLD = 10
 
 
+def _cheap_candidate_filter(db: EventsDB, since: str) -> set[str]:
+    """R60 MinerU P0-3: Stage 1 — cheap SQL aggregate pre-filter.
+
+    Uses COUNT GROUP BY to find projects with >= BURST_THRESHOLD events
+    in the lookback window. This eliminates ~90% of projects before we
+    load any row data, saving memory and CPU on the sliding window scan.
+    """
+    with db._connect() as conn:
+        rows = conn.execute(
+            "SELECT json_extract(metadata, '$.project') AS project, COUNT(*) AS cnt "
+            "FROM events "
+            "WHERE source = 'claude' AND occurred_at >= ? "
+            "GROUP BY project "
+            "HAVING cnt >= ?",
+            (since, BURST_THRESHOLD),
+        ).fetchall()
+    candidates = {row["project"] for row in rows if row["project"]}
+    if candidates:
+        log.debug("burst_detector stage 1: %d candidate projects (of total queried)", len(candidates))
+    return candidates
+
+
 def detect_bursts(db: EventsDB, lookback_hours: int = 24) -> list[dict]:
     """
     Scan recent claude events for burst patterns.
+
+    R60 MinerU: Two-stage progressive detection —
+      Stage 1 (cheap): SQL COUNT aggregate filters out projects below threshold.
+      Stage 2 (expensive): Full sliding window scan only on candidate projects.
 
     Returns list of detected bursts:
       [{ project, session_count, approx_tokens, window_start, window_end }, ...]
     """
     since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).isoformat()
 
+    # Stage 1: cheap pre-filter
+    candidates = _cheap_candidate_filter(db, since)
+    if not candidates:
+        return []
+
+    # Stage 2: load rows only for candidate projects — full sliding window
+    placeholders = ",".join("?" for _ in candidates)
     with db._connect() as conn:
         rows = conn.execute(
-            "SELECT metadata, occurred_at FROM events "
-            "WHERE source = 'claude' AND occurred_at >= ? "
-            "ORDER BY occurred_at ASC",
-            (since,),
+            f"SELECT metadata, occurred_at FROM events "
+            f"WHERE source = 'claude' AND occurred_at >= ? "
+            f"AND json_extract(metadata, '$.project') IN ({placeholders}) "
+            f"ORDER BY occurred_at ASC",
+            (since, *candidates),
         ).fetchall()
 
     # Group sessions by project
@@ -45,6 +79,8 @@ def detect_bursts(db: EventsDB, lookback_hours: int = 24) -> list[dict]:
         except (json.JSONDecodeError, TypeError):
             continue
         project = meta.get("project", "unknown")
+        if project not in candidates:
+            continue
         by_project[project].append({
             "occurred_at": row["occurred_at"],
             "approx_tokens": meta.get("approx_tokens", 0),
