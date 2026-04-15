@@ -71,6 +71,12 @@ except ImportError:
     RetryPolicy = None
     resilient_should_retry = None
 
+# ── Content Cache (stolen from LangGraph R68) ──
+try:
+    from src.governance.content_cache import content_cache_key
+except ImportError:
+    content_cache_key = None
+
 
 # ── Rollout Configuration (stolen from agent-lightning Round 8) ──
 
@@ -594,6 +600,10 @@ class TaskExecutor:
         skill_content = load_department(dept_key)
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
         _checkpoint("prompt_assembled")
+
+        # ── Content Cache Key (R68 LangGraph: content-addressed dedup) ──
+        if content_cache_key:
+            spec["content_cache_key"] = content_cache_key(prompt)
 
         cognitive_mode = classify_cognitive_mode(task)
         blast_radius = estimate_blast_radius(spec)
