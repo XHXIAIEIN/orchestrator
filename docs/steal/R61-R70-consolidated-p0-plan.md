@@ -34,6 +34,20 @@
 | 16 | Working Path Lock | ✅ 完成 | `src/governance/working_path_lock.py` |
 | 17 | Idle Timeout 死锁检测 | ✅ 完成 | `src/governance/safety/idle_timeout.py` |
 
+### Tier 2+ (9/9 完成)
+
+| # | 模式 | 状态 | 实现文件 |
+|---|------|------|---------|
+| 35 | 三层信号提取 (Regex→Keyword→LLM) | ✅ 完成 | `src/governance/signals/signal_extractor.py` |
+| 36 | 信��历史去重 (stagnation detection) | ✅ 完成 | `src/governance/signals/signal_extractor.py` (SignalHistory) |
+| 37 | 闲置感知调度 | ✅ 完成 | `src/governance/scheduling/idle_scheduler.py` |
+| 38 | 执行引擎三层降级 | ✅ 完成 | `src/core/execution_router.py` |
+| 39 | EventWaiter 统一触发器 | ✅ 完成 | `src/core/event_waiter.py` |
+| 40 | BlackboardMemory 共享写板 | ✅ 完成 | `src/governance/context/blackboard.py` |
+| 41 | 组织文化变量注入 | ✅ 完成 | `src/governance/context/culture_inject.py` |
+| 42 | 查询结果回写记忆闭环 | ✅ 完成 | `src/governance/learning/query_writeback.py` |
+| 43 | CompactionService 三层阈值 | ✅ 完成 | `src/governance/condenser/context_condenser.py` |
+
 ## 总览
 
 | Round | 项目 | 类型 | 行数 | P0数 | 核心发现 |
