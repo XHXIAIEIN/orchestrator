@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # Hook: Stop — Verify Before Reporting (VBR) gate
 # Detects when the agent claims task completion but provides no test/verification evidence.
 # Stolen from R23 proactive-agent pattern.

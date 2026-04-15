@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # Hook: Stop — auto-commit enforcement
 #
 # When Claude is about to stop, check for uncommitted changes.

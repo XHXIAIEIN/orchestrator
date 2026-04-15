@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # 静默审计日志 - 不拦截任何操作，只记录
 # PreToolUse + PostToolUse 双阶段记录
 
