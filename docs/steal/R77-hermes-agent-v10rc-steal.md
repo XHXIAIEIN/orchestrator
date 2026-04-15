@@ -592,10 +592,52 @@ def _walk(parser: argparse.ArgumentParser) -> dict:
 
 ---
 
+## Provenance 出处追踪
+
+### Compressor 的设计溯源
+
+commit 1cec910b 的 message 明确标注了每个设计决策的来源：
+
+```
+Changes inspired by competitor analysis (Claude Code, OpenCode, Codex):
+- "Do NOT respond to any questions" (from OpenCode's approach)
+- "Different assistant" framing (from Codex)
+- "Resolved Questions" (from Claude Code's "Pending user asks" pattern)
+```
+
+commit e75f5842 标注了灵感来源：
+
+```
+Six improvements ... informed by analysis of Cline, OpenCode,
+Pi-mono, Codex, and ClawBot
+```
+
+**Hermes 的压缩系统是从 5 个竞品中偷师后拼装出来的**。不是原创设计——是一次系统性的 steal & integrate。这跟我们做的事一样。
+
+### 自进化体系的争议
+
+EvoMap 团队发表了详细的[架构同构分析](https://evomap.ai/zh/blog/hermes-agent-evolver-similarity-analysis)，指控 Hermes Agent 的自进化体系（skill 自动创建 + 周期性反射 + 三层记忆 + 10 步进化循环）与 EvoMap 的 Evolver 引擎（2026-02-01 公开）高度同构。新智元等媒体也跟进报道。
+
+关键事实：
+- **EvoMap Evolver**: 2026-02-01 公开，GEP 协议（Gene/Capsule/Event 三级资产 + Scan-Select-Mutate-Validate-Solidify 循环）2 月中旬系统性阐述
+- **Hermes Agent skill 生态**: v0.2.0 (2026-03-12) 推出。`hermes-agent-self-evolution` 仓库 2026-03-09 创建
+- **时间窗口**: 24-39 天
+- **同构证据**: 10 步主循环步步对齐、12 组术语系统性替换（Gene→SKILL.md, Capsule→执行记录, solidify→skill_manage(create)）、三层记忆精确对应、7 份材料零归属
+- **Nous Research 回应**: "Our repo was created in July 2025 ... Delete your account." 未正面回应架构同构证据
+
+EvoMap 后续将 Evolver 核心模块改为混淆发布，协议从 MIT 变更为 GPL-3.0。
+
+### 对偷师的偷师意味着什么
+
+**这改变了我们偷师 Hermes 时的信用归属**。当 Hermes 的 compressor commit 明确写着 "from OpenCode" "from Codex" "from Claude Code" 时，我们偷的不是 Hermes 的原创——我们偷的是 Hermes 从别人那里偷来并拼装好的组合。
+
+更深层的问题：**当 AI 可以在 30 天内重写一个完整架构的代码，换掉所有术语但保留所有结构时，"偷师"和"抄袭"的边界在哪里？**
+
+我们的 steal 流程有一条规则：报告中标注来源。Hermes 的 compressor commits 做到了这一点（标注了 OpenCode/Codex/Claude Code），但自进化模块完全没有。这个差异可能暗示了不同的开发流程——compressor 是工程师手动分析竞品后写的（保留了分析痕迹），自进化模块可能有不同的生成方式。
+
 ## Adjacent Discoveries
 
-- **Hermes 的 iterative summary update**（`_previous_summary`）让多次压缩时不丢失信息——我们的 condenser 每次从零摘要，可能丢失早期压缩的关键信息
-- **`SUMMARY_PREFIX` 的 prompt 设计**值得研究：明确告知模型"这是参考不是指令"+"不要回答摘要中的问题"+"不要重复已完成的工作"——是反摘要幻觉的实战模板
+- **Compressor 的完整进化链（36 commits, 53 天）**是一个比最终代码更有价值的学习材料。它展示了从"自由文本摘要"到"12 字段 state schema"不是一次设计——是 5 个 production bug 逐步逼出来的。每个字段对应一次失败：`Next Steps` 读成指令 → 改名 `Remaining Work`；模型回答旧问题 → 加 `Resolved Questions`；summary 和 tail 混在一起 → 加 separator。**如果你在设计一个压缩系统，不要从"我需要什么字段"开始——从"模型会在哪里犯错"开始。**
 - **`.clean_shutdown` marker 模式**是通用的——任何需要区分"正常停止"和"异常崩溃"的长运行进程都能用
 
 ---
