@@ -77,6 +77,13 @@ try:
 except ImportError:
     content_cache_key = None
 
+# ── Signal Extractor (stolen from R73) ──
+try:
+    from src.governance.signals.signal_extractor import SignalExtractor
+    _signal_extractor = SignalExtractor()
+except ImportError:
+    _signal_extractor = None
+
 
 # ── Rollout Configuration (stolen from agent-lightning Round 8) ──
 
@@ -1017,6 +1024,16 @@ class TaskExecutor:
                        cost=getattr(tracker, 'total_cost', 0.0))
                 except Exception:
                     pass
+
+            # ── Signal Extraction: post-execution analysis (R73) ──
+            if _signal_extractor and output and output != "(no output)":
+                try:
+                    signals = _signal_extractor.extract(output, blast_radius=int(blast_radius.split(":")[0]) if ":" in blast_radius else -1)
+                    if signals:
+                        log.info("TaskExecutor: task #%d post-execution signals: %s",
+                                 task_id, [s.context for s in signals[:3]])
+                except Exception:
+                    log.debug("TaskExecutor: task #%d signal extraction failed (non-critical)", task_id, exc_info=True)
 
             # ── Lifecycle: attempt_end ──
             self._fire("on_attempt_end",
