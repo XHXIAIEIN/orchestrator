@@ -51,6 +51,13 @@ try:
 except ImportError:
     _get_activity_tracker = None
 
+# Working Path Lock (R63 Archon — distributed path locking)
+try:
+    from src.governance.working_path_lock import WorkingPathLock
+    _path_lock = WorkingPathLock()
+except ImportError:
+    _path_lock = None
+
 # WAL — Write-Ahead Log for session state persistence (Round 14 ClawHub)
 try:
     from src.governance.audit.wal import scan_for_signals, write_wal_entry, load_session_state
@@ -336,6 +343,12 @@ class AgentSessionRunner:
         allowed_tools = list(runtime.allowed_tools)
         task_cwd = runtime.cwd
         max_turns = runtime.max_turns
+
+        # ── Working Path Lock: claim working directory (R63 Archon) ──
+        if _path_lock and task_cwd:
+            lock_result = _path_lock.acquire(str(task_id), task_cwd, agent_id=runtime.session_id)
+            if not lock_result.acquired:
+                log.warning("executor_session: path lock denied for task #%s: %s", task_id, lock_result.message)
 
         # ── Phase 1: Prefill ──
         prefill_ctx = self.prefill(task_id, prompt, task_cwd)
@@ -749,6 +762,10 @@ class AgentSessionRunner:
             except Exception as e:
                 trajectory_summary = traj.to_dict()
                 log.debug(f"Trajectory scoring failed: {e}")
+
+        # ── Working Path Lock: release on completion (R63 Archon) ──
+        if _path_lock and task_cwd:
+            _path_lock.release(str(task_id))
 
         # ── Phase 3: Finalize ──
         response = self.finalize(
