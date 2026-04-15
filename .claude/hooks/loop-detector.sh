@@ -1,12 +1,17 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # Hook: PostToolUse — detect repetitive tool call patterns (infinite loop prevention)
 # Source: DeerFlow 2.0 LoopDetectionMiddleware (Round 28 steal)
+# Enhanced: R74 ChatDev LoopCounter hard limit (Round deep-rescan)
 #
 # Strategy: hash each tool call (name + truncated input), track in sliding window.
 # 3 identical hashes in window → warn via output (non-blocking).
-# 5 identical hashes in window → hard suggest stop.
+# 5 identical hashes in window → HARD BLOCK via state file.
+#   guard-redflags.sh reads /tmp/orchestrator-loop-blocked and blocks non-diagnostic commands.
 #
 # State file: /tmp/orchestrator-loop-state (one hash per line, max 20 lines)
+# Block file: /tmp/orchestrator-loop-blocked (presence = loop detected, content = hash)
 
 STATE_FILE="/tmp/orchestrator-loop-state"
 WINDOW_SIZE=20
@@ -53,10 +58,21 @@ tail -n "$WINDOW_SIZE" "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.
 # Count occurrences of current hash in window
 COUNT=$(grep -c "^${TOOL_HASH}$" "$STATE_FILE" 2>/dev/null || echo 0)
 
+BLOCK_FILE="/tmp/orchestrator-loop-blocked"
+
 if [ "$COUNT" -ge "$STOP_THRESHOLD" ]; then
-    echo "⚠ LOOP DETECTED: Same tool call pattern repeated ${COUNT}× in last ${WINDOW_SIZE} calls."
-    echo "You are likely stuck in an infinite loop. STOP and try a different approach."
+    # ── HARD BLOCK: write block state for guard-redflags.sh to enforce ──
+    # R74 ChatDev LoopCounter: warn-only is a known defect. Hard stop required.
+    echo "${TOOL_HASH}" > "$BLOCK_FILE"
+    echo "⛔ LOOP HARD STOP: Same tool call pattern repeated ${COUNT}× in last ${WINDOW_SIZE} calls."
+    echo "You ARE stuck in an infinite loop. The next non-diagnostic command will be BLOCKED."
+    echo "To unblock: (1) State what you're trying to achieve, (2) Explain why the current approach keeps repeating, (3) Propose a fundamentally different strategy."
     echo "Pattern hash: ${TOOL_HASH}"
 elif [ "$COUNT" -ge "$WARN_THRESHOLD" ]; then
+    # Clear block file if count dropped below stop threshold (recovery)
+    [ -f "$BLOCK_FILE" ] && rm -f "$BLOCK_FILE"
     echo "⚡ Repetition warning: Same tool call pattern ${COUNT}× in last ${WINDOW_SIZE} calls. Consider varying your approach."
+else
+    # Clear block file when loop is broken
+    [ -f "$BLOCK_FILE" ] && rm -f "$BLOCK_FILE"
 fi

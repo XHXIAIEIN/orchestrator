@@ -194,13 +194,67 @@ class ACPBridge(AgentBridge):
         return self._process is not None and self._process.poll() is None
 
     async def close(self) -> None:
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
+        """R60 MinerU P1-4: multi-path shutdown probe.
+
+        Tries graceful methods first, escalates to terminate/kill.
+        For processes that spawn child workers (vLLM, model servers),
+        simple kill may leave orphans — try clean shutdown first.
+        """
+        proc = self._process
+        if not proc or proc.poll() is not None:
             self._process = None
+            return
+
+        # Phase 1: try graceful JSON-RPC shutdown request
+        try:
+            self._request_id += 1
+            request = {
+                "jsonrpc": "2.0",
+                "id": self._request_id,
+                "method": "shutdown",
+                "params": {},
+            }
+            proc.stdin.write(json.dumps(request) + "\n")
+            proc.stdin.flush()
+            proc.wait(timeout=3)
+            self._process = None
+            return
+        except (BrokenPipeError, OSError, subprocess.TimeoutExpired):
+            pass
+
+        # Phase 2: SIGTERM → wait → SIGKILL
+        _graceful_kill(proc, timeout=5)
+        self._process = None
+
+
+def _graceful_kill(proc: subprocess.Popen, timeout: float = 5) -> None:
+    """R60 MinerU P1-4: SIGTERM with timeout, then SIGKILL.
+
+    Also kills child processes if psutil is available — prevents orphan
+    workers when the agent process spawned subprocesses.
+    """
+    # Try to kill the process tree (children first)
+    try:
+        import psutil
+        parent = psutil.Process(proc.pid)
+        children = parent.children(recursive=True)
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+    except (ImportError, psutil.NoSuchProcess):
+        pass
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 class CLIBridge(AgentBridge):

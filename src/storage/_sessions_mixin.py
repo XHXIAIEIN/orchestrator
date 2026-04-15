@@ -229,17 +229,15 @@ class SessionsMixin:
             log.warning(f"structured_memory write failed: {e}")
 
         # DEPRECATED: remove after structured_memory migration verified
-        # JSONL backup (append-only)
+        # JSONL backup (append-only, atomic fsync — R67 MemPalace + R66 yoyo-evolve)
         if jsonl_path:
             try:
-                entry = json.dumps({
+                from src.core.atomic_write import atomic_append_jsonl
+                atomic_append_jsonl(jsonl_path, {
                     "date": date, "type": etype,
                     "summary": summary, "detail": detail,
                     "instance": instance,
-                }, ensure_ascii=False)
-                os.makedirs(os.path.dirname(jsonl_path), exist_ok=True)
-                with open(jsonl_path, "a", encoding="utf-8") as f:
-                    f.write(entry + "\n")
+                })
             except Exception as e:
                 log.warning(f"JSONL backup failed: {e}")
 

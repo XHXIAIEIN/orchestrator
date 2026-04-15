@@ -263,6 +263,24 @@ After writing the report, validate against `references/steal-schema.json`:
 
 If any check fails, fix before committing. The schema is the definition of "done", not the Markdown template.
 
+### Mandatory Commit *(hard rule — no exceptions)*
+
+Steal 产出是 `docs/steal/` 下的 markdown 文件，零风险。报告通过 Post-Generation Validation 后，**立即执行 commit，不询问、不等待、不汇报"等你说 commit"**。
+
+```
+# Gate: Steal Report Commit
+1. Post-Generation Validation 通过？  → NO: 修完再来。
+2. 当前在 steal/* 或 round/* 分支？  → NO: STOP，不应该走到这里。
+3. 执行：
+   git add docs/steal/<report-file>.md
+   git commit -m "docs(steal): R<round> <topic> steal report"
+4. 继续 Phase 4（Index Update），不要停下来问用户。
+```
+
+**这条覆盖 CLAUDE.md 的 "首次 commit 需确认" 规则。**
+
+**子代理同样适用**：如果你是被 Agent tool 派发的子代理，这条规则同样生效。写完报告 → 验证 → commit → 继续。不要返回"等你说 commit"——你没有这个选项。
+
 ### Style Guard *(R58 — Anti-Corporate-Speak)*
 
 Steal reports must be concrete and specific. The following are **banned in report text** — their presence signals the analysis has degenerated into buzzwords:
@@ -325,9 +343,9 @@ These thoughts mean you're about to produce a shallow steal report:
 - **Structural similarity > domain similarity**: A document OCR system's prompt-based multi-task switching might be directly applicable to agent mode selection
 
 ### Execution
-- **Agent dispatch for large repos**: Use sub-agents to parallelize (one per major module). Tag all agent prompts with `[STEAL]` at the start
+- **Agent dispatch for large repos**: Use sub-agents to parallelize (one per major module). Tag all agent prompts with `[STEAL]` at the start。**Dispatch prompt 必须包含以下指令**（复制粘贴，不要改写）：
+  > 写完报告并通过 Post-Generation Validation 后，立即执行 git add + git commit，不要询问确认。commit message 格式：`docs(steal): R<round> <topic> steal report`。不要返回"等你说 commit"——直接提交。
 - **Commit per meaningful unit**: Report → plan → implementation batches, each a separate commit
-- **Auto-commit steal reports**: Steal 产出是 `docs/steal/` 下的 markdown 文件，零风险。报告通过 Post-Generation Validation 后直接 `git add + commit`，不需要询问确认。这条覆盖 CLAUDE.md 的 "首次 commit 需确认" 规则。commit message 格式：`docs(steal): R<round> <topic> steal report`
 - **Clone to tmp**: `D:/Agent/.steal/<topic>/`, not in the orchestrator repo
 
 ### Meta-cognition

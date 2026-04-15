@@ -296,3 +296,56 @@ def _ext_from_url(url: str) -> str:
     if "." in path.split("/")[-1]:
         return "." + path.split(".")[-1][:5]
     return ".bin"
+
+
+# ── Range-read URL parameter encoding (R60 MinerU P1-6) ──────────────────
+#
+# MinerU pattern: embed ?bytes=start,end in path strings so range info
+# travels with the path across process boundaries. Consumer strips the
+# param before making real I/O, recovers (offset, length) from it.
+
+
+def encode_range_path(path: str, offset: int, length: int) -> str:
+    """Embed byte-range into a path string as ?bytes=offset,length.
+
+    >>> encode_range_path("s3://bucket/file.pdf", 0, 81350)
+    's3://bucket/file.pdf?bytes=0,81350'
+    """
+    return f"{path}?bytes={offset},{length}"
+
+
+def parse_range_path(path: str) -> tuple[str, int | None, int | None]:
+    """Extract (clean_path, offset, length) from a range-encoded path.
+
+    Returns (path, None, None) if no range is embedded.
+
+    >>> parse_range_path("s3://bucket/file.pdf?bytes=0,81350")
+    ('s3://bucket/file.pdf', 0, 81350)
+    >>> parse_range_path("/local/file.txt")
+    ('/local/file.txt', None, None)
+    """
+    parts = path.split("?bytes=")
+    if len(parts) != 2:
+        return (path, None, None)
+    clean = parts[0]
+    try:
+        nums = parts[1].split(",")
+        if len(nums) == 2:
+            return (clean, int(nums[0]), int(nums[1]))
+    except (ValueError, IndexError):
+        pass
+    return (path, None, None)
+
+
+def read_range(path: str) -> bytes:
+    """Read bytes from a path, respecting ?bytes=offset,length if present.
+
+    Works with local files. For remote URLs, use download_url instead.
+    """
+    clean, offset, length = parse_range_path(path)
+    with open(clean, "rb") as f:
+        if offset is not None:
+            f.seek(offset)
+        if length is not None and length >= 0:
+            return f.read(length)
+        return f.read()

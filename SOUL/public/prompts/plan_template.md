@@ -104,6 +104,7 @@ Override: If the user says "just do it" or grants blanket approval, all gates be
 - [ ] File Map is complete (every file to be touched is listed)
 - [ ] Ambiguities resolved (if spec says "add auth" but not which type → ASK)
 - [ ] Scope confirmed (nothing in File Map the user did not request)
+- [ ] Simplicity pre-check: describe the simplest possible implementation in 1-2 sentences. If your plan exceeds this by >2x LOC or >2x files, justify why in the plan header
 
 **Gate 2: Plan → Implement** (before writing any code)
 - [ ] Every step has action verb + specific target + verify command

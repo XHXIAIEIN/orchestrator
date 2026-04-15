@@ -2,10 +2,16 @@
 
 Lightweight alternative to a full TUI framework. Renders status panels,
 tables, and progress bars directly to terminal with ANSI codes.
+
+R60 MinerU P1-5: LiveAwareLogSink — loguru-compatible sink that
+coordinates with live display rendering. Clears live lines before
+emitting log text, re-renders after. Prevents log/display interleaving.
 """
 
+import logging
 import os
 import sys
+import threading
 
 
 class TerminalDisplay:
@@ -97,3 +103,80 @@ class TerminalDisplay:
         """Clear terminal screen."""
         sys.stdout.write("\033[2J\033[H")
         sys.stdout.flush()
+
+
+class LiveAwareLogSink:
+    """R60 MinerU P1-5: log sink that coordinates with live terminal display.
+
+    MinerU pattern (LiveAwareStderrSink): every log write brackets around
+    the live display — clear rendered lines before writing, re-render after.
+    This prevents log messages from appearing inside the live status panel.
+
+    Compatible with both loguru (as a sink callable) and stdlib logging
+    (as a stream object with write/flush).
+
+    Usage with loguru:
+        sink = LiveAwareLogSink(sys.stderr)
+        logger.remove()
+        logger.add(sink, level="INFO")
+
+    Usage with stdlib logging:
+        sink = LiveAwareLogSink(sys.stderr)
+        handler = logging.StreamHandler(sink)
+        logging.root.addHandler(handler)
+    """
+
+    def __init__(self, stream=None):
+        self.stream = stream or sys.stderr
+        self.lock = threading.RLock()  # RLock: render may trigger log
+        self._rendered_lines: int = 0
+        self._live_builder = None  # callable that returns list[str]
+
+    def set_live_builder(self, builder) -> None:
+        """Register a callable that returns the current live display lines."""
+        with self.lock:
+            self._live_builder = builder
+
+    def _clear_live(self) -> None:
+        """Erase previously rendered live display lines (ANSI cursor control)."""
+        if self._rendered_lines <= 0:
+            return
+        # Move cursor up N lines, erase each
+        self.stream.write(f"\033[{self._rendered_lines}A\r")
+        for i in range(self._rendered_lines):
+            self.stream.write("\033[2K")  # erase line
+            if i + 1 < self._rendered_lines:
+                self.stream.write("\033[1B\r")  # move down
+        # Return to where we started
+        if self._rendered_lines > 1:
+            self.stream.write(f"\033[{self._rendered_lines - 1}A\r")
+        self._rendered_lines = 0
+
+    def _render_live(self) -> None:
+        """Re-render the live display below the log output."""
+        if not self._live_builder:
+            return
+        try:
+            lines = self._live_builder()
+        except Exception:
+            return
+        if not lines:
+            return
+        self.stream.write("\n".join(lines))
+        self.stream.write("\n")
+        self.stream.flush()
+        self._rendered_lines = len(lines)
+
+    def write(self, message: str) -> None:
+        """Write a log message, bracketed by live display clear/render."""
+        with self.lock:
+            self._clear_live()
+            self.stream.write(message)
+            self.stream.flush()
+            self._render_live()
+
+    def flush(self) -> None:
+        self.stream.flush()
+
+    def isatty(self) -> bool:
+        return bool(getattr(self.stream, "isatty", lambda: False)())

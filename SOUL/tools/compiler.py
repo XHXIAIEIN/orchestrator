@@ -652,7 +652,9 @@ Read MEMORY.md for: environment info, path conventions, feedback rules, archived
         print(boot)
         print(f"\n--- 预估 token 数：~{len(boot) // 4} tokens ---")
     else:
-        out.write_text(boot, encoding='utf-8')
+        # R67 MemPalace: atomic write — boot.md is the most critical file
+        from src.core.atomic_write import atomic_write
+        atomic_write(out, boot)
         token_est = len(boot) // 4
         print(f"[compiler] 已编译 boot.md ({len(boot)} chars, ~{token_est} tokens)")
         print(f"[compiler] 输出: {out}")

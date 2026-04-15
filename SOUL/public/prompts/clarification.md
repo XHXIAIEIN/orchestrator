@@ -37,6 +37,12 @@ Cognitive Mode: {cognitive_mode}
    Signal: reinventing a wheel when a library handles the exact case.
    Example: "Write a custom parser" → existing library handles this exact case.
 
+6. **declarative_uplift** — Task is expressed as imperative instruction without success criteria.
+   Signal: "add X", "fix Y", "change Z" without a "done when" condition.
+   Action: Do NOT clarify — auto-append a declarative acceptance criterion to the task before passing to executor.
+   Transform: `"{imperative}" → Done when: {falsifiable condition derived from the imperative}`
+   Example: "Add rate limiting" → Done when: endpoint returns 429 after N requests within T seconds.
+
 ## Decision Rules
 
 PROCEED immediately when ANY of these conditions is true:

@@ -1,9 +1,14 @@
 ---
 name: prime
-description: "Project context injection — read key files and output a scannable summary. Use when starting work on an unfamiliar area, onboarding to a module, or when context feels stale. Variants: /prime docker, /prime channel, /prime soul, /prime governance"
+description: "Load project context for a domain area. Use when starting work on an unfamiliar module or when context feels stale."
 user_invocable: true
 argument-hint: "[docker|channel|soul|governance]"
 ---
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+Prime injects main-agent project context — subagents receive context from their dispatch prompt.
+</SUBAGENT-STOP>
 
 # Prime — Context Injection
 

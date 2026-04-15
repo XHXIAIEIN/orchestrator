@@ -329,6 +329,14 @@ class QdrantStore:
 
         Returns [{id, text, score, metadata, sqlite_id}].
         """
+        # R67 MemPalace: sanitize query to prevent system prompt pollution
+        from src.storage.query_sanitizer import sanitize_query
+        result = sanitize_query(query)
+        if result["was_sanitized"]:
+            logger.debug("query sanitized: method=%s len=%d→%d",
+                         result["method"], len(query), len(result["clean_query"]))
+        query = result["clean_query"] or query
+
         query_vector = await self.embed_single(query)
 
         query_filter = None

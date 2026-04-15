@@ -1,11 +1,13 @@
 ---
 name: systematic-debugging
-description: "Structured debugging workflow: investigate → isolate → fix → verify. Use when encountering any bug, test failure, or unexpected behavior."
+description: "Structured root-cause debugging protocol. Use when encountering any bug, test failure, or unexpected behavior."
 ---
 
 # Systematic Debugging Protocol
 
-**IRON LAW: NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**
+```
+IRON LAW: NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.
+```
 
 You MUST complete Phase 1 before proposing any fix. If you catch yourself wanting to "just try something" — STOP. That impulse is the problem this protocol exists to solve.
 

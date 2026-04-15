@@ -1,6 +1,6 @@
 ---
 name: adversarial-dev
-description: "Adversarial development loop: separate Generator and Evaluator roles with hard scoring threshold. Generator builds, Evaluator attacks. Use when implementing features that need rigorous quality assurance, or when self-review isn't catching issues."
+description: "Adversarial Generator/Evaluator development loop. Use when a feature needs rigorous QA or self-review isn't catching bugs."
 user_invocable: true
 argument-hint: "<feature description or plan file>"
 ---

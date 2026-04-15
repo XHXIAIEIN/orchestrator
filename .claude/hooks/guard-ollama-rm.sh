@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # Guard hook: block "ollama rm" / "ollama delete" — require user confirmation
 # Attached to PreToolUse(Bash) in settings.local.json
 # Performance: jq (~5ms) instead of python3 (~60ms) — Round 35 steal

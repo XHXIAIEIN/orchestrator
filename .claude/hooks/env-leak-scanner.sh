@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # Env Leak Scanner — Detects commands that could expose sensitive environment variables
 # Inspired by Archon's env-leak-scanner.ts (R47 steal)
 #

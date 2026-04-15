@@ -51,6 +51,7 @@ from src.governance.context.tiers import classify_task_tier
 from src.governance.executor_session import AgentSessionRunner, MAX_AGENT_TURNS
 from src.governance.execution_response import ExecutionResponse
 from src.governance.pipeline.output_compress import compress_output
+from src.core.runtime import AgentRuntime
 from src.governance.pipeline.input_compress import compress_input
 from src.governance.worktree import WorktreeManager
 from src.governance.patch_manager import PatchManager
@@ -227,15 +228,9 @@ class ExecutionStrategy(ABC):
     """
 
     @abstractmethod
-    async def execute(self, runner: "AgentSessionRunner", task_id: int,
-                      prompt: str, dept_prompt: str, allowed_tools: list,
-                      task_cwd: str, max_turns: int,
-                      timeout: float | None = None) -> ExecutionResponse:
-        """Execute a task and return structured ExecutionResponse.
-
-        Args:
-            timeout: Per-task timeout override. Strategies may ignore or enforce it.
-        """
+    async def execute(self, runner: "AgentSessionRunner",
+                      runtime: AgentRuntime) -> ExecutionResponse:
+        """Execute a task and return structured ExecutionResponse."""
         ...
 
     @abstractmethod
@@ -254,14 +249,11 @@ class DebugStrategy(ExecutionStrategy):
     def __init__(self):
         self._last_state: dict = {}
 
-    async def execute(self, runner: "AgentSessionRunner", task_id: int,
-                      prompt: str, dept_prompt: str, allowed_tools: list,
-                      task_cwd: str, max_turns: int,
-                      timeout: float | None = None) -> ExecutionResponse:
-        result = await runner.run(task_id, prompt, dept_prompt, allowed_tools,
-                                  task_cwd, max_turns=max_turns)
+    async def execute(self, runner: "AgentSessionRunner",
+                      runtime: AgentRuntime) -> ExecutionResponse:
+        result = await runner.run(runtime)
         self._last_state = {
-            "task_id": task_id,
+            "task_id": runtime.task_id,
             "result": result.output,
             "events": getattr(runner, "_events", []),
         }
@@ -286,15 +278,12 @@ class ProductionStrategy(ExecutionStrategy):
     def __init__(self, default_timeout: float = 300.0):
         self._default_timeout = default_timeout
 
-    async def execute(self, runner: "AgentSessionRunner", task_id: int,
-                      prompt: str, dept_prompt: str, allowed_tools: list,
-                      task_cwd: str, max_turns: int,
-                      timeout: float | None = None) -> ExecutionResponse:
-        effective_timeout = timeout or self._default_timeout
+    async def execute(self, runner: "AgentSessionRunner",
+                      runtime: AgentRuntime) -> ExecutionResponse:
+        effective_timeout = runtime.timeout_s or self._default_timeout
         try:
             result = await asyncio.wait_for(
-                runner.run(task_id, prompt, dept_prompt, allowed_tools,
-                           task_cwd, max_turns=max_turns),
+                runner.run(runtime),
                 timeout=effective_timeout,
             )
             return result
@@ -491,15 +480,9 @@ class TaskExecutor:
         except Exception:
             pass
 
-    async def _run_agent_session(self, task_id: int, prompt: str, dept_prompt: str,
-                                  allowed_tools: list, task_cwd: str,
-                                  max_turns: int = MAX_AGENT_TURNS,
-                                  timeout: float | None = None) -> ExecutionResponse:
+    async def _run_agent_session(self, runtime: AgentRuntime) -> ExecutionResponse:
         """Run the Agent SDK session via the active ExecutionStrategy. Returns ExecutionResponse."""
-        return await self._strategy.execute(
-            self._session_runner, task_id, prompt, dept_prompt,
-            allowed_tools, task_cwd, max_turns, timeout=timeout,
-        )
+        return await self._strategy.execute(self._session_runner, runtime)
 
     def execute_task(self, task_id: int, durability: Durability = "sync") -> dict:
         """Execute task by ID — routes to department based on spec.department.
@@ -796,6 +779,23 @@ class TaskExecutor:
         router = get_router()
         task_start_time = time.time()  # for checkpoint recovery
 
+        # ── AgentRuntime: typed DI container (stolen from LangGraph R68) ──
+        runtime = AgentRuntime(
+            task_id=task_id,
+            session_id=session_id,
+            prompt=prompt,
+            dept_prompt=dept_prompt,
+            allowed_tools=tuple(allowed_tools),
+            cwd=task_cwd,
+            max_turns=task_max_turns,
+            timeout_s=task_timeout,
+            department=dept_key,
+            project=project_name,
+            model=effective_model,
+            tier_name=tier.name,
+            cognitive_mode=cognitive_mode,
+        )
+
         output = "(no output)"
         status = "failed"
         attempt = 0
@@ -907,10 +907,7 @@ class TaskExecutor:
             _checkpoint(f"attempt_{attempt}_start")
             try:
                 async def _agent_coro():
-                    return await self._run_agent_session(
-                        task_id, prompt, dept_prompt, allowed_tools, task_cwd,
-                        max_turns=task_max_turns, timeout=task_timeout,
-                    )
+                    return await self._run_agent_session(runtime)
                 response = anyio.run(_agent_coro)
                 if response.output:
                     compressed = compress_output(response.output)

@@ -1,4 +1,4 @@
-"""Lifecycle Hooks — 20-event registry (R38: Inspect AI steal, R48: session hooks).
+"""Lifecycle Hooks — 22-event registry (R38: Inspect AI steal, R48: session hooks, R60: interrupt/resume).
 
 Unified hook system covering the full Orchestrator execution lifecycle:
 
@@ -11,6 +11,7 @@ Unified hook system covering the full Orchestrator execution lifecycle:
   LLM layer:      on_pre_llm, on_post_llm
   Review layer:   on_review_start, on_review_end
   Cross-cutting:  on_error, on_limit_exceeded
+  Interrupt:      on_interrupt, on_resume
 
 Design stolen from Inspect AI `src/inspect_ai/hooks/_hooks.py`:
   - Every hook gets independent try/except fault isolation
@@ -36,7 +37,7 @@ Usage:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +92,9 @@ HOOK_POINTS = frozenset({
     # Cross-cutting
     "on_error",
     "on_limit_exceeded",
+    # Interrupt layer — agent pause/resume lifecycle (R60)
+    "on_interrupt",     # fired when an agent is interrupted (approval, resource limit)
+    "on_resume",        # fired when an interrupted agent resumes
 })
 
 # Backwards-compat aliases: old name → new name
@@ -99,6 +103,29 @@ _ALIASES = {
     "post_llm_call": "on_post_llm",
     "on_task_dispatch": "on_task_start",
 }
+
+
+# ── Interrupt / Resume event dataclasses (R60) ──
+
+@dataclass(frozen=True)
+class InterruptEvent:
+    """Event data for on_interrupt hook."""
+    run_id: str
+    status: str  # "interrupt_before" | "interrupt_after"
+    checkpoint_id: str = ""
+    checkpoint_ns: tuple[str, ...] = ()  # path from root to current subgraph
+    interrupts: tuple[str, ...] = ()     # interrupt reasons
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ResumeEvent:
+    """Event data for on_resume hook."""
+    run_id: str
+    status: str  # "resumed"
+    checkpoint_id: str = ""
+    checkpoint_ns: tuple[str, ...] = ()
+    resume_data: dict = field(default_factory=dict)
 
 
 # ── HookEntry: wraps a callback with metadata ──
@@ -124,7 +151,7 @@ class HookEntry:
 # ── Unified Registry ──
 
 class LifecycleHookRegistry:
-    """Registry for 16-event lifecycle hook callbacks.
+    """Registry for 22-event lifecycle hook callbacks.
 
     Fault isolation: every hook fires in its own try/except.
     LimitExceededError is the ONLY exception that pierces isolation.
@@ -224,6 +251,14 @@ class LifecycleHookRegistry:
         self._hooks = {p: [] for p in HOOK_POINTS}
         self._stats = {p: 0 for p in HOOK_POINTS}
         self._errors = 0
+
+    def fire_interrupt(self, event: InterruptEvent) -> list:
+        """Convenience: fire on_interrupt with event as keyword arg."""
+        return self.fire("on_interrupt", event=event)
+
+    def fire_resume(self, event: ResumeEvent) -> list:
+        """Convenience: fire on_resume with event as keyword arg."""
+        return self.fire("on_resume", event=event)
 
 
 # ── Singleton ──

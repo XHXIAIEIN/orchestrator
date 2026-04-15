@@ -194,3 +194,11 @@ All 5 P0 patterns implemented in commit `2b876b4`:
 - `src/jobs/__init__.py`: JobBatcher (FFD bin-packing) + run_job on_complete callback
 - `src/channels/session_pool.py`: dual-event shutdown + resource-adaptive max_sessions
 - `src/analysis/burst_detector.py`: two-stage progressive detection with SQL pre-filter
+
+All 6 P1 patterns implemented:
+- P1-1 最低负载路由: `src/channels/channel_router.py` — ChannelLoadState + select_least_loaded (score-based, random tie-break, optimistic pending_assignments)
+- P1-2 面积排序动态batch: `src/jobs/__init__.py` — _pack_ffd now sorts ascending, computes baseline mean weight, halves bin capacity at 4x ratio thresholds
+- P1-3 空闲时间扣除: `src/jobs/__init__.py` — exclude_idle_time() + run_job idle_since param, flush tracks inter-job idle gaps
+- P1-4 多路shutdown探测: `src/channels/agent_bridge.py` — ACPBridge.close() tries JSON-RPC shutdown first, then _graceful_kill with process tree cleanup
+- P1-5 LiveAware日志协调: `src/channels/terminal_display.py` — LiveAwareLogSink class, ANSI clear/re-render bracketing, RLock for reentrant safety
+- P1-6 范围读URL参数编码: `src/channels/media.py` — encode_range_path/parse_range_path/read_range, ?bytes=offset,length inline encoding

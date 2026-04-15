@@ -1,4 +1,6 @@
 #!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 1
 # Hook: PreToolUse(Edit,Write) — block modifications to linter/formatter/build configs
 # Source: Everything Claude Code steal — Config Protection Hook
 #

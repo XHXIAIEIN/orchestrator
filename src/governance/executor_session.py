@@ -21,6 +21,7 @@ from src.governance.audit.reasoning_trace import append_reasoning_trace
 from src.governance.pipeline.phase_rollback import PipelineCheckpointer, RollbackDecision
 from src.governance.execution_response import ExecutionResponse
 from src.governance.freeze_breaker import FreezeBreaker
+from src.core.runtime import AgentRuntime
 
 # Event types — still needed for structured logging
 try:
@@ -322,14 +323,20 @@ class AgentSessionRunner:
             context_variables=ctx_vars,
         )
 
-    async def run(self, task_id: int, prompt: str, dept_prompt: str,
-                  allowed_tools: list, task_cwd: str,
-                  max_turns: int = MAX_AGENT_TURNS) -> ExecutionResponse:
+    async def run(self, runtime: AgentRuntime) -> ExecutionResponse:
         """Run the full Agent SDK session (prefill → execute → finalize).
 
         For phase-specific control, use prefill() and finalize() directly.
-        This method composes all three phases for backwards compatibility.
+        Accepts AgentRuntime (R68 DI container) instead of scattered params.
         """
+        # Unpack runtime fields for local use
+        task_id = runtime.task_id
+        prompt = runtime.prompt
+        dept_prompt = runtime.dept_prompt
+        allowed_tools = list(runtime.allowed_tools)
+        task_cwd = runtime.cwd
+        max_turns = runtime.max_turns
+
         # ── Phase 1: Prefill ──
         prefill_ctx = self.prefill(task_id, prompt, task_cwd)
         agent_env = prefill_ctx["agent_env"]

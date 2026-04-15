@@ -19,6 +19,18 @@ _registry_lock = threading.Lock()
 _registry: dict[str, "SQLitePool"] = {}
 
 
+def _unicode_lower(s: str | None) -> str | None:
+    """Unicode-aware casefold for SQLite (R69 Memos steal).
+
+    Python's str.casefold() handles CJK, accented characters, and all Unicode —
+    equivalent to Go's cases.Fold() from golang.org/x/text/cases.
+    Registered as orch_lower() on every SQLite connection via SQLitePool.
+    """
+    if s is None:
+        return None
+    return s.casefold()
+
+
 class SQLitePool:
     """Single-connection pool with a threading lock — serialises all DB access to one file.
 
@@ -72,6 +84,10 @@ class SQLitePool:
                 conn.execute(f"PRAGMA {key}={val}")
             except sqlite3.OperationalError:
                 pass
+        # R69 Memos: register Unicode casefold for CJK-safe case-insensitive search.
+        # SQLite's built-in LOWER() only handles ASCII; this enables:
+        #   WHERE orch_lower(col) LIKE orch_lower(?)
+        conn.create_function("orch_lower", 1, _unicode_lower, deterministic=True)
         return conn
 
     @contextmanager
