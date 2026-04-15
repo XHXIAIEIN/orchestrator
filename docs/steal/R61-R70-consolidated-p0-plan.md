@@ -20,7 +20,7 @@
 | 32 | LoopCounter 硬性上限 | ✅ 完成 | `14b3699` loop-detector.sh + guard-redflags.sh 双 hook |
 | 33 | 子 agent 并行强制 | ✅ 完成 | `14b3699` dispatch-gate.sh PARALLEL MANDATE |
 
-### Tier 2 (8/9 完成, #13 Runtime DI 延后)
+### Tier 2 (9/9 完成)
 
 | # | 模式 | 状态 | 实现文件 |
 |---|------|------|---------|
@@ -28,7 +28,7 @@
 | 10 | 三态熔断器 + 指数退避 | ✅ 完成 | `src/core/circuit_breaker.py` |
 | 11 | 时间分层记忆合成 | ✅ 完成 | `SOUL/tools/memory_synthesizer.py` (enhanced) |
 | 12 | 两阶段时间检索 SQL | ✅ 完成 | `src/storage/temporal_recall.py` |
-| 13 | Runtime 对象 DI 注入 | ⏳ 延后 | 跨模块重构，需单独 session |
+| 13 | Runtime 对象 DI 注入 | ✅ 完成 | `src/core/runtime.py` + executor/session 迁移 |
 | 14 | xxh3 内容寻址缓存 | ✅ 完成 | `src/governance/content_cache.py` |
 | 15 | Protected file 三态检查 | ✅ 完成 | `.claude/hooks/config-protect-3state.sh` |
 | 16 | Working Path Lock | ✅ 完成 | `src/governance/working_path_lock.py` |
@@ -134,7 +134,7 @@
 |----------|------|------|------|
 | `env-leak-scanner.sh` | 与 Archon 已删除的方案走同一条错误路线 | R63 | 转向结构性防护：stripCwdEnv() + --no-env-file |
 | `guard.sh` regex 检查 | 只做 regex 匹配，不如 Codex Guardian 的 sub-agent+cursor 模式 | R61 | 评估是否升级为 sub-agent 审计 |
-| `configurable` dict 裸传 | 无类型、无 IDE 补全、容易拼错 key | R68 | 迁移到 Runtime dataclass |
+| `configurable` dict 裸传 | ~~无类型、无 IDE 补全、容易拼错 key~~ | R68 | ✅ 已迁移到 `AgentRuntime` frozen dataclass |
 | `agent_cache.py` 用随机 task_id 做 key | 同 prompt 两次调用不命中缓存 | R68 | 改为 xxh3 内容寻址 |
 | `guard-redflags.sh` exit code only | 只有 pass/fail，模型看不到结构化错误原因 | R71 | 加结构化 JSON 错误反馈 |
 | critic-revise 无上限 | 循环可能无限进行 | R74 | 加 LoopCounter 硬性上限 |
