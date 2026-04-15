@@ -106,21 +106,21 @@
 | 16 | **Working Path Lock** | R63 Archon | 2h | DB 行级分布式锁 + older-wins tiebreaker |
 | 17 | **Idle Timeout 死锁检测** | R63 Archon | 1.5h | Symbol sentinel + Promise.race 转 clean return |
 
-### Tier 3 — 本轮执行（4-8h/项，系统级改进）
+### Tier 3 (11/11 完成)
 
-| # | 模式 | 来源 | 工时 | 解决什么问题 |
-|---|------|------|------|-------------|
-| 18 | **Guardian Transcript Cursor** | R61 Codex | 4h | guardian 重审只传增量，不重传完整历史 |
-| 19 | **QueueOnly vs TriggerTurn 通信** | R61 Codex | 3h | sub-agent 消息精确区分"入队不触发"和"立即唤醒" |
-| 20 | **DanglingToolCall 修复** | R62 DeerFlow | 3h | wrap_model_call 在正确位置插入合成 ToolMessage |
-| 21 | **原子事实分拆存储** | R65 Headroom | 4h | 对话→原子事实，单次 LLM 调用提取 |
-| 22 | **Git 感知陈旧记忆检测** | R65 Headroom | 3h | git ls-files 检查记忆引用的文件是否还存在 |
-| 23 | **三阶段事务拆分** | R64 Hindsight | 4h | 锁外解析→原子写入→事务后补充，并发安全 |
-| 24 | **CEL→SQL 编译器** | R69 Memos | 4h | 用户 CEL 表达式编译成参数化 SQL，消除注入 |
-| 25 | **OperationValidator 双向钩子** | R64 Hindsight | 3h | pre/post 操作钩子，governor pipeline 扩展点 |
-| 26 | **Checkpoint-Restart 协议** | R66 yoyo-evolve | 4h | 语义checkpoint + 机械checkpoint 两种断点续传 |
-| 27 | **图回调钩子 (GraphCallbackHandler)** | R68 LangGraph | 2h | interrupt/resume 生命周期类型化钩子 |
-| 28 | **MCP Memory Hub** | R65 Headroom | 6h | 跨 Agent 共享 SQLite 记忆库(memory_search/memory_save) |
+| # | 模式 | 状态 | 实现文件 |
+|---|------|------|---------|
+| 18 | Guardian Transcript Cursor | ✅ 完成 | `src/governance/guardian/transcript_cursor.py` |
+| 19 | QueueOnly vs TriggerTurn 通信 | ✅ 完成 | `src/core/agent_message.py` |
+| 20 | DanglingToolCall 修复 | ✅ 完成 | `src/governance/pipeline/dangling_tool_fix.py` |
+| 21 | 原子事实分拆存储 | ✅ 完成 | `src/governance/learning/atomic_fact_splitter.py` |
+| 22 | Git 感知陈旧记忆检测 | ✅ 完成 | `src/governance/memory/stale_detector.py` |
+| 23 | 三阶段事务拆分 | ✅ 完成 | `src/governance/transaction/three_phase.py` |
+| 24 | CEL→SQL 编译器 | ✅ 完成 | `src/governance/filter/cel_compiler.py` |
+| 25 | OperationValidator 双向钩子 | ✅ 完成 | `src/governance/operation_validator.py` |
+| 26 | Checkpoint-Restart 协议 | ✅ 完成 | `src/governance/checkpoint_recovery.py` (enhanced) |
+| 27 | 图回调钩子 (GraphCallbackHandler) | ✅ 完成 | `src/core/lifecycle_hooks.py` (+on_interrupt/on_resume) |
+| 28 | MCP Memory Hub | ✅ 完成 | `src/mcp/memory_server.py` (+memory_save, shared scope) |
 
 ### Tier 1+ — Batch 3 新增立即执行项
 
