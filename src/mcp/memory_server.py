@@ -42,6 +42,19 @@ except ImportError:
     compile_filter = None
     get_memory_schema = None
 
+# ── Atomic Fact Splitter (R75 MemGPT steal — fact atomization) ──
+try:
+    from src.governance.learning.atomic_fact_splitter import split_into_atomic_facts, validate_fact
+except ImportError:
+    split_into_atomic_facts = None
+    validate_fact = None
+
+# ── Stale Detector (R75 MemGPT steal — memory freshness scoring) ──
+try:
+    from src.governance.memory.stale_detector import detect_stale_memories
+except ImportError:
+    detect_stale_memories = None
+
 log = logging.getLogger(__name__)
 
 # ── Path resolution ─────────────────────────────────────────────────────
@@ -262,6 +275,27 @@ def memory_save(
     valid_facts = [f.strip() for f in facts if f and f.strip()]
     if not valid_facts:
         return "Error: all facts were empty strings"
+
+    # ── Atomic Fact Splitting: break compound facts into atomic ones ──
+    if split_into_atomic_facts:
+        atomized: list[str] = []
+        for fact in valid_facts:
+            atoms = split_into_atomic_facts(fact)
+            atomized.extend(atoms if atoms else [fact])
+        valid_facts = atomized
+
+    # ── Fact Validation: filter out low-quality facts ──
+    if validate_fact:
+        validated: list[str] = []
+        for fact in valid_facts:
+            ok, _reason = validate_fact(fact)
+            if ok:
+                validated.append(fact)
+            else:
+                log.debug("memory_save: rejected fact (%s): %s", _reason, fact[:80])
+        if validated:
+            valid_facts = validated
+        # If all facts rejected, keep originals to avoid empty save
 
     # Load existing shared entries for similarity check
     existing_files = sorted(_SHARED_DIR.glob("*.md"))
