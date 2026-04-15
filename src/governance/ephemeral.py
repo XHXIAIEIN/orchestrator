@@ -18,6 +18,8 @@ import uuid
 
 import anyio
 
+from src.core.runtime import AgentRuntime
+
 from src.governance.agent_executor_interface import EphemeralSpec
 from src.governance.execution_response import ExecutionResponse
 from src.governance.executor_session import AgentSessionRunner
@@ -145,14 +147,16 @@ async def run_ephemeral_async(
 
     # ── Execute ──
     try:
-        result = await runner.run(
+        runtime = AgentRuntime(
             task_id=task_id,
+            session_id=f"ephemeral-{task_id}",
             prompt=spec.prompt,
             dept_prompt=spec.system_prompt,
-            allowed_tools=list(spec.allowed_tools),
-            task_cwd=cwd,
+            allowed_tools=tuple(spec.allowed_tools),
+            cwd=cwd,
             max_turns=spec.max_turns,
         )
+        result = await runner.run(runtime)
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         log.error(f"Ephemeral: run failed for id={task_id}: {e}")
