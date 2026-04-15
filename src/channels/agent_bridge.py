@@ -23,6 +23,7 @@ from typing import AsyncIterator, Callable, Optional
 from src.channels.agent_discovery import (
     AgentProfile, AgentProtocol, get_discovered_agents,
 )
+from src.core.circuit_breaker import get_breaker, CircuitBreakerError
 
 log = logging.getLogger(__name__)
 
@@ -488,12 +489,15 @@ class HTTPBridge(AgentBridge):
 
         try:
             loop = asyncio.get_event_loop()
+            breaker = get_breaker("agent-bridge-http")
 
             def _do_request():
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     return json.loads(resp.read().decode())
 
-            data = await loop.run_in_executor(None, _do_request)
+            data = await loop.run_in_executor(
+                None, lambda: breaker.call(_do_request)
+            )
             text = data["choices"][0]["message"]["content"]
 
             # Update client-side history
@@ -508,6 +512,15 @@ class HTTPBridge(AgentBridge):
                 raw=data,
             )
 
+        except CircuitBreakerError as e:
+            log.warning("http_bridge: circuit open for %s, retry in %.0fs",
+                        self.profile.name, e.time_until_probe)
+            return AgentResponse(
+                text="", agent_name=self.profile.name,
+                protocol=AgentProtocol.HTTP,
+                error=str(e),
+                elapsed_s=time.monotonic() - t0,
+            )
         except Exception as e:
             return AgentResponse(
                 text="", agent_name=self.profile.name,

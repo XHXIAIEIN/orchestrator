@@ -4,6 +4,7 @@ import logging
 import urllib.request
 
 from src.channels import config as ch_cfg
+from src.core.circuit_breaker import get_breaker, CircuitBreakerError
 
 log = logging.getLogger(__name__)
 
@@ -21,8 +22,14 @@ class TelegramAPI:
             method="POST",
         )
         try:
-            resp = urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
+            breaker = get_breaker("telegram-api")
+            resp = breaker.call(
+                lambda: urllib.request.urlopen(req, timeout=ch_cfg.SEND_TIMEOUT)
+            )
             return json.loads(resp.read())
+        except CircuitBreakerError as e:
+            log.warning("telegram: circuit open, retry in %.0fs", e.time_until_probe)
+            return {}
         except Exception as e:
             log.warning(f"telegram: {method} failed: {e}")
             return {}
