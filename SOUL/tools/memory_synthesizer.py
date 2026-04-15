@@ -300,7 +300,9 @@ def save_active_context(content: str):
 
     header = f"<!-- Auto-synthesized: {time.strftime('%Y-%m-%d %H:%M')} -->\n"
     try:
-        ACTIVE_CONTEXT_PATH.write_text(header + content, encoding="utf-8")
+        # R67 MemPalace: atomic write to prevent half-written context on crash
+        from src.core.atomic_write import atomic_write
+        atomic_write(ACTIVE_CONTEXT_PATH, header + content)
 
         # Validate output size
         line_count = content.count("\n") + 1

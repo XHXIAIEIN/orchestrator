@@ -6,19 +6,24 @@
 
 ## Implementation Status (2026-04-14)
 
-### Tier 1 + Tier 1+ (10/10 完成)
+### Tier 1 + Tier 1+ (14/14 完成)
 
-| # | 模式 | 状态 | Commit |
+| # | 模式 | 状态 | Commit / 实现文件 |
 |---|------|------|--------|
+| 1 | 查询污染防护 (query_sanitizer) | ✅ 完成 | `src/storage/query_sanitizer.py` + qdrant_store.search() 集成 |
 | 2 | CSO description 规范审计 | ✅ 完成 | `14b3699` 7/9 skills trimmed |
 | 3 | Iron Law 代码围栏 | ✅ 完成 | `2153432` verification-gate + systematic-debugging |
 | 4 | SUBAGENT-STOP 标签 | ✅ 完成 | `2153432` persona + doctor + prime |
+| 5 | 原子写保护 (os.replace + fsync) | ✅ 完成 | `src/core/atomic_write.py` + compiler/synthesizer 集成 |
+| 6 | SQLite Unicode casefold (CJK) | ✅ 完成 | `src/storage/pool.py` orch_lower() 注册到每个连接 |
+| 7 | python3 atomic JSONL append | ✅ 完成 | `src/core/atomic_write.py` atomic_append_jsonl + _sessions_mixin 集成 |
 | 8 | Nonce boundary + HTML strip | ✅ 完成 | `14b3699` boundary_nonce.py |
 | 29 | 结构化错误反馈 | ✅ 完成 | `14b3699` guard-redflags.sh 14 patterns |
 | 30 | Budget 优雅摘要 | ✅ 完成 | `14b3699` context-threshold-stop.py |
 | 31 | Sentinel 完成字符串 | ✅ 完成 | `14b3699` dispatch-gate.sh DONE/PARTIAL/STUCK |
 | 32 | LoopCounter 硬性上限 | ✅ 完成 | `14b3699` loop-detector.sh + guard-redflags.sh 双 hook |
 | 33 | 子 agent 并行强制 | ✅ 完成 | `14b3699` dispatch-gate.sh PARALLEL MANDATE |
+| 34 | API 消除模式 | ⬜ N/A | 当前无库内嵌辅助 LLM 调用，模式记录为设计原则 |
 
 ### Tier 2 (9/9 完成)
 
