@@ -79,11 +79,6 @@
           },
           {
             "type": "command",
-            "command": "bash .claude/hooks/config-protect-3state.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "bash .claude/hooks/block-protect.sh check",
             "timeout": 5
           }
