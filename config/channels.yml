@@ -1,0 +1,64 @@
+# Channel Registry — declarative channel configuration
+# Source: R46 career-ops onboarding pattern
+#
+# Current status: MANIFEST ONLY
+# The runtime still uses env-var auto-discovery (src/channels/registry.py).
+# This file declares which channels exist and their properties,
+# serving as documentation and future config source.
+#
+# To enable a channel: set the corresponding env vars in .env
+# This file does NOT replace .env — it complements it.
+
+version: 1
+
+channels:
+  telegram:
+    enabled: true
+    adapter: src.channels.telegram.TelegramChannel
+    env_required:
+      - TELEGRAM_BOT_TOKEN
+    env_optional:
+      - TELEGRAM_CHAT_ID           # legacy single-user; prefer TELEGRAM_ALLOWED_USERS
+      - TELEGRAM_ALLOWED_USERS     # format: "chat_id:role,chat_id:role"
+      - TELEGRAM_MIN_PRIORITY      # default: HIGH
+    capabilities:
+      - inbound       # receives user messages
+      - outbound      # sends notifications
+      - file_read     # can read files on request
+      - dispatch      # can trigger tasks
+
+  wechat:
+    enabled: true
+    adapter: src.channels.wechat.WeChatChannel
+    env_required:
+      - WECHAT_BOT_TOKEN           # iLink Bot API token (or loaded from persisted creds)
+    env_optional:
+      - WECHAT_BASE_URL
+      - WECHAT_ALLOWED_USERS
+      - WECHAT_MIN_PRIORITY        # default: HIGH
+      - WECHAT_CDN_BASE_URL
+    capabilities:
+      - inbound
+      - outbound
+      - file_read
+      - dispatch
+
+  wecom:
+    enabled: false
+    adapter: src.channels.wecom.WeComChannel
+    env_required:
+      - WECOM_WEBHOOK_URL
+    env_optional: []
+    capabilities:
+      - outbound      # webhook-only, no inbound
+
+# Shared channel parameters (managed in src/channels/config.py)
+# Override via CHANNEL_* env vars. Listed here for reference.
+defaults:
+  chat_model: claude-haiku-4-5-20251001
+  chat_max_tokens: 1024
+  recent_turns: 20
+  send_timeout: 10
+  poll_timeout: 30
+  dispatch_mode: steer            # collect / steer / followup
+  block_streaming: "off"
