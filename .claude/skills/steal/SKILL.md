@@ -15,11 +15,24 @@ Core mindset (from 39 rounds of practice):
 
 ## Pre-flight
 
-1. **Branch gate** *(hard rule — no exceptions)*: Steal work MUST happen on a `steal/*` or `round/*` branch. **Never modify files on any other branch.**
-   - Check current branch: `git branch --show-current`
-   - If not on `steal/*` or `round/*` → **immediately create and switch**: `git checkout -b steal/<topic>`
-   - Do NOT ask the user whether to create the branch. Do NOT proceed with any file writes until you are on the correct branch.
-   - The dispatch-gate hook also blocks `[STEAL]` work on other branches as a safety net, but the skill itself must enforce this before the hook even fires.
+1. **Worktree gate** *(hard rule — no exceptions)*: Steal work MUST run in a dedicated **git worktree** on a `steal/*` branch. **Never switch the main workspace's branch.** Running `git checkout -b steal/<topic>` in the main repo is forbidden — it hijacks the caller's working branch and strands their uncommitted work.
+   - **Check current setup first**: `git rev-parse --show-toplevel` and `git branch --show-current`. If you're already inside a `.claude/worktrees/steal-*` path on a `steal/*` or `round/*` branch, the gate is satisfied — skip to step 2.
+   - **Otherwise create one in a single shot**:
+     ```
+     git worktree add .claude/worktrees/steal-<topic> -b steal/<topic>
+     cd .claude/worktrees/steal-<topic>
+     ```
+     The Bash tool persists `cwd` between calls — after the `cd`, every subsequent read/write/commit happens inside the worktree. The main workspace keeps its branch, its index, and its uncommitted changes intact.
+   - **For sub-agent dispatch**: pass `isolation: "worktree"` in the Agent tool call so the child gets its own isolated copy automatically. Do NOT brief a sub-agent to "create a steal branch" — that would repeat the same mistake one level down.
+   - **Cleanup (after the steal report is committed and merged/archived)**:
+     ```
+     cd <back to main repo root>
+     git worktree remove .claude/worktrees/steal-<topic>
+     # optional: git branch -D steal/<topic> once the commits are landed or archived
+     ```
+   - Do NOT ask the user whether to create the worktree. Do NOT proceed with any file writes until you're inside one.
+   - The dispatch-gate hook also blocks `[STEAL]` work when the current directory's branch is not `steal/*` or `round/*` as a safety net — it fires against the *current* `git branch --show-current`, so being inside a worktree on `steal/<topic>` passes naturally.
+   - **Broadcast round to statusline**: after entering the worktree, run `bash .claude/scripts/sl-tag.sh "R<N> <topic>"`. The tag renders in magenta brackets on the statusline so the owner can see at a glance which round/phase this session is on. Update it as phases advance (e.g., `sl-tag.sh "R<N> <topic> phase2"`). Run `sl-tag.sh --clear` when the steal is finished.
 
 2. **Identify target**: URL, repo name, or local path. If user gave multiple links, process ALL — don't skip any for seeming "unrelated" (breadth rule: a traffic sign detector's tiling strategy might be exactly what a UI detector needs).
 
