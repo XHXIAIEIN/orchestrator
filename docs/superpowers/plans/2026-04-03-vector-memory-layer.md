@@ -1383,6 +1383,15 @@ asyncio.run(test())
 
 Expected: returns relevant learnings sorted by score
 
-- [ ] **Step 5: Commit migration success to memory**
+- [x] **Step 5: Commit migration success to memory** (OBSOLETE 2026-04-17)
 
 Update `MEMORY.md` and `orchestrator_evolution.md` to record Phase 3.7 completion.
+
+---
+
+## Post-hoc Status (2026-04-17)
+
+- ✅ 核心实现合入 main：merge commit `8bb969e` (feat/vector-memory-layer — Qdrant + Qwen3-Embedding Phase 3.7)
+- ✅ 关键 commits: `819b48b` (deps), `f44e2e6` (QdrantStore core), `ace7cec` (4 fire-and-forget 写路径), `a59f0d0` (retire vector_db.py)
+- ✅ 源文件落地: `src/storage/qdrant_store.py`（存在，作为单一入口）
+- ⚠️ Step 5 OBSOLETE: `MEMORY.md` 与 `orchestrator_evolution.md` 两文件已在后续架构重构中移除（当前记忆分层为 `.remember/` + `SOUL/private/experiences.jsonl` + `SOUL/private/hall-of-instances.md`）。Phase 3.7 里程碑记录由 commit 历史 + 代码自留痕替代，无需补写到废弃文件。
