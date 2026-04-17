@@ -168,6 +168,24 @@ def error_recovery(max_retries: int = 2) -> MiddlewareFn:
     return middleware
 
 
+def dangling_tool_fix() -> MiddlewareFn:
+    """Patch dangling tool calls in message history before LLM invocation.
+
+    Source: R62 DeerFlow DanglingToolCallMiddleware.
+    """
+    from src.governance.pipeline.dangling_tool_fix import patch_dangling_tool_calls
+
+    def middleware(ctx: MiddlewareContext, next_fn: Callable) -> MiddlewareContext:
+        if ctx.messages:
+            patched, report = patch_dangling_tool_calls(ctx.messages)
+            if report.had_dangles:
+                log.info("dangling_tool_fix: patched %d dangling tool call(s)", report.dangling_found)
+                ctx.messages = patched
+        return next_fn(ctx)
+
+    return middleware
+
+
 def timing() -> MiddlewareFn:
     """Measure execution time of the inner pipeline."""
     def middleware(ctx: MiddlewareContext, next_fn: Callable) -> MiddlewareContext:

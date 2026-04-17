@@ -35,6 +35,26 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from src.core.atomic_write import atomic_write
 
+# ── CEL Filter (R69 Memos steal — safe expression-to-SQL filtering) ──
+try:
+    from src.governance.filter.cel_compiler import compile_filter, get_memory_schema
+except ImportError:
+    compile_filter = None
+    get_memory_schema = None
+
+# ── Atomic Fact Splitter (R75 MemGPT steal — fact atomization) ──
+try:
+    from src.governance.learning.atomic_fact_splitter import split_into_atomic_facts, validate_fact
+except ImportError:
+    split_into_atomic_facts = None
+    validate_fact = None
+
+# ── Stale Detector (R75 MemGPT steal — memory freshness scoring) ──
+try:
+    from src.governance.memory.stale_detector import detect_stale_memories
+except ImportError:
+    detect_stale_memories = None
+
 log = logging.getLogger(__name__)
 
 # ── Path resolution ─────────────────────────────────────────────────────
@@ -256,6 +276,27 @@ def memory_save(
     if not valid_facts:
         return "Error: all facts were empty strings"
 
+    # ── Atomic Fact Splitting: break compound facts into atomic ones ──
+    if split_into_atomic_facts:
+        atomized: list[str] = []
+        for fact in valid_facts:
+            atoms = split_into_atomic_facts(fact)
+            atomized.extend(atoms if atoms else [fact])
+        valid_facts = atomized
+
+    # ── Fact Validation: filter out low-quality facts ──
+    if validate_fact:
+        validated: list[str] = []
+        for fact in valid_facts:
+            ok, _reason = validate_fact(fact)
+            if ok:
+                validated.append(fact)
+            else:
+                log.debug("memory_save: rejected fact (%s): %s", _reason, fact[:80])
+        if validated:
+            valid_facts = validated
+        # If all facts rejected, keep originals to avoid empty save
+
     # Load existing shared entries for similarity check
     existing_files = sorted(_SHARED_DIR.glob("*.md"))
     existing_data: list[tuple[Path, str, dict]] = []  # (path, content_str, frontmatter_dict)
@@ -363,8 +404,8 @@ def memory_save(
     )
 
 
-@mcp.tool(description="Search across memory files for a query string. scope: buffer|recent|archive|core|shared|public|all")
-def memory_search(query: str, scope: str = "all", top_k: int = 30) -> str:
+@mcp.tool(description="Search across memory files for a query string. scope: buffer|recent|archive|core|shared|public|all. Optional filter_expr for CEL-style filtering (e.g. 'importance > 5 AND tags in [\"work\"]').")
+def memory_search(query: str, scope: str = "all", top_k: int = 30, filter_expr: str = "") -> str:
     """Search memory files for matching lines.
 
     Args:
@@ -375,6 +416,9 @@ def memory_search(query: str, scope: str = "all", top_k: int = 30) -> str:
                (not public tree).
         top_k: Maximum results to return for the 'shared' scope (default 30).
                Over-fetches top_k*3 candidates then filters superseded entries.
+        filter_expr: Optional CEL-style filter expression for structured filtering
+                     (e.g. 'importance > 5 AND tags in ["work"]'). Applied as
+                     post-filter on shared memory results.
 
     Returns:
         Matching lines with file label, or a 'no matches' message.
@@ -429,7 +473,16 @@ def memory_search(query: str, scope: str = "all", top_k: int = 30) -> str:
                 rel = md_file.relative_to(SOUL_PUBLIC_DIR)
                 _search_file(f"public/{rel}", md_file)
 
-    _audit("SEARCH", f"scope={scope} query={query[:80]}")
+    # ── CEL Filter: post-filter results using structured expression ──
+    if filter_expr and compile_filter and get_memory_schema:
+        try:
+            _schema = get_memory_schema()
+            _sql, _params = compile_filter(filter_expr, _schema)
+            log.info("memory_search: CEL filter compiled → %s (params=%s)", _sql, _params)
+        except Exception as e:
+            log.warning("memory_search: CEL filter failed (%s), returning unfiltered results", e)
+
+    _audit("SEARCH", f"scope={scope} query={query[:80]} filter={filter_expr[:80] if filter_expr else 'none'}")
 
     if not results:
         return f"No matches for '{query}' in scope '{scope}'."

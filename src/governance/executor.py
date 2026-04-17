@@ -71,6 +71,19 @@ except ImportError:
     RetryPolicy = None
     resilient_should_retry = None
 
+# ── Content Cache (stolen from LangGraph R68) ──
+try:
+    from src.governance.content_cache import content_cache_key
+except ImportError:
+    content_cache_key = None
+
+# ── Signal Extractor (stolen from R73) ──
+try:
+    from src.governance.signals.signal_extractor import SignalExtractor
+    _signal_extractor = SignalExtractor()
+except ImportError:
+    _signal_extractor = None
+
 
 # ── Rollout Configuration (stolen from agent-lightning Round 8) ──
 
@@ -595,6 +608,10 @@ class TaskExecutor:
         dept_prompt = skill_content if skill_content else dept["prompt_prefix"]
         _checkpoint("prompt_assembled")
 
+        # ── Content Cache Key (R68 LangGraph: content-addressed dedup) ──
+        if content_cache_key:
+            spec["content_cache_key"] = content_cache_key(prompt)
+
         cognitive_mode = classify_cognitive_mode(task)
         blast_radius = estimate_blast_radius(spec)
         bp_tag = f"bp=v{blueprint.version}" if blueprint else "bp=none"
@@ -669,15 +686,6 @@ class TaskExecutor:
                     screened_tools.append(tool)  # REQUIRED/CUSTOM: allow but log
                     log.info(f"TaskExecutor: task #{task_id} tool '{tool}' flagged ({result.policy.value}): {result.reason}")
             allowed_tools = screened_tools
-
-        # Round 21 (hermes-agent): batch mode grants more turns for tool-heavy tasks
-        if rollout_cfg.batch_mode and rollout_cfg.max_turns_override:
-            task_max_turns = rollout_cfg.max_turns_override
-            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns overridden to {task_max_turns}")
-        elif rollout_cfg.batch_mode:
-            # Default batch boost: 2x normal turns
-            task_max_turns = task_max_turns * 2
-            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns doubled to {task_max_turns}")
 
         log.info(f"TaskExecutor: task #{task_id} policy={route.profile.value} "
                  f"model={effective_model} timeout={task_timeout}s max_turns={task_max_turns}")
@@ -1007,6 +1015,16 @@ class TaskExecutor:
                        cost=getattr(tracker, 'total_cost', 0.0))
                 except Exception:
                     pass
+
+            # ── Signal Extraction: post-execution analysis (R73) ──
+            if _signal_extractor and output and output != "(no output)":
+                try:
+                    signals = _signal_extractor.extract(output, blast_radius=int(blast_radius.split(":")[0]) if ":" in blast_radius else -1)
+                    if signals:
+                        log.info("TaskExecutor: task #%d post-execution signals: %s",
+                                 task_id, [s.context for s in signals[:3]])
+                except Exception:
+                    log.debug("TaskExecutor: task #%d signal extraction failed (non-critical)", task_id, exc_info=True)
 
             # ── Lifecycle: attempt_end ──
             self._fire("on_attempt_end",

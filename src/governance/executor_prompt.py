@@ -38,6 +38,12 @@ try:
 except ImportError:
     _VoiceDirective = None
 
+# Culture Inject — unified identity across sub-agents (R74 ChatDev)
+try:
+    from src.governance.context.culture_inject import inject_culture as _inject_culture
+except ImportError:
+    _inject_culture = None
+
 log = logging.getLogger(__name__)
 
 
@@ -193,6 +199,10 @@ You have access to additional context stored in a database. Read what you need �
             prompt += "\n\n" + dynamic_ctx
     except Exception as e:
         log.warning(f"TaskExecutor: context assembly failed ({e}), continuing without dynamic context")
+
+    # ── Culture Inject: unified identity across sub-agents (R74 ChatDev) ──
+    if _inject_culture:
+        prompt = _inject_culture(prompt, project=project_name, session_id=session_id)
 
     # ── Condenser: optional context compression (post-assembly, pre-execution) ──
     # Configurable per-department via manifest.yaml `condenser:` section.
