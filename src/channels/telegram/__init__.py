@@ -1,4 +1,4 @@
-"""Telegram Channel — Bot API 适配器。"""
-from src.channels.telegram.channel import TelegramChannel
+"""Shim — telegram adapter moved to orchestrator_channels.telegram."""
+from orchestrator_channels.telegram import TelegramChannel
 
 __all__ = ["TelegramChannel"]
