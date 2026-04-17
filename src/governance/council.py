@@ -496,9 +496,21 @@ class ElderCouncil:
         else:
             rankings = self._stage2_rank(question, opinions, label_to_elder, timeout)
 
+        # ── Shared Board (R74 ChatDev): opinions as blackboard for chairman ──
+        from src.governance.context.blackboard import create_reflexion_blackboard
+        bb = create_reflexion_blackboard()
+        for op in opinions:
+            bb.write(
+                "reflection_writer",
+                f"[{op.stance} conf={op.confidence:.2f}] {op.text[:300]}",
+                metadata={"elder": op.elder_key, "label": op.label},
+            )
+        board_text = bb.format_for_prompt("synthesizer", top_k=len(opinions))
+        synth_context = context + ("\n\n" + board_text if board_text else "")
+
         # ── Stage 3: Chairman synthesis ──
         synthesis, decision, confidence, action_items = self._stage3_synthesize(
-            question, context, opinions, rankings, label_to_elder, timeout,
+            question, synth_context, opinions, rankings, label_to_elder, timeout,
         )
 
         # Count dissent
