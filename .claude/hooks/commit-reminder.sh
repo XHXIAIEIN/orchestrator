@@ -1,13 +1,13 @@
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/../.." || exit 1
-# Hook: Stop — auto-commit enforcement
+# Hook: Stop — uncommitted-work check
 #
-# When Claude is about to stop, check for uncommitted changes.
-# If found, output a DIRECTIVE to commit them NOW — not a suggestion,
-# not a reminder. Claude must commit before ending the turn.
-#
-# This enforces "one feature point = one commit" mechanically.
+# When Claude is about to stop, surface the count of uncommitted
+# files. Per CLAUDE.md § Git Safety, auto-commit is NOT allowed
+# without explicit owner authorization — this hook informs, it does
+# not command. Once the owner has authorized commits in the current
+# session, commit-per-feature-point is encouraged.
 
 # Check for uncommitted changes (tracked modified + staged + new code files)
 CHANGED=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d ' ')
@@ -17,5 +17,5 @@ UNTRACKED=$(git ls-files --others --exclude-standard -- 'src/' 'tests/' 'docs/' 
 TOTAL=$((CHANGED + STAGED + UNTRACKED))
 
 if [ "$TOTAL" -gt 0 ]; then
-    echo "[COMMIT-NOW] You have ${TOTAL} uncommitted file(s). Do NOT end your turn without committing. Run git add + git commit now. Do not ask the user — judge the feature-point boundary yourself and commit."
+    echo "[COMMIT-CHECK] ${TOTAL} uncommitted file(s). Per CLAUDE.md Git Safety: stage-first for owner review (show git diff/status). Auto-commit only if the owner has authorized commits in this session."
 fi
