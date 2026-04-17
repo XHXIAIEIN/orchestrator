@@ -11,6 +11,17 @@ IRON LAW: NO COMPLETION CLAIM WITHOUT EVIDENCE. "Should work" IS NOT EVIDENCE.
 
 Before declaring ANY task complete, you MUST pass all five steps in order:
 
+## Pre-Flight: DECLARE ASSUMPTIONS
+
+Before the first line of code or the first destructive command, say the assumptions out loud — one line per assumption, no padding.
+
+- Not "do you approve?" — a verifiable claim the owner can diff against reality.
+- Format: `Assume: <X is Y>` / `Assume: <user wants A, not B>` / `Assume: <this file is the entry point>`.
+- If two plausible interpretations exist, list both and pick one with a reason. Don't stall — announce the pick, proceed, let the owner overrule.
+- Skip only for trivial read-only ops (ls, grep, git status). Any write / run / install / network call: declare first.
+
+Why this exists: post-hoc verification catches broken code, not broken premises. Stating the assumption moves the gate earlier — the owner can intercept a wrong premise in 2 seconds instead of debugging the wrong implementation for an hour.
+
 ## The Five Steps
 
 ### Step 1: IDENTIFY
