@@ -795,3 +795,27 @@ Added 2026-04-17 after retrospective. The deeper lesson from this document is no
 | 3 | **Before commit, do the `src/` walk-through**: for each section, name the file path that will change (new or edited). Sections with no target file are either deleted, demoted to reference appendix, or converted to an explicit "not-yet-needed" note with the triggering condition. | Report claims to be a steal plan but 0 LOC of actual code changes trace to it. Detected retroactively on 2026-04-17 for this document — the `src/` walk yielded zero hits for Section 2 patterns. |
 
 **Self-test for this document**: Section 2 Sandboxing Patterns failed check 3 (no src/ path). It survives in the corpus as a reference appendix + failure-mode specimen, not as an active steal plan.
+
+---
+
+## 10. Exit Gate — The Mandatory Last Step of Any Steal Branch
+
+Added 2026-04-17. Before closing a steal branch, merging it, or marking a steal task complete, the owner (or the agent on the owner's behalf) **must** answer this question on the record:
+
+> **从这个分支中，我们得到了什么？**
+> *(What did we get from this branch?)*
+
+The answer must have three parts:
+
+| Part | What to record | Accepted answers |
+|---|---|---|
+| **1. Direct code output** | File paths and commits that changed `src/`, `docker-compose.yml`, skill definitions, or any runtime code as a result of this steal | `<list of paths + commit SHAs>` OR the literal word **zero** |
+| **2. Methodology output** | Rules, failure-mode specimens, checklists, or process artifacts added to `.claude/skills/`, `docs/steal/`, boot.md, or CLAUDE.md | `<list of paths>` OR **none** |
+| **3. Net verdict** | **positive** / **zero** / **negative**, plus the disposition: keep as active reference, demote to appendix, or move to `.trash/` | One word + one-line rationale |
+
+**Rationale**: Every finished steal branch gets asked this by the owner eventually. Answering it pre-merge surfaces low-value work before it accumulates into the corpus as "technically a steal report." R38's Section 2 only revealed its negative value when owner asked retrospectively on 2026-04-17 — making this the exit step prevents the same diagnosis happening days or weeks after the fact, by which point the low-value report has already been cross-linked and quoted as if it were a steal plan.
+
+**Self-test for this document**:
+- Part 1 = **zero** (no `src/` changes trace to Section 2's sandboxing patterns)
+- Part 2 = Section 8 failure-mode table + Section 9 pre-flight checklist + Section 10 exit gate (this section); written into `docs/steal/R38-agent-eval-patterns.md` on branch `steal/r38-sandbox-retro`
+- Part 3 = **net zero, kept as reference specimen** — the methodology artifacts (three checklists + five failure modes) outweigh the direct-code zero and justify keeping the report in-corpus rather than moving to `.trash/`
