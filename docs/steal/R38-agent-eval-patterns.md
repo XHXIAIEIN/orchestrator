@@ -285,13 +285,19 @@ async def consistency_check(task: str, agent_fn, n_runs: int = 5) -> dict:
 
 ## 2. Sandboxing Patterns
 
+> **Retrospective correction (2026-04-17)**: This section originally used absolute
+> claims ("Docker is not a sandbox") and unsourced performance metrics. It has been
+> softened to distinguish threat models and mark unverified numbers. The core
+> technical observations (kernel sharing, MicroVM isolation levels) remain valid;
+> the framing has been downgraded from prescriptive to descriptive.
+
 ### 2.1 Docker-Based Eval Sandboxes
 
 **What**: Run agent evaluation in Docker containers with controlled environments.
 
 **Why it matters**: Agents that execute code, modify files, or make network calls need isolation. Without sandboxing, a bad eval run can corrupt the host system.
 
-**Critical insight from 2025 consensus**: **Docker is not a sandbox.** Docker containers share the host kernel. A container escape vulnerability gives full host access. Docker is sufficient for *reproducibility* (consistent environment) but not for *security* (untrusted code isolation).
+**On Docker isolation**: Docker is not a security sandbox for actively-malicious code — containers share the host kernel, so a container escape vulnerability gives full host access. For *reproducibility* (consistent environment) and "agent does something dumb" threat models, it's sufficient — see the use-case note in 2.1 below. The distinction between threat models matters: reproducibility vs. true untrusted-code isolation are different requirements.
 
 **What Docker IS good for in eval**:
 - Reproducible environments (same deps, same OS)
@@ -327,22 +333,22 @@ services:
 
 **What**: Hardware-level isolation using lightweight VMs instead of containers.
 
-**Why it matters**: When you need true isolation — each sandbox gets its own kernel. Container escapes become meaningless because there's nothing to escape to.
+**Why it matters**: When you need true isolation — each sandbox gets its own kernel. Container escapes become less impactful (VM escape still possible, but a higher bar) because the attack surface is narrower than shared-kernel containers.
 
 **Two dominant approaches (2025-2026)**:
 
 **Firecracker MicroVMs** (used by E2B, AWS Lambda):
 - Own kernel per workload
-- 3-5 MB memory overhead per instance
-- Boot in ≤125ms (from snapshot), ~160-180ms end-to-end
-- E2B processes 15M+ sandbox sessions/month with this tech
-- Manus AI uses E2B for "virtual computers" for their agents
+- ~3-5 MB memory overhead per instance (per Firecracker/E2B public materials, not independently verified)
+- Boot in sub-200ms typical (snapshot-based; ≤125ms and ~160-180ms end-to-end figures cited in E2B materials — [source needed for independent confirmation])
+- E2B reports processing large volumes of sandbox sessions/month with this technology (15M+ figure cited in their marketing — [source needed])
+- Manus AI has been reported to use E2B for agent "virtual computers" [unverified, based on 2025 third-party reporting]
 
 **gVisor** (used by Google GKE, Kubernetes Agent Sandbox):
 - User-space kernel that intercepts syscalls before they reach host kernel
 - Less isolation than Firecracker (shared host kernel, but syscall-filtered)
 - Lower overhead, no separate kernel boot
-- Google's [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) for K8s: declarative API for managing isolated pods with warm pools for sub-second startup
+- Google's Agent Sandbox for K8s (`kubernetes-sigs/agent-sandbox` — URL cited in sources but not independently verified at time of writing): declarative API for managing isolated pods with warm pools for sub-second startup
 
 **When to upgrade from Docker**: If/when the orchestrator starts executing untrusted code from external sources, or if eval tasks involve running code that could have side effects beyond the file system.
 
@@ -737,6 +743,8 @@ class CapabilityReport:
 
 ## 6. Key Repos to Watch
 
+> Repo URLs below are cited from survey sources (stars figures approximate, per public GitHub metadata at time of writing; not independently re-verified in this retrospective).
+
 | Repo | What | Stars | Why care |
 |------|------|-------|---------|
 | [safety-research/bloom](https://github.com/safety-research/bloom) | Anthropic's behavioral eval generator | ~2k | Auto-generates diverse eval scenarios |
@@ -759,3 +767,17 @@ class CapabilityReport:
 | Dataset | 4 (versioning, contamination, dynamic generation, difficulty calibration) |
 | Reporting | 4 (dashboards, regression, confidence intervals, per-capability) |
 | **Total** | **19 patterns** |
+
+---
+
+## 8. Known Failure Modes in This Document
+
+Recorded as part of retrospective correction (2026-04-17):
+
+| Failure mode | Where it appeared | How to avoid |
+|---|---|---|
+| **Absolute claims without sources** | Section 2 — "Docker is not a sandbox" stated as universal law without citing CVE frequency, threat model scope, or explicit source | Distinguish threat models upfront; qualify claims with scope (e.g. "for actively-malicious code") |
+| **Unsourced performance metrics** | Section 2.2 — specific boot latency (≤125ms, 160-180ms) and memory overhead (3-5 MB) and session volume (15M+/month) cited as facts | Mark vendor-reported metrics with `[source needed]` or `(per vendor materials, not independently verified)` |
+| **Marketing-style security framing** | Section 2.2 — "Container escapes become meaningless because there's nothing to escape to" | VM escape is still a real attack class; say "higher bar" not "meaningless" |
+| **Unverified external attribution** | Section 2.2 — "Manus AI uses E2B for virtual computers" stated as fact | Third-party product attribution needs source citation or explicit `[unverified]` tag |
+| **Unverified URL** | Section 2.2 — GitHub link to `kubernetes-sigs/agent-sandbox` cited without access verification | Note when links are cited-but-not-visited |
