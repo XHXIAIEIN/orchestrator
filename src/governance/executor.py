@@ -687,15 +687,6 @@ class TaskExecutor:
                     log.info(f"TaskExecutor: task #{task_id} tool '{tool}' flagged ({result.policy.value}): {result.reason}")
             allowed_tools = screened_tools
 
-        # Round 21 (hermes-agent): batch mode grants more turns for tool-heavy tasks
-        if rollout_cfg.batch_mode and rollout_cfg.max_turns_override:
-            task_max_turns = rollout_cfg.max_turns_override
-            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns overridden to {task_max_turns}")
-        elif rollout_cfg.batch_mode:
-            # Default batch boost: 2x normal turns
-            task_max_turns = task_max_turns * 2
-            log.info(f"TaskExecutor: task #{task_id} batch_mode: max_turns doubled to {task_max_turns}")
-
         log.info(f"TaskExecutor: task #{task_id} policy={route.profile.value} "
                  f"model={effective_model} timeout={task_timeout}s max_turns={task_max_turns}")
 
