@@ -15,6 +15,22 @@ from src.channels.formatter import format_event
 log = logging.getLogger(__name__)
 
 
+def _build_chat_engine():
+    """Inject orchestrator's chat module as chat_engine namespace.
+
+    Adapters call ``self._chat_engine.{do_chat,save_to_inbox,handle_command,
+    build_system_prompt}``; this keeps the contract centralized.
+    """
+    from src.channels import chat as chat_engine
+    return chat_engine
+
+
+def _build_breaker(name: str):
+    """Return (breaker, breaker_error_cls) for adapters that need rate limiting."""
+    from src.core.circuit_breaker import get_breaker, CircuitBreakerError
+    return get_breaker(name), CircuitBreakerError
+
+
 class ChannelRegistry:
     """Channel 注册表 + 广播器。"""
 
@@ -88,10 +104,14 @@ class ChannelRegistry:
         if os.environ.get("TELEGRAM_BOT_TOKEN"):
             try:
                 from src.channels.telegram import TelegramChannel
+                breaker, breaker_err = _build_breaker("telegram")
                 tg = TelegramChannel(
                     token=os.environ["TELEGRAM_BOT_TOKEN"],
                     chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
                     min_priority=os.environ.get("TELEGRAM_MIN_PRIORITY", "HIGH"),
+                    chat_engine=_build_chat_engine(),
+                    breaker=breaker,
+                    breaker_error_cls=breaker_err,
                 )
                 self.register(tg)
             except Exception as e:
@@ -116,6 +136,7 @@ class ChannelRegistry:
                     base_url=os.environ.get("WECHAT_BASE_URL", ""),
                     min_priority=os.environ.get("WECHAT_MIN_PRIORITY", "HIGH"),
                     allowed_users=os.environ.get("WECHAT_ALLOWED_USERS", ""),
+                    chat_engine=_build_chat_engine(),
                 )
                 self.register(wc)
             except Exception as e:

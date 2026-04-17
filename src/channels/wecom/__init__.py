@@ -1,4 +1,4 @@
-"""企业微信 Channel — Webhook 推送适配器。"""
-from src.channels.wecom.channel import WeComChannel
+"""Shim — wecom adapter moved to orchestrator_channels.wecom."""
+from orchestrator_channels.wecom import WeComChannel
 
 __all__ = ["WeComChannel"]

@@ -1,4 +1,4 @@
-"""微信 WeChat Channel — iLink Bot API 适配器。"""
-from src.channels.wechat.channel import WeChatChannel
+"""Shim — wechat adapter moved to orchestrator_channels.wechat."""
+from orchestrator_channels.wechat import WeChatChannel, load_credentials
 
-__all__ = ["WeChatChannel"]
+__all__ = ["WeChatChannel", "load_credentials"]
