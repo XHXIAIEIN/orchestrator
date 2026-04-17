@@ -15,6 +15,8 @@ import time
 from dataclasses import dataclass, field
 from typing import AsyncGenerator
 
+from src.governance.safety.idle_timeout import with_idle_timeout, DEFAULT_TIMEOUT_S
+
 log = logging.getLogger(__name__)
 
 # ── Event Types ──
@@ -159,6 +161,23 @@ class ExecutionStream:
         finally:
             # Unregister streaming hooks
             self._unregister_stream_hooks(registered_hooks)
+
+    async def execute_guarded(
+        self,
+        task_id: int,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+    ):
+        """Streaming variant with idle-timeout deadlock protection (R63 Archon).
+
+        Wraps ``execute()`` with ``with_idle_timeout`` so a hung subprocess or
+        MCP stream does not silently deadlock the consumer.
+        """
+        async for event in with_idle_timeout(
+            self.execute(task_id),
+            timeout_s=timeout_s,
+            label=f"stream#{task_id}",
+        ):
+            yield event
 
     # ── Internals ──
 

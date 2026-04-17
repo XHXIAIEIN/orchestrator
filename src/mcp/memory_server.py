@@ -23,6 +23,7 @@ Run:
 """
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
 import logging
@@ -34,6 +35,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 from src.core.atomic_write import atomic_write
+from src.governance.transaction.three_phase import three_phase_write
 
 # ── CEL Filter (R69 Memos steal — safe expression-to-SQL filtering) ──
 try:
@@ -119,6 +121,21 @@ def _jaccard_similarity(a: str, b: str) -> float:
     intersection = len(tokens_a & tokens_b)
     union = len(tokens_a | tokens_b)
     return intersection / union if union else 0.0
+
+
+def _parse_shared_fm(text: str) -> dict:
+    """Minimal frontmatter parse for shared entries."""
+    fm: dict = {}
+    if not text.startswith("---"):
+        return fm
+    end = text.find("\n---", 3)
+    if end == -1:
+        return fm
+    for line in text[3:end].splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            fm[k.strip()] = v.strip().strip("'\"")
+    return fm
 
 
 # ── Audit logger ────────────────────────────────────────────────────────
@@ -248,24 +265,16 @@ def memory_write(content: str) -> str:
 
 
 @mcp.tool(description="Save atomic facts to shared memory. Each fact is stored independently. Similar facts (>70% match) auto-supersede older entries.")
-def memory_save(
+async def memory_save(
     facts: list[str],
     source: str = "mcp-client",
     importance: float = 0.5,
 ) -> str:
-    """Save a list of atomic facts to .remember/shared/.
+    """Save atomic facts via three-phase transaction (R64 Hindsight).
 
-    Each fact is written as its own timestamped .md file with YAML frontmatter.
-    Before writing, existing shared/*.md files are checked for Jaccard similarity
-    >= _SUPERSEDE_SIMILARITY; matching entries are marked as superseded.
-
-    Args:
-        facts:      List of atomic fact strings.
-        source:     Identifier of the caller (logged in frontmatter).
-        importance: Float 0.0–1.0 stored in frontmatter for scoring.
-
-    Returns:
-        Summary of saved and superseded counts.
+    Phase 1 (prepare): lock-free scan of existing shared/*.md entries.
+    Phase 2 (commit): mark near-duplicates superseded + atomic write of new entries.
+    Phase 3 (supplement): best-effort audit log.
     """
     _ensure_shared_dir()
 
@@ -297,111 +306,91 @@ def memory_save(
             valid_facts = validated
         # If all facts rejected, keep originals to avoid empty save
 
-    # Load existing shared entries for similarity check
-    existing_files = sorted(_SHARED_DIR.glob("*.md"))
-    existing_data: list[tuple[Path, str, dict]] = []  # (path, content_str, frontmatter_dict)
+    async def _prepare(ctx, acc):
+        # Phase 1: lock-free read — scan shared/*.md, skip already-superseded
+        existing_files = sorted(_SHARED_DIR.glob("*.md"))
+        existing_data: list[tuple[Path, str, dict]] = []
+        for ef in existing_files:
+            try:
+                raw = ef.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            fm = _parse_shared_fm(raw)
+            if fm.get("superseded_by"):
+                continue
+            body = raw
+            if raw.startswith("---"):
+                end = raw.find("\n---", 3)
+                if end != -1:
+                    body = raw[end + 4:].strip()
+            existing_data.append((ef, body, fm))
+        return {"existing_data": existing_data}
 
-    def _parse_shared_fm(text: str) -> dict:
-        """Minimal frontmatter parse for shared entries."""
-        fm: dict = {}
-        if not text.startswith("---"):
-            return fm
-        end = text.find("\n---", 3)
-        if end == -1:
-            return fm
-        for line in text[3:end].splitlines():
-            if ":" in line:
-                k, _, v = line.partition(":")
-                fm[k.strip()] = v.strip().strip("'\"")
-        return fm
+    async def _commit(ctx, acc):
+        # Phase 2: atomic writes — mark superseded + write new facts
+        existing_data = list(acc["existing_data"])
+        now_ts = time.time()
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        saved = 0
+        superseded_total = 0
+        for fact_text in valid_facts:
+            superseded_paths: list[str] = []
+            for ef_path, ef_body, ef_fm in existing_data:
+                sim = _jaccard_similarity(fact_text, ef_body)
+                if sim >= _SUPERSEDE_SIMILARITY:
+                    superseded_paths.append(ef_path.name)
+                    try:
+                        updated = ef_path.read_text(encoding="utf-8")
+                        new_fm_line = f"superseded_by: {now_iso}\n"
+                        if "superseded_by:" in updated:
+                            updated = re.sub(r'superseded_by:.*\n', new_fm_line, updated)
+                        else:
+                            close = updated.find("\n---", 3)
+                            if close != -1:
+                                updated = updated[:close] + f"\n{new_fm_line.rstrip()}" + updated[close:]
+                        atomic_write(ef_path, updated)
+                        superseded_total += 1
+                    except OSError as exc:
+                        log.warning("memory_save: could not update superseded entry %s: %s", ef_path, exc)
+            fact_hash = hashlib.sha1(fact_text.encode()).hexdigest()[:8]
+            headroom_id = f"shm-{int(now_ts)}-{fact_hash}"
+            filename = f"{int(now_ts)}-{fact_hash}.md"
+            target = _SHARED_DIR / filename
+            frontmatter_lines = [
+                "---",
+                f"headroom_id: {headroom_id}",
+                f"source: {source}",
+                f"importance: {importance}",
+                f"created_at: {now_iso}",
+                f"access_count: 0",
+            ]
+            if superseded_paths:
+                frontmatter_lines.append(f"supersedes: {', '.join(superseded_paths)}")
+            frontmatter_lines.append("---")
+            frontmatter_lines.append("")
+            frontmatter_lines.append(fact_text)
+            entry_text = "\n".join(frontmatter_lines)
+            try:
+                atomic_write(target, entry_text)
+                saved += 1
+                existing_data.append((target, fact_text, {
+                    "headroom_id": headroom_id, "source": source,
+                    "importance": str(importance), "created_at": now_iso,
+                }))
+            except OSError as exc:
+                log.error("memory_save: failed to write %s: %s", target, exc)
+        return {"saved": saved, "superseded_total": superseded_total}
 
-    for ef in existing_files:
-        try:
-            raw = ef.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        fm = _parse_shared_fm(raw)
-        # Skip already-superseded entries from similarity pool
-        if fm.get("superseded_by"):
-            continue
-        # Extract the fact body (after frontmatter)
-        body = raw
-        if raw.startswith("---"):
-            end = raw.find("\n---", 3)
-            if end != -1:
-                body = raw[end + 4:].strip()
-        existing_data.append((ef, body, fm))
+    async def _supplement(ctx, acc):
+        # Phase 3: best-effort audit
+        _audit("SAVE", f"shared facts={acc.get('saved', 0)} superseded={acc.get('superseded_total', 0)} source={source}")
+        return {}
 
-    now_ts = time.time()
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-    saved = 0
-    superseded_total = 0
-
-    for fact_text in valid_facts:
-        # Find near-duplicates and mark them superseded
-        superseded_paths: list[str] = []
-        for ef_path, ef_body, ef_fm in existing_data:
-            sim = _jaccard_similarity(fact_text, ef_body)
-            if sim >= _SUPERSEDE_SIMILARITY:
-                superseded_paths.append(ef_path.name)
-                try:
-                    updated = ef_path.read_text(encoding="utf-8")
-                    new_fm_line = f"superseded_by: {now_iso}\n"
-                    if "superseded_by:" in updated:
-                        updated = re.sub(
-                            r'superseded_by:.*\n',
-                            new_fm_line,
-                            updated,
-                        )
-                    else:
-                        # Insert before closing ---
-                        close = updated.find("\n---", 3)
-                        if close != -1:
-                            updated = updated[:close] + f"\n{new_fm_line.rstrip()}" + updated[close:]
-                    atomic_write(ef_path, updated)
-                    superseded_total += 1
-                except OSError as exc:
-                    log.warning("memory_save: could not update superseded entry %s: %s", ef_path, exc)
-
-        # Build new entry ID and filename
-        fact_hash = hashlib.sha1(fact_text.encode()).hexdigest()[:8]
-        headroom_id = f"shm-{int(now_ts)}-{fact_hash}"
-        filename = f"{int(now_ts)}-{fact_hash}.md"
-        target = _SHARED_DIR / filename
-
-        frontmatter_lines = [
-            "---",
-            f"headroom_id: {headroom_id}",
-            f"source: {source}",
-            f"importance: {importance}",
-            f"created_at: {now_iso}",
-            f"access_count: 0",
-        ]
-        if superseded_paths:
-            frontmatter_lines.append(f"supersedes: {', '.join(superseded_paths)}")
-        frontmatter_lines.append("---")
-        frontmatter_lines.append("")
-        frontmatter_lines.append(fact_text)
-
-        entry_text = "\n".join(frontmatter_lines)
-        try:
-            atomic_write(target, entry_text)
-            saved += 1
-            # Add to existing_data so subsequent facts in same batch see this one
-            existing_data.append((target, fact_text, {
-                "headroom_id": headroom_id,
-                "source": source,
-                "importance": str(importance),
-                "created_at": now_iso,
-            }))
-        except OSError as exc:
-            log.error("memory_save: failed to write %s: %s", target, exc)
-
-    _audit("SAVE", f"shared facts={saved} superseded={superseded_total} source={source}")
-    return (
-        f"Saved {saved}/{len(valid_facts)} fact(s) to shared memory. "
-        f"Superseded {superseded_total} older similar entries."
-    )
+    results = await three_phase_write(_prepare, _commit, _supplement, context={})
+    commit_data = next((r.data for r in results if r.phase.value == "commit"), {})
+    saved = commit_data.get("saved", 0)
+    superseded_total = commit_data.get("superseded_total", 0)
+    return f"Saved {saved} fact(s), superseded {superseded_total} existing entries."
 
 
 @mcp.tool(description="Search across memory files for a query string. scope: buffer|recent|archive|core|shared|public|all. Optional filter_expr for CEL-style filtering (e.g. 'importance > 5 AND tags in [\"work\"]').")

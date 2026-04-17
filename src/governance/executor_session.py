@@ -251,6 +251,7 @@ class AgentSessionRunner:
             "session": session,
             "wal_signals": wal_signals,
             "_saved_claudecode": saved_claudecode,
+            "prompt": prompt,
         }
 
     def finalize(self, task_id: int, result_text: str, turn: int,
@@ -317,6 +318,20 @@ class AgentSessionRunner:
                         ctx_vars.setdefault("_json_blocks", []).append(blob)
                 except (ValueError, TypeError):
                     pass
+
+        # ── Query Writeback (R75): feed successful answers back to memory ──
+        if final_status == "done" and result_text:
+            try:
+                from src.governance.learning.query_writeback import save_query_result
+                q = prefill_ctx.get("prompt", "")
+                if q:
+                    save_query_result(
+                        question=q[:500],
+                        answer=result_text,
+                        department=f"task#{task_id}",
+                    )
+            except Exception as e:
+                log.debug(f"query_writeback: skipped ({e})")
 
         return ExecutionResponse(
             status=final_status,
