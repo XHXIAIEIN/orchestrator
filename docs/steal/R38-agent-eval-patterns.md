@@ -781,3 +781,17 @@ Recorded as part of retrospective correction (2026-04-17):
 | **Marketing-style security framing** | Section 2.2 — "Container escapes become meaningless because there's nothing to escape to" | VM escape is still a real attack class; say "higher bar" not "meaningless" |
 | **Unverified external attribution** | Section 2.2 — "Manus AI uses E2B for virtual computers" stated as fact | Third-party product attribution needs source citation or explicit `[unverified]` tag |
 | **Unverified URL** | Section 2.2 — GitHub link to `kubernetes-sigs/agent-sandbox` cited without access verification | Note when links are cited-but-not-visited |
+
+---
+
+## 9. Pre-Flight Checklist for Future Steal Reports
+
+Added 2026-04-17 after retrospective. The deeper lesson from this document is not any individual absolute claim — it is **argumentation surplus**: 140 lines of threat scenarios culminating in "Docker is fine for now" means the threat rendering was PPT, not analysis. Run this checklist before writing or committing a steal report.
+
+| # | Check | Fail mode if skipped |
+|---|---|---|
+| 1 | **Write Orchestrator's threat model / use case for this topic in one paragraph before reading the source repo.** E.g. for sandboxing: "we evaluate our own sub-agents, not adversarial untrusted code." Everything in the report must map against this model. | Report ends up surveying generic best-practices instead of answering a project-specific question. This document's Section 2.2 (MicroVM) is a textbook case. |
+| 2 | **Every "X can do Y" must be paired with "do we need Y?"** If the answer is no, the paragraph about X is educational filler, not steal material — cut it or move it to a separate "reference" doc. | Reader cannot distinguish "stolen pattern" from "industry tour." Report becomes a link dump with prose around it. |
+| 3 | **Before commit, do the `src/` walk-through**: for each section, name the file path that will change (new or edited). Sections with no target file are either deleted, demoted to reference appendix, or converted to an explicit "not-yet-needed" note with the triggering condition. | Report claims to be a steal plan but 0 LOC of actual code changes trace to it. Detected retroactively on 2026-04-17 for this document — the `src/` walk yielded zero hits for Section 2 patterns. |
+
+**Self-test for this document**: Section 2 Sandboxing Patterns failed check 3 (no src/ path). It survives in the corpus as a reference appendix + failure-mode specimen, not as an active steal plan.
