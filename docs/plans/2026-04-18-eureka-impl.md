@@ -1,3 +1,17 @@
+---
+phase: plan
+status: draft
+verdict: proceed
+evidence_strength: strong
+overridden: false
+override_reason: null
+gaps:
+  - phase: steal
+    note: "R80 steal report itself lacks YAML frontmatter — it uses prose markdown headers. This plan adds frontmatter only to new artifacts; the R80 report stays as-is per A1 (forward-only)."
+    severity: minor
+    resolved: false
+    resolved_in: null
+---
 # Plan: Eureka Steal Implementation — Cross-Skill Frontmatter Protocol + Gap Back-Arrow + Override Audit Trail
 
 ## Goal
