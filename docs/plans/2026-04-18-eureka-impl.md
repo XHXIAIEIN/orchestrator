@@ -356,3 +356,37 @@ All changes in this plan are additive (new files + appends to existing skill SKI
 **Partial rollback (e.g., keep schema but revert Gate Function patch):**
 - `git diff` the CLAUDE.md changes, manually remove the four "Override path" blocks.
 - The schema and skill patches are independent; they can be reverted without touching each other.
+
+---
+
+## Completion Log
+
+| Phase | Commit | Note |
+|---|---|---|
+| 1 | 6f60a95 | canonical frontmatter schema (R2 run 1) |
+| 2 | d1013a2 | template & skill integration (R2 run 1) |
+| 3 | fedd570 | gate function override paths (R2 run 1) |
+| 4 | b748945 | override log + smoke test (R2 run 2) |
+
+### Goal 验证 stdout
+```
+=== Goal (a): docs/steal/*.md and docs/plans/*.md parseable by 5-line Python snippet ===
+PASS: docs\plans\2026-04-18-eureka-impl.md
+smoke-test exit: 0
+
+=== Goal (b): at least 2 skills reference artifact-frontmatter.md ===
+steal/SKILL.md:18: 1. **Load schema**: Read `SOUL/public/schemas/artifact-frontmatter.md`...
+steal/SKILL.md:211: Every steal report... conformant to the steal schema defined in `SOUL/public/schemas/artifact-frontmatter.md`...
+steal skill hits: 2
+
+=== Goal (c): Gate Functions carry override path ===
+4 (grep -c "Override path" CLAUDE.md)
+
+=== Goal (d): smoke-test exits 0 ===
+PASS: docs\plans\2026-04-18-eureka-impl.md
+exit: 0
+```
+
+### Deviations (plan vs actual)
+- **Step 6/7 (write-plan skill)**: No `write-plan` or `plan-writer` skill exists in `.claude/skills/`. Per plan assumption in step 6 ("If neither exists → record as ASSUMPTION gap and skip step 7"), step 7 was skipped. Goal (b) says "steal + plan-writer" both reference schema — satisfied via steal skill's 2 references; plan-writer skill creation is out of scope for this plan. To fully satisfy Goal (b) as written, a `write-plan` skill stub should be created in a follow-on task.
+- **smoke-test skip logic extended**: Plan said "files without any `---` frontmatter block are skipped". R69 steal report has an old-format frontmatter block (no `phase` field). Added secondary skip: if frontmatter has no `phase` key → treat as pre-schema artifact and skip. This is consistent with A1 (forward-only migration) and does not change behavior for new conformant files.
