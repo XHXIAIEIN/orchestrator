@@ -317,3 +317,52 @@ git -C "$REPO" checkout HEAD~1 -- CLAUDE.md  # 仅恢复 CLAUDE.md
 ```
 
 备份不需要额外步骤——git history 即是备份。
+
+---
+
+## Completion Log
+
+| Phase | Commit | Note |
+|---|---|---|
+| 1 | 6c2c690 | Soft Probability Mode Classifier (R2 run 1) |
+| 2 | 9777c87 | Verbosity Dual-track + Anti-Sycophancy (R2 run 1) |
+| 3 | 9aef8bb | Think Triggers (R2 run 1) |
+| 4 | d80e9b7 | Phase Gate Contract Document (R2 run 1) |
+| 5 | 06da4e7 | Two-Stage Prompt Mini-Classifier (R2 run 1) |
+| 6 | (no-op verify) | Phase 6 verification passed — all 6 markers present, gate functions intact (R2 run 2) |
+
+### Goal 验证 stdout
+
+```
+=== Pattern 1: Intent Probability Pre-filter ===
+PASS
+=== Pattern 2a: Verbosity Dual-track ===
+PASS
+=== Pattern 2b: Anti-Sycophancy ===
+PASS
+=== Pattern 3: Think Triggers ===
+PASS
+=== Pattern 4: Phase Gate Contract Document ===
+PASS
+=== Pattern 5: Mini-Prompt: Target Type Classifier ===
+PASS
+=== Step 13: Gate Functions 原有内容完整性 ===
+Gate: Delete / Replace File count: 1
+Gate: Git Reset count: 1
+=== Step 14: plan_template.md 原有 ## Phase Gates 段 + 新增段 ===
+## Phase Gates count: 1
+Phase Gate Contract Document count: 1
+=== Goal 验证: diff stat (clean，无未提交改动) ===
+(empty — working tree clean)
+=== 各文件最后修改 commit ===
+SOUL/public/prompts/skill_routing.md → 6c2c690
+SOUL/examples/orchestrator-butler/voice.md → 9777c87
+CLAUDE.md → 9aef8bb
+SOUL/public/prompts/plan_template.md → d80e9b7
+.claude/skills/steal/SKILL.md → 06da4e7
+```
+
+### Deviations (plan vs actual)
+
+- Phase 7 originally specified a single aggregate commit ("feat(prompts): port 5 P0 patterns from x1xhlol steal R81"). Phase 1-5 already landed as individual atomic commits in the prior session, so Phase 7 collapsed into this Completion Log commit.
+- None otherwise.
