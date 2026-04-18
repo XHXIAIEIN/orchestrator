@@ -8,6 +8,30 @@
 
 This is a reference document that maps task intent to the correct skill. Route by intent, not by scanning the full skill list.
 
+## Intent Probability Pre-filter
+
+Before entering the Decision Tree, score the incoming instruction on three dimensions and produce a JSON confidence distribution (values sum to 1.0):
+
+```json
+{"do": 0.0, "spec": 0.0, "chat": 0.0}
+```
+
+**Rules**:
+- Default bias toward `do` — when ambiguous, do > spec > chat
+- `spec` requires at least one explicit keyword: "design", "architecture", "plan", "spec", "should we", "how would you"
+- `chat` requires zero action intent: pure questions, history queries, explanations with no deliverable
+- **Threshold**: if any dimension ≥ 0.6 → route directly, no clarification
+- **Ambiguity trigger**: if top two dimensions are both ≥ 0.3 → ask one clarifying question before routing
+- Emit the JSON in a `<routing>` tag in your internal monologue (not shown to user); then proceed with the winning route
+
+**Examples**:
+| Instruction | Distribution | Action |
+|---|---|---|
+| "refactor auth module" | `{do:0.85, spec:0.10, chat:0.05}` | Route to do directly |
+| "should we use OAuth or API key?" | `{do:0.15, spec:0.70, chat:0.15}` | Route to spec |
+| "how does this file work?" | `{do:0.05, spec:0.05, chat:0.90}` | Route to chat |
+| "add auth with some kind of token" | `{do:0.45, spec:0.45, chat:0.10}` | Ask: "Implement directly or produce a design spec first?" |
+
 ## How You Work
 
 ### Decision Tree
