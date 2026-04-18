@@ -9,6 +9,15 @@ This template defines the structure for all Orchestrator implementation plans. E
 ### Plan Structure
 
 ```markdown
+---
+phase: plan
+status: draft
+verdict: null
+evidence_strength: null
+overridden: false
+override_reason: null
+gaps: []
+---
 # Plan: {title}
 
 ## Goal
@@ -132,3 +141,5 @@ Override: If the user says "just do it" or grants blanket approval, all gates be
 - **STOP and ask the user** if the File Map includes files outside the project root — cross-project changes need explicit scope approval.
 - Never skip a phase gate, even for "trivial" changes. Logging "Gate passed: all criteria met" takes 5 seconds; recovering from a skipped gate takes hours.
 - A plan with any banned placeholder phrase is incomplete and must not proceed to implementation.
+
+> Section headings above are starting points. Rename, reorder, or add sections to match how the content actually unfolded.

@@ -15,17 +15,19 @@ Core mindset (from 39 rounds of practice):
 
 ## Pre-flight
 
-1. **Branch gate** *(hard rule — no exceptions)*: Steal work MUST happen on a `steal/*` or `round/*` branch. **Never modify files on any other branch.**
+1. **Load schema**: Read `SOUL/public/schemas/artifact-frontmatter.md` to load the canonical frontmatter schema.
+
+2. **Branch gate** *(hard rule — no exceptions)*: Steal work MUST happen on a `steal/*` or `round/*` branch. **Never modify files on any other branch.**
    - Check current branch: `git branch --show-current`
    - If not on `steal/*` or `round/*` → **immediately create and switch**: `git checkout -b steal/<topic>`
    - Do NOT ask the user whether to create the branch. Do NOT proceed with any file writes until you are on the correct branch.
    - The dispatch-gate hook also blocks `[STEAL]` work on other branches as a safety net, but the skill itself must enforce this before the hook even fires.
 
-2. **Identify target**: URL, repo name, or local path. If user gave multiple links, process ALL — don't skip any for seeming "unrelated" (breadth rule: a traffic sign detector's tiling strategy might be exactly what a UI detector needs).
+3. **Identify target**: URL, repo name, or local path. If user gave multiple links, process ALL — don't skip any for seeming "unrelated" (breadth rule: a traffic sign detector's tiling strategy might be exactly what a UI detector needs).
 
-3. **Check prior art**: Search `docs/steal/` and the steal consolidated index in memory for existing reports on this target. If found, this is a **follow-up** — build on existing analysis, don't duplicate.
+4. **Check prior art**: Search `docs/steal/` and the steal consolidated index in memory for existing reports on this target. If found, this is a **follow-up** — build on existing analysis, don't duplicate.
 
-4. **Determine target type** — this shapes your analysis angle:
+5. **Determine target type** — this shapes your analysis angle:
 
 | Type | Examples | Analysis Focus |
 |------|----------|---------------|
@@ -206,7 +208,18 @@ The default "freeform text" approach lets analysts write vague summaries. These 
 
 Write to `docs/steal/<date>-<topic>-steal.md`:
 
+Every steal report saved to `docs/steal/` MUST open with a YAML frontmatter block conformant to the steal schema defined in `SOUL/public/schemas/artifact-frontmatter.md`. The `gaps[]` field must list any upstream phase gaps discovered during this steal round. If none, write `gaps: []`.
+
 ```markdown
+---
+phase: steal
+status: in-progress
+round: <N>
+source_url: <repo URL>
+evidence: artifact
+verdict: null
+gaps: []
+---
 # R<next_round> — <Project Name> Steal Report
 
 **Source**: <repo URL> | **Stars**: <count> | **License**: <license>
