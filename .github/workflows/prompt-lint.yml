@@ -1,0 +1,36 @@
+name: prompt-lint
+
+on:
+  push:
+    paths:
+      - '.claude/skills/**'
+      - 'SOUL/public/prompts/**'
+      - 'scripts/prompt-*.sh'
+  pull_request:
+    paths:
+      - '.claude/skills/**'
+      - 'SOUL/public/prompts/**'
+      - 'scripts/prompt-*.sh'
+
+jobs:
+  cycle-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check @import cycles
+        run: bash scripts/prompt-lint-cycles.sh
+
+  compile-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile all SKILL.md and verify no residual @imports
+        run: |
+          for skill_md in .claude/skills/*/SKILL.md; do
+            bash scripts/prompt-compile.sh "$skill_md"
+          done
+          if grep -rP '^@(skills|prompts)/' .compiled/ 2>/dev/null; then
+            echo "FAIL: residual @imports found in .compiled/"
+            exit 1
+          fi
+          echo "OK: all SKILL.md compiled clean"
