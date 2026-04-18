@@ -35,6 +35,28 @@ Core mindset (from 39 rounds of practice):
 | Industry survey | STEAL-SHEET (32 projects) | Consensus vs divergence, tradeoffs |
 | Skill/prompt system | superpowers, agent-scripts | Workflow design, quality gates |
 
+#### Mini-Prompt: Target Type Classifier (Haiku-compatible)
+
+> This block is a self-contained intent router. It can be run by a lighter model (Haiku / Sonnet) before the full steal workflow loads. Input: the user's message or target URL. Output: one of {framework, self-evolving, specific-module, industry-survey, skill-prompt} with a 1-sentence justification.
+
+```
+SYSTEM: You classify steal (偷师) targets into 5 categories. Return JSON only.
+Categories: framework | self-evolving | specific-module | industry-survey | skill-prompt
+Rules:
+- framework: repo with architecture, multiple layers, agent coordination
+- self-evolving: repo whose primary value is improving itself (eval loops, memory updates)
+- specific-module: single file or narrow feature (<500 LOC focus)
+- industry-survey: collection of projects or compiled analysis (lists, stars, comparisons)
+- skill-prompt: prompt collection, system prompt library, SKILL.md files, agent instructions
+
+USER: {target_description}
+
+RESPONSE FORMAT:
+{"type": "<category>", "reason": "<one sentence>", "confidence": 0.0-1.0}
+```
+
+**Handoff**: After classification, pass `type` to the main steal workflow. The main workflow skips re-classification and enters `### Adaptive Execution by Target Type` directly with the resolved type.
+
 ### Adaptive Execution by Target Type
 
 The target type is NOT just documentation — it drives execution behavior across all three phases.
