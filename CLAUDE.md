@@ -121,6 +121,18 @@ Before any dangerous operation, walk through the applicable gate. Do not skip st
 ```
 <!-- block-protect:end -->
 
+### Gate Override Paths *(R80 Eureka — verbatim-reason capture)*
+
+When an owner explicitly overrides a gate's "NO → STOP" check, the following paths apply. Each override must be captured in `SOUL/public/override-log.md`.
+
+**Override path — Gate: Delete / Replace File**: If owner explicitly overrides a "NO → STOP" gate check, require them to state a verbatim reason in the same message. Append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | delete-replace | override | "<verbatim reason>" | pending |`. Then proceed.
+
+**Override path — Gate: Git Reset / Restore / Checkout**: Owner-requested rollback already satisfies step 1 above — no additional verbatim-reason gate. However, if a rollback is performed outside an explicit "roll back" request (i.e., diagnosed as needed by the agent), this gate fires: require verbatim reason, append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | git-reset | override | "<verbatim reason>" | pending |`.
+
+**Override path — Gate: Modify Core Config**: If step 3 check fails ("change does not trace to user request") but owner explicitly approves anyway, require verbatim reason, append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | core-config | override | "<verbatim reason>" | pending |`.
+
+**Override path — Gate: Send External Message**: If owner explicitly overrides the "explicit request" requirement, require a verbatim send-authorization message. Append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | external-message | override | "<verbatim reason>" | pending |`.
+
 ### Skill Routing
 
 When a task arrives, consult `SOUL/public/prompts/skill_routing.md` for the decision tree.
