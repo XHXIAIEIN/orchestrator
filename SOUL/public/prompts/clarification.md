@@ -117,3 +117,26 @@ Respond with exactly one JSON block. No text before or after.
 - **Stop and escalate (risk_confirmation)** when the action affects a public API or touches more than 10 files, even if the spec is otherwise complete.
 - Never output anything outside the JSON block. No preamble, no commentary.
 - Never ask for information that is the executor's job to discover (e.g., "what's the current implementation?" — the executor will read the code).
+
+## AskUserQuestion 3+1 Pagination
+
+AskUserQuestion 最多支持 4 个 option。当菜单有 >3 个内容选项时，采用「3 内容 + 1 导航」固定分页模式：
+
+- **Page N content**: 3 个实际选项（每页固定 3 个，不是 2 个不是 4 个）
+- **Page N nav**: 第 4 个 option 固定为导航
+  - 非末页：`➕ Ver más...`（进入下一页）
+  - 末页：`🔙 Volver a página 1`（返回首页）
+  - 任意页可附加 `🚪 Salir`（但 Salir 只在末页或独立出现，不占用内容位）
+
+**保留导航词（不可替换）**:
+| 词 | 语义 |
+|---|---|
+| `Ver más` | 下一页 |
+| `Volver` | 上一页 / 返回 |
+| `Salir` | 结束/退出 |
+
+**强制规则**:
+1. 有 >3 个选项的 AskUserQuestion 调用**必须**使用分页，禁止合并描述绕过（如「选项A / 选项B」算一个 option）。
+2. 「3+1」是硬约束，不是建议——「4+0」（4 个内容 0 导航）仅在选项恰好 ≤4 且不需要导航时允许。
+3. 新建 skill 的主菜单若有 >3 个功能，必须按此规范写分页逻辑。
+
