@@ -30,3 +30,6 @@ claw/Claw/bin/
 claw/Claw/obj/
 *.csproj.user
 src/mcp/audit.log
+
+# prompt-monorepo compile artifacts (tlotp-monorepo steal)
+.compiled/
