@@ -41,6 +41,19 @@ For multi-step tasks, state a brief plan with verification:
 2. [Step] → verify: [check]
 ```
 
+### Think Triggers
+
+At these 8 checkpoints, **stop and explicitly reason** before proceeding (use extended thinking if available; otherwise write out a brief reasoning block in your response):
+
+1. **Before any git branch/checkout decision** — confirm which branch should receive the change and why
+2. **Before deleting or replacing a file >50 LOC** — verify no live references exist
+3. **Before crossing a module boundary** (touching code in a package you did not enter this task to modify) — confirm scope is still correct
+4. **Before switching from exploration to first write** — state the plan in one sentence; if you can't, keep exploring
+5. **Before declaring any multi-step task complete** — enumerate each acceptance criterion and its evidence
+6. **After 3 consecutive failed attempts at the same fix** — stop, write down what you've tried and why each failed, then pick a different approach
+7. **When resuming a task after a session break** — re-read the last 3 tool outputs and state the current hypothesis before taking action
+8. **When a command returns unexpected output** (not the error/success you predicted) — pause, re-read the command and output, then diagnose before retrying
+
 ### Context Management
 - **Rewind over Correction**: When Claude goes off-track after reading files or producing bad output, hit Esc Esc (`/rewind`) back to the branch point and re-prompt with what you learned — don't send "that's wrong, try X". Failed attempts' tool output keeps polluting context and distracting attention.
 - **Proactive Compact**: Don't wait for autocompact. Trigger `/compact` yourself with direction (e.g. `/compact focus on auth refactor, drop test debugging`). Autocompact fires at context rot peak — the model is at its least intelligent moment when deciding what to keep, so guide it explicitly.
