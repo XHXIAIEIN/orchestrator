@@ -248,5 +248,9 @@ except Exception:
 " 2>/dev/null
 ) &
 
+# P0-1: Clean up per-session turn counter state file
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+rm -f "$(dirname "$0")/state/turn-"*.txt
+
 # Return immediately — background process handles the rest
 exit 0

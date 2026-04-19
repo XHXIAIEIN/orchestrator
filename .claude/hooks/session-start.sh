@@ -13,6 +13,8 @@ python3 "$SOUL_DIR/tools/compiler.py" 2>/dev/null
 
 # ── 0.5 注册会话 + 同步记忆索引 ──
 SESSION_ID="cli-$(date +%s)-$$"
+# P0-1: Initialize per-session turn counter
+echo "0" > "$(dirname "$0")/state/turn-${SESSION_ID}.txt"
 python3 -c "
 import sys
 sys.path.insert(0, '$PROJECT_DIR')
