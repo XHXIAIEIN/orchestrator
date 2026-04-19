@@ -177,6 +177,8 @@ evidence: verbatim | artifact | impression
 
 **Default**: If `evidence` is omitted, treat as `impression` (lowest confidence).
 
+During sessions, mark discovered rules with `[LEARN] [Category]: rule` — see `.remember/core-memories.md` for promotion protocol.
+
 ### Per-Skill Constraints (Layer 0) *(R42 — Hard Rules per Skill)*
 Each skill MAY have a `constraints/` directory containing non-negotiable rules for that skill. These override all other instructions when the skill is active.
 
