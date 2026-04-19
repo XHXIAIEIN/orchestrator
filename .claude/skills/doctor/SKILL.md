@@ -176,3 +176,4 @@ WARN/FAIL 项给出修复建议（具体命令，不要泛泛而谈）。
 - DB journal_mode=wal 在 Docker NTFS 场景下是已知问题，给修复命令: `docker exec orchestrator python3 -c "import sqlite3; conn=sqlite3.connect('data/events.db'); conn.execute('PRAGMA journal_mode=DELETE'); conn.close()"`
 - GPU 不存在不是 FAIL（有些任务不需要 GPU）
 - 采集器从未采到数据比"48h 没更新"更严重
+- Run Jump Tracker from `SOUL/public/prompts/rationalization-immunity.md#jump-tracker` — if escape count ≥ 3 surface it before proceeding.

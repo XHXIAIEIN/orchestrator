@@ -75,3 +75,43 @@ N/A — reference document. Agents consult this table as a self-check before ski
 
 1. **No "special case" override** — if inner monologue matches the left column, execute the right column. The only valid exception path is to document the reasoning in writing and get explicit user approval before deviating.
 2. **Meta-rationalization is still rationalization** — "I already checked this table and it doesn't apply" is itself a rationalization if you cannot cite which row you checked and why it does not match.
+
+---
+
+## Jump Tracker
+
+> Source: R81 loki-skills-cli steal (recap/SKILL.md:132-170). Detects cumulative avoidance drift that per-excuse rationalization cannot catch.
+
+### Taxonomy
+
+Tag each topic transition in a session with one of five types:
+
+| Tag | Meaning | Healthy? |
+|-----|---------|---------|
+| `spark` | New idea or thread that arrived organically | Yes |
+| `complete` | Finished a task, moving to next | Yes |
+| `return` | Came back to a parked thread | Yes |
+| `park` | Intentional pause on a hard problem | Neutral |
+| `escape` | Switched away from a hard problem without resolution | No |
+
+### Health Rule
+
+- Session health = OK if `escape` count < 3 AND `escape / total_jumps` < 40%.
+- If `escape` count ≥ 3 OR `escape / total_jumps` ≥ 40%: surface the pattern immediately. Do not continue the current thread until the owner acknowledges.
+
+### When to Use
+
+- At the start of every `/doctor` invocation: reconstruct last session's jump list from conversation memory (no file reads needed — pure recall).
+- Optional: invoke manually as `/prime --jump-check` (owner adds this trigger to `prime/SKILL.md` in a follow-up).
+
+### Surface Format
+
+When health threshold is breached, output:
+
+```
+[Jump Tracker] ⚠ escape-heavy session detected
+Jumps: spark×N complete×N return×N park×N escape×N
+Escape ratio: NN%
+Last 3 escapes: <topic-1>, <topic-2>, <topic-3>
+Recommendation: return to <most-recent-park> or explicitly abandon it.
+```
