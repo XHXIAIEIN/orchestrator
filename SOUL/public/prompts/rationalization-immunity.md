@@ -75,3 +75,17 @@ N/A — reference document. Agents consult this table as a self-check before ski
 
 1. **No "special case" override** — if inner monologue matches the left column, execute the right column. The only valid exception path is to document the reasoning in writing and get explicit user approval before deviating.
 2. **Meta-rationalization is still rationalization** — "I already checked this table and it doesn't apply" is itself a rationalization if you cannot cite which row you checked and why it does not match.
+
+## Review Dismissal
+
+> Applies when receiving any reviewer output. Load this file BEFORE reading the review — once you have read the findings, rationalizations have already formed.
+
+| Forbidden Dismissal | Why It Fails | Correct Behavior |
+|---|---|---|
+| "This is low risk" | Risk is assessed after investigation, not before. You have not investigated. | Fix it. |
+| "This is out of scope for this task" | Scope does not make a bug disappear. It makes it someone else's future emergency. | Fix it or file a tracked issue — do not dismiss. |
+| "This is pre-existing / not my fault" | You touched the code. You own the blast radius. | Fix it. |
+| "The reviewer doesn't understand the context" | You have 30 seconds of context. The reviewer has the full diff. | Fix it. |
+| "This will break other things" | Unverified fear. Run the tests. | Run the tests. If they break, fix the root cause. |
+| "This is a style nit" | Style rot compounds. One "nit" per PR = unreadable codebase in 6 months. | Fix it. |
+| "I'll address this in a follow-up" | Follow-ups are where good intentions go to die. | Fix it now or write a concrete JIRA/issue with repro steps before closing this session. |
