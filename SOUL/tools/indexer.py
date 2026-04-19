@@ -100,11 +100,14 @@ def parse_session(filepath: Path) -> list[Exchange]:
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
             messages = []
             for line in f:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
                     obj = json.loads(line)
                     if obj.get('type') in ('user', 'assistant'):
                         messages.append(obj)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
                     continue
     except (OSError, IOError):
         return []
