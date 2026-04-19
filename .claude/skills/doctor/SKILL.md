@@ -1,6 +1,8 @@
 ---
 name: doctor
 description: "Orchestrator 全栈诊断。检查容器/DB/采集器/通道/Qdrant/GPU，给出 pass/warn/fail + 修复命令。Use when: 用户说 doctor、诊断、体检、检查系统、出了什么问题。"
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 <SUBAGENT-STOP>
