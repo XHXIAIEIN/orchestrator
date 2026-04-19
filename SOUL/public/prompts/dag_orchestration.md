@@ -171,3 +171,44 @@ This is a loop, not a pure DAG. Implement with the loop node type.
 | Circular dependencies | Not a DAG anymore | Restructure as loop node |
 | Too many layers | Overhead exceeds benefit | 3-5 layers typical for features |
 | Skip trigger rules | First failure kills everything | Use `one_success` for resilient synthesis |
+
+## Literal-Path Sub-Agent Contract
+
+> Source: R81 loki-skills-cli steal (learn/SKILL.md:85-106). Prevents sub-agents from writing output to the source repo instead of the intended destination.
+
+### Rule
+
+When dispatching a Task agent that reads from one directory and writes to another, you MUST pass both paths as **absolute literal values** in the prompt — not as shell variables, not as relative paths, not as template placeholders.
+
+**Correct**:
+```
+SOURCE_DIR="/d/Users/Administrator/Documents/GitHub/my-project"
+DEST_DIR="/d/Users/Administrator/Documents/GitHub/orchestrator/docs/steal"
+DEST_FILE_PATTERN="MMDD_<slug>-findings.md"
+```
+
+**Wrong**:
+```
+SOURCE_DIR="$(pwd)"          # resolves in caller's shell, not sub-agent's
+DEST_DIR="../docs/steal"     # relative — sub-agent's cwd may differ
+```
+
+### Why
+
+Claude Code sub-agents inherit the session's cwd at spawn time, which may differ from the parent's cwd if the parent used `cd`. A sub-agent given only `origin/` as SOURCE_DIR will `cd origin/` and write output there — corrupting the source.
+
+### Mandatory Fields for Any Multi-Repo Dispatch
+
+| Field | Type | Example |
+|-------|------|---------|
+| `SOURCE_DIR` | Absolute path | `/d/Users/.../my-project` |
+| `DEST_DIR` | Absolute path | `/d/Users/.../orchestrator/docs/steal` |
+| `DEST_FILE_PATTERN` | Filename with timestamp prefix | `MMDD_topic-findings.md` |
+
+### Capture Pattern (copy-paste this before spawning)
+
+```bash
+SOURCE_DIR="$(git -C /d/path/to/source rev-parse --show-toplevel)"
+DEST_DIR="/d/Users/Administrator/Documents/GitHub/orchestrator/docs/steal"
+# Then pass $SOURCE_DIR and $DEST_DIR as literals in the Task prompt string — do not pass the variables.
+```
