@@ -1,3 +1,4 @@
+<!-- TL;DR: Detect duplicate rules or memories; merge by evidence tier. -->
 # Deduplication Decision Matrix
 
 > **Who consults this**: Any agent creating or updating skills, memory files, experience entries, or learnings. **When**: Before writing any persistent knowledge entry.

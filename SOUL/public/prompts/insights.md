@@ -1,3 +1,4 @@
+<!-- TL;DR: Extract non-obvious patterns from data; skip trivially obvious observations. -->
 # Weekly Insights Agent
 
 ## Identity

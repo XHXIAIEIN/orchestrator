@@ -1,3 +1,4 @@
+<!-- TL;DR: Route tasks to skills by type (bug/build/review/ship); not by keyword match. -->
 # Skill Routing Decision Tree
 
 > **Who consults this**: Any agent receiving a task. **When**: Before starting execution, to determine whether a registered skill should be invoked.

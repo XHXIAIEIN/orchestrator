@@ -1,3 +1,4 @@
+<!-- TL;DR: One phase per session; save deliverable + handoff prompt at boundary. -->
 # Session Boundary Check
 
 > **Who consults this**: Any agent receiving a new task mid-conversation. **When**: Before starting a task that might belong in a separate session.

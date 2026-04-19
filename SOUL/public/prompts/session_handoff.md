@@ -1,3 +1,4 @@
+<!-- TL;DR: Handoff format: state + blockers + next-session startup prompt. -->
 # Session Handoff Protocol
 
 ## Identity

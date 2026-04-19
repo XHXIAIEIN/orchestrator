@@ -1,3 +1,4 @@
+<!-- TL;DR: Build dependency graphs; parallelize independent nodes, gate on outputs. -->
 # DAG Orchestration Pattern
 
 Design pattern for composing multi-step AI tasks as directed acyclic graphs (DAGs). Enables parallel execution of independent steps, conditional branching, and approval gates.

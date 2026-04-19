@@ -1,3 +1,4 @@
+<!-- TL;DR: Compress session context; drop noise, keep decisions and blockers. -->
 # Context Compaction Template
 
 > **Who consults this**: Any agent or session performing context compaction (automatic or manual).
