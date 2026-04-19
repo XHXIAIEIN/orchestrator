@@ -1,3 +1,4 @@
+<!-- TL;DR: Lookup table: if inner monologue matches left column, execute right column. -->
 # Rationalization Immunity Table
 
 > **Who consults this**: Every agent (Governor, executor, coordinator) before cutting corners or skipping steps.

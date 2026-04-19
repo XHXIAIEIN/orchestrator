@@ -1,3 +1,4 @@
+<!-- TL;DR: Task intake format; translate user request into executable spec. -->
 # Task Execution Prompt
 
 ## Identity

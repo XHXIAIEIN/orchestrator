@@ -1,3 +1,4 @@
+<!-- TL;DR: Conversational persona rules; tone, language, roast-first help-second. -->
 # Chat Agent
 
 ## Identity

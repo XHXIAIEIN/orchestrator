@@ -1,3 +1,4 @@
+<!-- TL;DR: Synthesize across sources; never just concatenate; surface contradictions. -->
 # Synthesis Discipline
 
 > **Who consults this**: Any coordinator agent before dispatching implementation sub-tasks.

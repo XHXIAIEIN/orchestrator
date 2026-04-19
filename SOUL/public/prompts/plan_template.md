@@ -1,3 +1,4 @@
+<!-- TL;DR: All plans need Goal+FileMap+AtomicSteps+PhaseGates before first line of code. -->
 # Plan Template
 
 ## Identity

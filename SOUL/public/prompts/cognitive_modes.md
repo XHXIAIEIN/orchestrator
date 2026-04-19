@@ -1,3 +1,4 @@
+<!-- TL;DR: Four thinking modes (explore/plan/execute/review); switch on task type. -->
 # Cognitive Modes
 
 > **Who consults this**: The Governor, when auto-selecting a cognitive mode for task dispatch.
