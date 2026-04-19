@@ -146,6 +146,15 @@ def parse_session(filepath: Path) -> list[Exchange]:
             continue
         if u_text.strip().startswith('<') and u_text.strip().endswith('>'):
             continue
+        # memto R78: 扩展 chrome 过滤（原 memto isSystemPrompt 5 条规则）
+        if '<environment_context>' in u_text:
+            continue
+        if 'Sender (untrusted metadata)' in u_text:
+            continue
+        if '<command-message>' in u_text:
+            continue
+        if '# AGENTS.md instructions' in u_text:
+            continue
 
         exchanges.append(Exchange(
             user=u_text,
