@@ -1,6 +1,8 @@
 ---
 name: clawvard-practice
 description: "Clawvard competency practice via Governor pipeline. Trigger when user says 'practice', 'Clawvard', 'exam', or 'mock test'."
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 # Clawvard Practice — Governor Pipeline

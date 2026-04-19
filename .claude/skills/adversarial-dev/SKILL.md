@@ -3,6 +3,8 @@ name: adversarial-dev
 description: "Adversarial Generator/Evaluator development loop. Use when a feature needs rigorous QA or self-review isn't catching bugs."
 user_invocable: true
 argument-hint: "<feature description or plan file>"
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 # Adversarial Development

@@ -3,6 +3,8 @@ name: prime
 description: "Load project context for a domain area. Use when starting work on an unfamiliar module or when context feels stale."
 user_invocable: true
 argument-hint: "[docker|channel|soul|governance]"
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 <SUBAGENT-STOP>

@@ -1,6 +1,8 @@
 ---
 name: verification-gate
 description: "Evidence-gated completion check. Use before committing, creating PRs, or claiming work is done."
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 # Verification Gate Protocol

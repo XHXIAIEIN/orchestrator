@@ -1,6 +1,8 @@
 ---
 name: steal
 description: "Systematic knowledge extraction from open-source projects. Use when: user shares a repo/link to study, says 偷师/steal/学习/研究, or wants to analyze another project's patterns for adoption."
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 # Steal — Systematic Knowledge Extraction
@@ -357,6 +359,12 @@ These thoughts mean you're about to produce a shallow steal report:
 
 ### Execution
 - **Agent dispatch for large repos**: Use sub-agents to parallelize (one per major module). Tag all agent prompts with `[STEAL]` at the start。**Dispatch prompt 必须包含以下指令**（复制粘贴，不要改写）：
+  # Literal-path contract (R81) — paths must be absolute literals, not variables
+  ```
+  SOURCE_DIR="<LITERAL absolute path of repo being stolen from — no variables>"
+  DEST_DIR="<LITERAL absolute path of orchestrator/docs/steal/ — no variables>"
+  DEST_FILE_PATTERN="MMDD_<slug>-steal.md"
+  ```
   > 写完报告并通过 Post-Generation Validation 后，立即执行 git add + git commit，不要询问确认。commit message 格式：`docs(steal): R<round> <topic> steal report`。不要返回"等你说 commit"——直接提交。
 - **Commit per meaningful unit**: Report → plan → implementation batches, each a separate commit
 - **Clone to tmp**: `D:/Agent/.steal/<topic>/`, not in the orchestrator repo
