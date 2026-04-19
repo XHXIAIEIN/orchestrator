@@ -30,6 +30,9 @@ Task arrives
 ├─ Clawvard exam / practice / competency test?
 │  └─ /clawvard-practice
 │
+├─ New repo / unfamiliar project → `/awaken`
+│  └─ Goal: force local convention discovery before any code changes
+│
 ├─ Steal / study external repo?
 │  └─ /steal (requires steal/* branch)
 │
