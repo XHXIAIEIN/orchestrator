@@ -17,6 +17,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from scorer import Exchange, score_exchanges
 
 
+# Claude projects 根目录
+CLAUDE_PROJECTS_ROOT = Path.home() / '.claude' / 'projects'
+
+# 输出路径
+SOUL_DIR = Path(__file__).parent.parent
+CALIBRATION_PATH = SOUL_DIR / 'private' / 'calibration.jsonl'
+
+
 # Orchestrator project dir names (auto-discovered)
 def _find_orchestrator_project_dirs() -> list[str]:
     """Find Claude project dirs that contain orchestrator conversations."""
@@ -27,13 +35,6 @@ def _find_orchestrator_project_dirs() -> list[str]:
             if d.is_dir() and 'orchestrator' in d.name.lower()]
 
 ORCHESTRATOR_PROJECT_DIRS = _find_orchestrator_project_dirs()
-
-# Claude projects 根目录
-CLAUDE_PROJECTS_ROOT = Path.home() / '.claude' / 'projects'
-
-# 输出路径
-SOUL_DIR = Path(__file__).parent.parent
-CALIBRATION_PATH = SOUL_DIR / 'private' / 'calibration.jsonl'
 
 
 def find_session_files(
