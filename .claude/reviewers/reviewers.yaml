@@ -1,0 +1,11 @@
+# Ensemble reviewer definitions
+# worker_count: how many parallel worker instances to spawn
+# handler: which worker definition to use for synthesis step
+# handler_prep: optional — run handler_prep worker before synthesis to summarise payload
+
+reviewers:
+  sonnet-x2-opus-handler:
+    worker: sonnet-tool
+    worker_count: 2
+    handler: opus-tool
+    handler_prep: null
