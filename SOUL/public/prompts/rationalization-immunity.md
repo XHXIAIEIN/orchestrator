@@ -89,3 +89,9 @@ N/A — reference document. Agents consult this table as a self-check before ski
 | "This will break other things" | Unverified fear. Run the tests. | Run the tests. If they break, fix the root cause. |
 | "This is a style nit" | Style rot compounds. One "nit" per PR = unreadable codebase in 6 months. | Fix it. |
 | "I'll address this in a follow-up" | Follow-ups are where good intentions go to die. | Fix it now or write a concrete JIRA/issue with repro steps before closing this session. |
+
+## Pre-Load Rule
+
+**If you are about to read reviewer output** — stop. Load (read) this file first.
+"If you have already read the findings, the rationalization has already formed. This section is useless to you now."
+The correct sequence is: load `rationalization-immunity.md` → THEN read reviewer findings → THEN decide to fix or push back.
