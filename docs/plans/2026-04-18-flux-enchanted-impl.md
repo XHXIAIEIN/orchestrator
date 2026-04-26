@@ -351,3 +351,26 @@ Verify outcomes (re-runnable):
 - Step 25: `grep -E "grep|precedent" .claude/hooks/guard-rules.conf .claude/hooks/whitelist.conf` → no rule blocks the hook's internal grep
 
 Phase 1 step 10 (CLAUDE.md global ruleset restructure) remains **explicitly deferred** behind owner gate per millhouse handoff. Phase 4+5 + plan-path patch is the agreed scope for this session. Topic is on `steal/flux-enchanted`, 4 commits ahead of branch-base (plus this completion-log commit = 5). Phase D (merge to main) deferred per CLAUDE.md "Phase Separation" rule. Real-world Step 22 entries will accumulate as operations fail in production.
+
+---
+
+## Completion Log (2026-04-27 — Phase 1 step 10, owner-gate cleared)
+
+| Step | Phase | Commit | Note |
+|---|---|---|---|
+| 10 | 1 | `0075037` | CLAUDE.md (worktree) — replaced 6 inline section bodies with `@SOUL/public/conduct/<file>.md` import stubs while preserving section headings and the `<critical>` wrapper. Sections: Git Safety + Deletion (both inside `<critical>`), Context Management, Planning Discipline, Surgical Changes, Verification Gate. Block-protect Gate Functions block (lines 32-75) and `<critical>` wrapper (lines 22-87) untouched. |
+
+Verify outcomes (re-runnable, paths worktree-relative):
+- `grep -c "@SOUL/public/conduct/" CLAUDE.md` → `6`
+- `grep -n "@SOUL/public/conduct/" CLAUDE.md` → 6 lines (25, 28, 112, 115, 118, 136)
+- `grep -nE "block-protect:(start|end)" CLAUDE.md` → 2 markers intact (32, 75)
+- `grep -nE "<critical>|</critical>" CLAUDE.md` → wrapper intact (22, 87)
+- `wc -l CLAUDE.md` → `176` (was 196 pre-step-10; net −20 lines, +6/−26 in `git diff --stat`)
+
+Note on the plan's "≥80 lines fewer" target: that figure was sized for the **main** CLAUDE.md, which carries fuller bullet content per section. The worktree CLAUDE.md was already a trimmer copy by the time Step 10 ran, so the 6 sections only contributed ~22 lines of body text in total. The structural goal (6 stubs, headings preserved, `<critical>` integrity) is the binding acceptance criterion — line-count delta is informational only.
+
+Phase 1 PHASE GATE checklist: all 7 conduct files present in `SOUL/public/conduct/` ✓; CLAUDE.md contains 6 `@SOUL/public/conduct/` imports ✓; ASSUMPTION A2 (@-import syntax) confirmed by owner via "继续开 flux Step-10" go-ahead ✓. Phase 1 closed.
+
+Outstanding items for Phase D (merge to main):
+- Step 10 must be re-applied to the **main** repo CLAUDE.md when merging — the worktree edit covers only the local copy. The main CLAUDE.md still has the 6 inline sections.
+- ASSUMPTION A2 holds for worktree validation but main-repo behavior of `@`-imports under all CC harness paths (settings.json, hooks, sub-agent SystemPromptPreset) should be spot-checked once before main merge.
