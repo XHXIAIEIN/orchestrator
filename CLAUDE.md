@@ -48,6 +48,7 @@ For multi-step tasks, state a brief plan with verification:
 - **Subagent heuristic**: Before delegating, ask "will I need this tool output again, or just the conclusion?" Just the conclusion → subagent. Heavy intermediate output that would pollute the parent's context is the primary trigger, not task complexity alone. Context rot starts ~300-400k tokens on the 1M model — "still has space" ≠ "still sharp"; new task = new session.
 
 ### Planning Discipline
+- **Plan Mode for >2 files**: For changes spanning >2 files or cross-module refactors, enter Plan Mode (Shift+Tab) before the first write. Produce the plan, exit Plan Mode, then execute.
 - All multi-step plans MUST follow `SOUL/public/prompts/plan_template.md` format.
 - **File Map first**: List every file that will be touched before writing any step.
 - **Atomic steps**: Each step is 2-5 minutes, starts with an action verb, has an explicit verify command.

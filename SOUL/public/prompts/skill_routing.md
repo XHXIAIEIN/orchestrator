@@ -40,6 +40,10 @@ Task arrives
 ├─ Plan a multi-step task (>3 steps, >30 min estimated)?
 │  └─ Use plan_template.md format (check Phase Gates)
 │
+├─ Multi-file structural change OR cross-module refactor (>2 files)?
+│  └─ Enter Plan Mode (Shift+Tab) before any write — produces the plan,
+│     then exit Plan Mode to execute. Pairs with plan_template.md.
+│
 ├─ About to claim "done" on any non-trivial task?
 │  └─ verification-gate (mandatory)
 │
@@ -84,6 +88,7 @@ Match intent, not keywords:
 | "study this repo", GitHub URL + learning intent | /steal | general browsing |
 | "is it done?", "verify", before commit | verification-gate | — |
 | "practice", "exam", "Clawvard" | /clawvard-practice | manual Q&A |
+| change spans >2 files, structural refactor | Plan Mode (Shift+Tab) first | jumping straight to Edit |
 
 ## Output Format
 
