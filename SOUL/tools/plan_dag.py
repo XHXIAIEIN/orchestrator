@@ -213,3 +213,38 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         plan_path = Path(sys.argv[1])
         validate_plan_file(plan_path)
+    else:
+        # Self-tests (Step 10)
+        # Test 1: Linear A→B→C
+        cards_linear = [
+            {"id": "A", "creates": [], "modifies": [], "reads": [], "depends_on": []},
+            {"id": "B", "creates": [], "modifies": [], "reads": [], "depends_on": ["A"]},
+            {"id": "C", "creates": [], "modifies": [], "reads": [], "depends_on": ["B"]},
+        ]
+        dag = build_dag(cards_linear)
+        layers = extract_layers(dag)
+        assert layers == [["A"], ["B"], ["C"]], f"Linear test failed: {layers}"
+
+        # Test 2: Write conflict — cards 1 and 2 both modify foo.py, no explicit dep
+        # build_dag sorts numerically: card 1 writes first, card 2 gets implicit edge → 1
+        cards_conflict = [
+            {"id": "1", "creates": [], "modifies": ["foo.py"], "reads": [], "depends_on": []},
+            {"id": "2", "creates": [], "modifies": ["foo.py"], "reads": [], "depends_on": []},
+        ]
+        dag2 = build_dag(cards_conflict)
+        layers2 = extract_layers(dag2)
+        assert layers2 == [["1"], ["2"]], f"Write-conflict test failed: {layers2}"
+
+        # Test 3: Cycle A→B→A raises CycleError
+        cards_cycle = [
+            {"id": "A", "creates": [], "modifies": [], "reads": [], "depends_on": ["B"]},
+            {"id": "B", "creates": [], "modifies": [], "reads": [], "depends_on": ["A"]},
+        ]
+        dag3 = build_dag(cards_cycle)
+        try:
+            extract_layers(dag3)
+            assert False, "CycleError not raised"
+        except CycleError as e:
+            assert "A" in e.cycle and "B" in e.cycle, f"Unexpected cycle: {e.cycle}"
+
+        print("All DAG tests passed.")
