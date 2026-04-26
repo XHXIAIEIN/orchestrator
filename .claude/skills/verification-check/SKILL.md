@@ -7,6 +7,11 @@ source_version: "2026-04-26"
 
 # Verification Check Protocol
 
+<!-- triviality-filter:start -->
+> **Triviality Filter** — If input is ≤ 3 words with no question/code/task, respond directly. Skip full protocol.
+> Full spec: `SOUL/public/prompts/triviality_filter.md`
+<!-- triviality-filter:end -->
+
 ```
 IRON LAW: NO COMPLETION CLAIM WITHOUT EVIDENCE. "Should work" IS NOT EVIDENCE.
 ```

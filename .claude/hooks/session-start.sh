@@ -11,6 +11,19 @@ MEMORY_DIR="${CLAUDE_MEMORY_DIR:-$HOME/.claude/projects/D--Users-Administrator-D
 # ── 0. 重新编译 boot.md（每次启动刷新校准样本） ──
 python3 "$SOUL_DIR/tools/compiler.py" 2>/dev/null
 
+# ── 0.1 Ambient upsert: boot.md 稳定内容注入 CLAUDE.md ──
+CLAUDE_MD="${HOME}/.claude/CLAUDE.md"
+BOOT_MD="$SOUL_DIR/public/boot.md"
+if [ -f "$BOOT_MD" ]; then
+  python3 - <<PYEOF 2>/dev/null
+import sys
+sys.path.insert(0, '$PROJECT_DIR')
+from SOUL.tools.marker_upsert import upsert_block
+boot = open('$BOOT_MD', 'r', encoding='utf-8').read()
+upsert_block('$CLAUDE_MD', 'orchestrator:ambient', boot)
+PYEOF
+fi
+
 # ── 0.5 注册会话 + 同步记忆索引 ──
 SESSION_ID="cli-$(date +%s)-$$"
 python3 -c "
