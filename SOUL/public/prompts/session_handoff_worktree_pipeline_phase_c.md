@@ -968,4 +968,94 @@ Verification spot-check from main session after agent return: `git -C .claude/wo
 2. **Phase D merge train: plc + millhouse + (post-Step-10) flux** — three MERGE-ready topics ready to land on main. Each merge is a separate session per Phase Separation; do them in dependency order (plc has no overlap with the other two; millhouse touches verification-gate split which flux's Step-21 also touches → resolve conflict at flux's merge time).
 3. **Detour-debug session for memto's `indexer.py` bug** — pre-existing block; until fixed, memto's Phase 2 P1a stays WIP. Owner should signal when this is the priority.
 
+---
+
+### Session 12 — Phase D merge: prompt-language-coach (2026-04-27)
+
+**Scope**: execute Phase D merge for `prompt-language-coach` per session-11 directive item #2 (first leg of the merge train). Per CLAUDE.md "Phase Separation: One Phase Per Session" — this session does ONLY the plc merge in an isolated worktree; millhouse + flux merges are separate sessions; owner serializes the fast-forwards onto `main` after all three merge worktrees land.
+
+#### Pre-merge state (verified at session start)
+
+```
+main HEAD:                   0ff5819 docs(handoff): session 11
+steal/prompt-language-coach: 001cb6a docs(plan): plc — completion log (clean)
+plc 13 commits ahead of merge-base; main 3 commits ahead (all 3 are docs(handoff) on the phase-c file — no overlap with plc's tree)
+```
+
+Pre-flight conflict prediction: zero. Plc never edited the phase-c handoff file; main's 3 new commits since plc's `27def2f` (which already merged main into plc on 2026-04-26) are all isolated to that one file.
+
+#### Execution
+
+Direct main-session execution, no sub-agent dispatch (single mechanical merge, no commit-per-step pattern, dispatch-gate not applicable to a non-`[STEAL]` merge).
+
+```
+git worktree add .claude/worktrees/merge-plc -b merge/plc main
+cd .claude/worktrees/merge-plc
+git merge --no-ff steal/prompt-language-coach \
+  -m "merge: steal/prompt-language-coach — prompt-language-coach — completion log"
+```
+
+Outcome: `Merge made by the 'ort' strategy.` — 13 files changed, 726 insertions(+), 0 conflicts. Pre-flight prediction held.
+
+#### Merge commit
+
+| Field | Value |
+|---|---|
+| SHA | `a13f9a0` |
+| Subject | `merge: steal/prompt-language-coach — prompt-language-coach — completion log` (matches eureka/tlotp/x1xhlol pattern verbatim) |
+| Parent 1 | `0ff5819` (main HEAD at session start) |
+| Parent 2 | `001cb6a` (steal/prompt-language-coach HEAD) |
+| Branch | `merge/plc` (lives only in `.claude/worktrees/merge-plc`; not pushed; main NOT fast-forwarded) |
+| Conflicts | none |
+| Files | 13 changed, +726 / −0 — all additive (8 new files: marker_upsert.py + triviality_filter.md + 2 verify docs + impl plan + steal report + 2 `__init__.py`; 5 modified: post-compact.sh + session-start.sh + 3 SKILL.md files for triviality-filter snippet) |
+
+#### Post-merge verification (in worktree)
+
+| Check | Command | Result |
+|---|---|---|
+| Worktree clean | `git status --porcelain` | empty ✓ |
+| Triviality-filter markers | `grep -c 'triviality-filter:start' .claude/skills/{verification-spec,verification-check,steal}/SKILL.md` | `1` each ✓ |
+| Plc artifacts present | `ls SOUL/tools/marker_upsert.py SOUL/public/prompts/triviality_filter.md docs/verify/2026-04-26-plc-step{9,10}.md` | all 4 present ✓ |
+| Python syntax | `python -m py_compile SOUL/tools/marker_upsert.py` | OK ✓ |
+| Linear log | `git log --oneline -5` | merge commit on top, then `0ff5819` (main), `150c024`, `96fd70b`, `001cb6a` (plc tip via second parent) ✓ |
+
+`SOUL/tools/plan_dag.py` test was deliberately not run — that file is millhouse's deliverable and is NOT yet in main, so the merge-plc tree (= main + plc) correctly does not contain it. Its absence is evidence that no cross-topic contamination leaked through plc.
+
+`marker_upsert.py` idempotency was deliberately not re-run — that test mutates the shared `~/.claude/CLAUDE.md` and was already verified in plc's branch history (commit `145e52b`, output captured at `docs/verify/2026-04-26-plc-step10.md` which is now in this merge tree). Re-running would only stress global state for no new evidence.
+
+#### Lessons from session 12
+
+- **Plc Phase D was the "easy" merge by design.** The session-9 finisher's defensive `27def2f` merge (main → plc, pre-finisher) prepaid the only real conflict surface (verification-gate split + steal/SKILL.md `@import` rewrite). All that arrived at Phase D was the 3 phase-c handoff appends on main, which plc never touches. This is a useful template: when a finisher session runs against a branch that's been parked for >1 week, merging main → branch BEFORE the finisher work (not after) keeps the eventual Phase D trivial.
+- **The merge worktree pattern (`.claude/worktrees/merge-plc` on a `merge/plc` branch, not `main`) is the right place to land merges when the owner serializes FFs.** Each merge gets its own worktree, can be inspected independently, and main stays at `0ff5819` until owner advances it. Failed/rejected merges can be deleted (`git worktree remove` + `git branch -D`) without reverting anything on main. Future merge sessions should reuse this pattern: `.claude/worktrees/merge-<topic>` on branch `merge/<topic>` from main.
+- **Session 11's "no helper round/* branch needed" pattern doesn't apply here.** Session 11's work was on a `steal/*` branch, satisfying dispatch-gate. This session's merge happens on `merge/plc`, but no sub-agent is dispatched — the merge itself is a single `git merge` call from the main session, and dispatch-gate only fires on Agent dispatches. So no helper branch was needed for an entirely different reason. Worth being explicit about which gate applies in which scenario: dispatch-gate = sub-agent dispatch; the worktree-relative branch choice = where the merge commit lands.
+
+#### Round-2 status — Batch B Phase D progress (post-session-12)
+
+| Topic | Phases done | Phase D | Status |
+|---|---|---|---|
+| `prompt-language-coach` | 1+2+3+4+5+6 | **merge/plc @ a13f9a0** | **MERGED in worktree, awaiting owner FF onto main** |
+| `millhouse` | A+B+C+D+E+F+G | — | MERGE-ready (Phase D pending) |
+| `flux-enchanted` | 1+2+3+4+5+plan-path-patch | — | MERGE-ready pending Step-10 owner gate |
+| `generic-agent` | 1+2+3+4+5 | — | high (Phase 8 owner-review gate) |
+| `memto` | 1 | — | blocked on `indexer.py` bug |
+
+**Main tree hygiene at session-12 end**
+
+- Branch: `main` (still at `0ff5819`, not fast-forwarded — per directive). No helper round/* branch.
+- Tracked dirty in main: only `M SOUL/public/prompts/session_handoff_worktree_pipeline_phase_c.md` (this entry).
+- New worktree on disk: `.claude/worktrees/merge-plc` on branch `merge/plc` at `a13f9a0` (clean). Lives until owner FFs main onto it, then can be removed.
+- Other worktrees: unchanged from session-11 (6 steal-* + r83 + wgh + 4 locked agent-* + the new merge-plc).
+- Total local-branch count grew by 1: `merge/plc` is new; main is unchanged.
+
+**Next session — directive**: execute Phase D merge for `millhouse` (second leg of the merge train) following the session-12 template:
+
+1. `git worktree add .claude/worktrees/merge-millhouse -b merge/millhouse main` (from main, NOT from `merge/plc` — merges are independent).
+2. `git merge --no-ff steal/millhouse -m "merge: steal/millhouse — millhouse — completion log"`.
+3. **Expected conflict**: millhouse's session-10 already merged origin/main on commit `2a74299`, so similar to plc this should be near-conflict-free against `0ff5819` main. The 3 phase-c handoff commits since `2a74299` (sessions 10, 11) are again on a file millhouse doesn't touch. Verification: `git -C .claude/worktrees/steal-millhouse log --oneline 0ff5819..HEAD` to confirm no overlap before merging.
+4. Post-merge verify: `python SOUL/tools/plan_dag.py` from the new worktree → `All DAG tests passed.`; `grep -c 'Pre-Read Discipline' .claude/skills/verification-{spec,check}/SKILL.md` → `1` each; worktree clean.
+5. Append session-13 entry following this session's table shape.
+6. Do NOT push, do NOT FF main, do NOT touch the merge-plc worktree.
+
+After millhouse merge lands, the third leg (`flux-enchanted` Phase D) is gated on the Step-10 owner session — that comes before flux's merge, not after. memto + generic-agent stay where they are.
+
 `r38-sandbox-retro` stays SKIP. `generic-agent` Phase 8 still needs its own owner-review gate session (separate from flux Step-10).
