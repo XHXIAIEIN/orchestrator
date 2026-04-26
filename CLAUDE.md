@@ -42,6 +42,7 @@ For multi-step tasks, state a brief plan with verification:
 ```
 
 ### Context Management
+- **`/clear` between unrelated tasks**: Highest-ROI habit. When the next request has nothing to do with the previous one, clear context. Long sessions with stale tool output degrade reasoning more than people expect.
 - **Rewind over Correction**: When Claude goes off-track after reading files or producing bad output, hit Esc Esc (`/rewind`) back to the branch point and re-prompt with what you learned — don't send "that's wrong, try X". Failed attempts' tool output keeps polluting context and distracting attention.
 - **Proactive Compact**: Don't wait for autocompact. Trigger `/compact` yourself with direction (e.g. `/compact focus on auth refactor, drop test debugging`). Autocompact fires at context rot peak — the model is at its least intelligent moment when deciding what to keep, so guide it explicitly.
 - **Subagent heuristic**: Before delegating, ask "will I need this tool output again, or just the conclusion?" Just the conclusion → subagent. Heavy intermediate output that would pollute the parent's context is the primary trigger, not task complexity alone. Context rot starts ~300-400k tokens on the 1M model — "still has space" ≠ "still sharp"; new task = new session.
@@ -133,66 +134,12 @@ If your inner monologue matches any excuse in the left column, you are rationali
 
 </critical>
 
-### UI/Frontend
-- Match existing page style exactly. No extra borders, shadows, or decorative elements unless asked
-- Before modifying dashboard/ or any frontend file, Read neighboring components first
-- Minimal diff — don't redesign what already works
+### See also (load on demand)
 
-### File Organization
-- Check private/ vs public/ directories before writing files
-- Sensitive/private content goes to SOUL/private/ (gitignored). Public content goes to SOUL/public/ (tracked).
-
-### desktop_use — GUI Automation
-→ Full architecture: `docs/architecture/modules/desktop-use.md` (types, ABCs, detection stages, perception layers)
-- Use `/analyze-ui` skill for UI detection testing, don't hand-write mss/ctypes screenshot code
-- cvui Stages can be composed; don't rewrite existing logic
-- detection.py/visualize.py are thin re-exports from cvui package
-
-### Verification Gate
-- Before declaring any task complete, pass the five-step evidence chain: **Identify** → **Execute** → **Read** → **Confirm** → **Declare**
-- Every completion claim must reference actual command output, not assumptions
-- Banned phrases in completion declarations: "should pass", "should work", "probably fine", "I believe this is correct", "Based on the changes, this should..."
-- If verification is impossible, say so explicitly and list what the owner should verify manually — do NOT claim completion
-- Full protocol: `.claude/skills/verification-gate/SKILL.md`
-
-### Memory Evidence Grading *(R42 — Evidence Tier System)*
-When writing memory files, add an `evidence` field to frontmatter indicating source reliability:
-
-```yaml
----
-name: ...
-description: ...
-type: user | feedback | project | reference
-evidence: verbatim | artifact | impression
----
-```
-
-| Tier | Definition | Example |
-|------|-----------|---------|
-| `verbatim` | Direct quote or observed behavior | User said "不要补丁式修正，直接重写" |
-| `artifact` | Derived from public work product (code, commits, docs) | Commit history shows 3am pushes for 5 consecutive days |
-| `impression` | Inferred from context, not directly observed | User seems to prefer functional style |
-
-**Merge rule**: When two memories conflict, higher-tier evidence wins (`verbatim` > `artifact` > `impression`). Same-tier conflicts → preserve both with timestamps; owner resolves.
-
-**Default**: If `evidence` is omitted, treat as `impression` (lowest confidence).
-
-During sessions, mark discovered rules with `[LEARN] [Category]: rule` — see `.remember/core-memories.md` for promotion protocol.
-
-### Per-Skill Constraints (Layer 0) *(R42 — Hard Rules per Skill)*
-Each skill MAY have a `constraints/` directory containing non-negotiable rules for that skill. These override all other instructions when the skill is active.
-
-```
-.claude/skills/<skill-name>/
-├── SKILL.md            # Main skill definition
-└── constraints/        # Layer 0 hard rules (optional)
-    └── *.md            # Each file = one inviolable constraint
-```
-
-**Priority**: Skill constraints > SKILL.md instructions > general CLAUDE.md rules.
-**When to create**: When a skill has failure modes that prompt-level "don't do X" cannot prevent. Hard constraints belong here; soft preferences stay in SKILL.md.
-
-### Docker & Environment
-- Before Docker rebuilds, check if one is truly needed
-- Before GPU-heavy tasks, run `nvidia-smi` to check VRAM availability
-- Check `docker ps` to avoid port/resource conflicts
+| Topic | Lives in |
+|-------|----------|
+| UI / file org / Docker conventions | `SOUL/public/prompts/project-conventions.md` |
+| Verification gate (5-step evidence chain) | `.claude/skills/verification-gate/SKILL.md` |
+| Memory evidence tier system | `.claude/skills/memory-evidence/SKILL.md` |
+| Skill authoring & per-skill constraints | `.claude/skills/README.md` |
+| Plan template | `SOUL/public/prompts/plan_template.md` |
