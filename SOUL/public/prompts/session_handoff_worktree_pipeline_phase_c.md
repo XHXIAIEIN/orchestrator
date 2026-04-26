@@ -1059,3 +1059,169 @@ Outcome: `Merge made by the 'ort' strategy.` — 13 files changed, 726 insertion
 After millhouse merge lands, the third leg (`flux-enchanted` Phase D) is gated on the Step-10 owner session — that comes before flux's merge, not after. memto + generic-agent stay where they are.
 
 `r38-sandbox-retro` stays SKIP. `generic-agent` Phase 8 still needs its own owner-review gate session (separate from flux Step-10).
+
+---
+
+### Session 13 — Phase D merge: millhouse (2026-04-27)
+
+**Scope**: execute Phase D merge for `millhouse` per session-12 directive (second leg of the merge train). Per CLAUDE.md "Phase Separation: One Phase Per Session" — this session does ONLY the millhouse merge in an isolated worktree; flux merge stays gated on Step-10 owner session; owner serializes the fast-forwards onto `main` after the merge worktrees are cleared.
+
+#### Pre-merge state (verified at session start)
+
+```
+main HEAD:                0ff5819 docs(handoff): session 11
+                          (unmoved by session-12 — plc merge landed on merge/plc, not on main)
+steal/millhouse:          9f02183 docs(plan): millhouse — completion log (clean)
+millhouse 8 commits ahead of main; main 3 commits ahead of origin/main (all 3 are docs(handoff) on the phase-c file — no overlap with millhouse's tree)
+merge/plc:                a13f9a0 (session-12, parallel; independent of this merge)
+```
+
+Pre-flight conflict prediction: zero. millhouse already absorbed `origin/main` inside its branch at session-10's defensive merge `2a74299`. Since then, the only main-side commits are `96fd70b` / `150c024` / `0ff5819` — all isolated to `SOUL/public/prompts/session_handoff_worktree_pipeline_phase_c.md`, which the millhouse branch never re-edited after `2a74299`.
+
+`git diff --stat 2a74299..main` and `git diff --stat main..steal/millhouse` confirm: only the phase-c handoff appears on the main side; only fresh new files (workers/reviewers/ensemble.py/plan_dag.py/phase_state/impl-plan/steal-reports) + small additive deltas to plan_template.md / rationalization-immunity.md / both verification SKILL.md files appear on the branch side. Disjoint.
+
+#### Execution
+
+Direct main-session execution, no sub-agent dispatch (single mechanical merge — same shape as session-12 plc merge).
+
+```
+git worktree add -b merge/millhouse .claude/worktrees/merge-millhouse main
+cd .claude/worktrees/merge-millhouse
+git merge --no-ff steal/millhouse \
+  -m "merge: steal/millhouse — millhouse — completion log"
+```
+
+Caveat: first attempt was `git worktree add .claude/worktrees/merge-millhouse main` (no `-b`), which failed with `fatal: 'main' is already used by worktree at 'D:/.../orchestrator'`. Re-issued with `-b merge/millhouse` so the new worktree gets its own branch ref — also matches the "stage merge without FF main" directive (two requirements collapse into one decision).
+
+Outcome: `Merge made by the 'ort' strategy.` — 13 files changed, +1317 / −0, 0 conflicts. Pre-flight prediction held.
+
+#### Merge commit
+
+| Field | Value |
+|---|---|
+| SHA | `0565f86` |
+| Subject | `merge: steal/millhouse — millhouse — completion log` (matches eureka/tlotp/x1xhlol/plc pattern verbatim) |
+| Parent 1 | `0ff5819` (main HEAD at session start, unmoved) |
+| Parent 2 | `9f02183` (steal/millhouse HEAD) |
+| Branch | `merge/millhouse` (lives only in `.claude/worktrees/merge-millhouse`; not pushed; main NOT fast-forwarded) |
+| Conflicts | none |
+| Files | 13 changed, +1317 / −0 — all additive (9 new files: 2 reviewers/*.yaml + ensemble.py + plan_dag.py + review_loop.py + phase_state.md + impl plan + 2 steal reports; 4 modified: rationalization-immunity.md + plan_template.md + 2 verification SKILL.md files for Pre-Read Discipline) |
+
+#### Post-merge verification (in worktree)
+
+| Check | Command | Result |
+|---|---|---|
+| Worktree clean | `git status --porcelain` | empty ✓ |
+| DAG self-tests | `python SOUL/tools/plan_dag.py` | `All DAG tests passed.` ✓ |
+| Pre-Read Discipline (verification-spec) | `grep -c 'Pre-Read Discipline' .claude/skills/verification-spec/SKILL.md` | `1` ✓ |
+| Pre-Read Discipline (verification-check) | `grep -c 'Pre-Read Discipline' .claude/skills/verification-check/SKILL.md` | `1` ✓ |
+| Linear log | `git log --oneline -3` | merge commit on top, then `0ff5819` (main), `150c024` ✓ |
+| Parents | `git show --no-patch --format='%P' HEAD` | `0ff5819... 9f02183...` ✓ |
+
+Spot-checks confirm the cross-merge survival of the two structural deliverables that mattered most:
+- Step-10 inline DAG self-tests still execute (linear chain, write-conflict, cycle detection — all pass after merge).
+- Step-5's verification-gate split re-application landed in BOTH replacement skills (the "deleted by them, modified by us" conflict resolution from session-10's `2a74299` merge is preserved through this main-side Phase D merge).
+
+#### Lessons from session 13
+
+- **Single-topic Phase D against a branch that's already main-rebased is the trivial path.** Session 8's batch-of-3 Phase D had 3 conflicts across 3 merges; this single millhouse merge had zero. The difference is structural: millhouse's session-10 finisher pre-paid the conflict by merging `origin/main` into the branch BEFORE the final commits. Future Phase D sessions should follow the session-12/13 template — one topic, branch already main-rebased, dedicated `merge/<topic>` worktree.
+- **`git worktree add <path> main` fails when main is checked out in the primary tree.** Even if the working dir is "clean enough", the worktree-add API treats a checked-out branch as exclusive. The fix is `-b <new-branch>` from the start, which is what the directive needed anyway (don't FF main → merge commit must land on its own ref). Two requirements, one decision — same lesson session-12 internalized but not loudly enough to skip my first attempt.
+- **`Bash` tool's `cd` does not persist across calls on this harness.** Initial post-merge spot-check chained `cd .claude/worktrees/merge-millhouse && python ...`, which broke because the previous `cd` had already moved CWD into the merge worktree, making the sub-path nonexistent. After the first `cd` succeeds, subsequent calls run from there — `pwd` first, then run commands without re-`cd`. (Alternatively, use `git -C <path>` for git commands.)
+- **Subject-line discipline is now a 4-merge precedent.** `merge: steal/<topic> — <topic> — completion log` has held verbatim across eureka/tlotp/x1xhlol/plc/millhouse. Future merges keep this template — anything that scans merge subjects for topic close-outs (changelog, post-FF cleanup loops) can rely on the regex.
+
+#### Round-2 status — Batch B Phase D progress (post-session-13)
+
+| Topic | Phases done | Phase D | Status |
+|---|---|---|---|
+| `prompt-language-coach` | 1+2+3+4+5+6 | merge/plc @ `a13f9a0` | MERGED in worktree, awaiting owner FF onto main |
+| `millhouse` | A+B+C+D+E+F+G | **merge/millhouse @ `0565f86`** | **MERGED in worktree, awaiting owner FF onto main** |
+| `flux-enchanted` | 1+2+3+4+5+plan-path-patch | — | MERGE-ready pending Step-10 owner gate |
+| `generic-agent` | 1+2+3+4+5 | — | high (Phase 8 owner-review gate) |
+| `memto` | 1 | — | blocked on `indexer.py` bug |
+
+**Main tree hygiene at session-13 end**
+
+- Branch: `main` (still at `0ff5819`, not fast-forwarded — per directive). No helper round/* branch.
+- Tracked dirty in main: only `M SOUL/public/prompts/session_handoff_worktree_pipeline_phase_c.md` (this entry) plus pre-existing `M .claude/settings.json` carry-over.
+- New worktree on disk: `.claude/worktrees/merge-millhouse` on branch `merge/millhouse` at `0565f86` (clean). Lives until owner FFs main onto it, then can be removed.
+- Other worktrees: unchanged from session-12 (`merge-plc` still pending FF; 5 steal-* in-flight + steal/millhouse source not yet retired + r83 + wgh + 4 locked agent-*).
+- Total local-branch count grew by 1: `merge/millhouse` is new; main is unchanged.
+- Two merge worktrees now stacked for owner FF: `merge/plc` (`a13f9a0`) + `merge/millhouse` (`0565f86`). Both branch from `0ff5819`; owner can FF them in either order or interleave with archive-tag + worktree teardown.
+
+**Next session — directive**: do **NOT** execute another Phase D merge unless owner has fast-forwarded both `merge/plc` and `merge/millhouse` onto `main`. The third leg (`flux-enchanted`) is gated on the Step-10 owner session BEFORE its own Phase D session. Two viable next moves, in priority order:
+
+1. **Drive `flux-enchanted` Step-10 owner-gate session** — open `.claude/worktrees/steal-flux-enchanted/docs/plans/2026-04-18-flux-enchanted-impl.md` at Step 10, present the proposed CLAUDE.md global ruleset restructure to owner, get sign-off, execute, then declare flux MERGE-ready (sets up the third Phase D session).
+2. **Owner-FF serialization** — once owner gives the green light, fast-forward `main` to `merge/plc` then `merge/millhouse` (or merge them both with `git merge --ff-only` in either order — they're independent), tag `archive/steal-prompt-language-coach-20260419` and `archive/steal-millhouse-20260419` at the respective `steal/*` HEADs, then remove the two merge worktrees + their `merge/*` branches + the corresponding `.claude/worktrees/steal-{prompt-language-coach,millhouse}` worktrees + their `steal/*` branches. Mirrors session-8's Phase F cleanup recipe.
+
+`r38-sandbox-retro` stays SKIP. `generic-agent` Phase 8 still needs its own owner-review gate session (separate from flux Step-10). `memto` stays blocked on `indexer.py` until owner schedules the detour-debug session.
+
+---
+
+### Session 14 — memto detour-debug (2026-04-27, no-op finding)
+
+**Scope picked**: per session-11/12/13's standing directive item ("Detour-debug session for memto's `indexer.py` bug"), opened a detour-debug session against `steal/memto` to fix the pre-existing `CLAUDE_PROJECTS_ROOT` forward-reference NameError in `SOUL/tools/indexer.py` and unblock Phase 2 P1a. Operated inside the existing worktree at `.claude/worktrees/steal-memto`; no merge intended.
+
+#### Finding — no work to do; pipeline status table was stale by 7 days
+
+The branch state at session start already had:
+
+| Commit | Date | Subject |
+|---|---|---|
+| `337884a` | 2026-04-20 01:48 | feat(steal/memto): Phase 1 P0 — register memto skill |
+| `74ec0ef` | 2026-04-20 02:08 | **fix(tools): resolve CLAUDE_PROJECTS_ROOT forward reference in indexer.py** |
+| `a302474` | 2026-04-20 02:10 | feat(steal/memto): Phase 2 P1a — extend chrome filter with 4 memto rules |
+| `d7b47be` | 2026-04-20 02:45 | feat(steal/memto): Phase 2 P1b — skip-malformed JSONL defense |
+| `245b6ed` | 2026-04-20 02:46 | feat(steal/memto): Phase 2 P1c — prompt sampler with 7 strategies |
+| `51377ff` | 2026-04-20 02:46 | feat(steal/memto): Phase 2 P1d — auto-scaled subprocess timeout |
+
+`git status` clean. The bug-fix detour and the full Phase 2 P1a–P1d body of work all landed on the steal/memto branch on **2026-04-20**, recorded in `SOUL/public/prompts/session_handoff_memto_p1bcd.md` (HEAD `51377ff`, "Phase 2 收尾"). Pipeline-handoff sessions 6 / 9 / 10 / 11 / 12 / 13 continued to print `memto | 1 | 2 P1a WIP blocked on indexer.py bug + 3 onward | blocked on pre-existing bug` because none of those sessions touched memto and the per-topic handoff was never threaded back into the umbrella status table. Stale-by-omission, not stale-by-conflict.
+
+The bug as originally diagnosed (session 5): `_find_orchestrator_project_dirs()` is called at module load (line 30 in pre-fix code) but reads `CLAUDE_PROJECTS_ROOT` from a binding defined three lines later (line 33). `import SOUL.tools.indexer` raised `NameError: name 'CLAUDE_PROJECTS_ROOT' is not defined`. Fix `74ec0ef` reordered the module: constants block (`CLAUDE_PROJECTS_ROOT`, `SOUL_DIR`, `CALIBRATION_PATH`) now lives at lines 21–25, before the auto-discovery function definition + invocation at lines 28–35. No behavior change once import completes; just removes the load-order trap.
+
+#### Verification re-run on session-14 HEAD `51377ff`
+
+| Check | Command | Result |
+|---|---|---|
+| Pre-existing NameError repro | `python -c "from SOUL.tools import indexer"` | exit 0, no `NameError`. Fix `74ec0ef` is in effect. |
+| P1a chrome filter (indexer) | inline `parse_session()` against fake JSONL with `<environment_context>...</environment_context>` user msg + 1 real exchange | returns 1 exchange (env_context filtered). PASS. |
+| P1a chrome tag (scorer) | `score_exchange('<environment_context>env stuff</environment_context>', 'answer')` | tags include `system_noise`. PASS. |
+| Worktree clean | `git status` in `.claude/worktrees/steal-memto` | `nothing to commit, working tree clean`. No WIP, no orphan `.trash/` from the original session-5 dispatch. |
+
+P1b/c/d verifies were not re-run this session — they were green at the time of `d7b47be` / `245b6ed` / `51377ff` per the per-topic handoff (`session_handoff_memto_p1bcd.md`), and the unblock claim only depends on P1a + the import working.
+
+#### Decision: no new commit, no `fix(steal/memto): ...` placeholder
+
+Per CLAUDE.md "Every changed line must trace directly to the user's request" + Commitment Hierarchy rank-1 ("correctness of the work"), fabricating an empty/cosmetic fix-commit on a problem that's already fixed would violate surgical-changes discipline and pollute branch history. The session's deliverable is this handoff entry: corrected status, repro-confirmed clean, no destructive action. The session-prompt asked for a `fix(steal/memto): ...` commit; the worktree disagreed; bug-not-present overrides commit-the-fix.
+
+#### Phase 2 P1a unblock status: ✅ already unblocked (was unblocked since 2026-04-20)
+
+#### Corrected Round-2 status table — Batch B in-flight finishers (post-session-14)
+
+| Topic | Phases done | Phase D | Status |
+|---|---|---|---|
+| `prompt-language-coach` | 1+2+3+4+5+6 | merge/plc @ `a13f9a0` | MERGED in worktree, awaiting owner FF onto main |
+| `millhouse` | A+B+C+D+E+F+G | merge/millhouse @ `0565f86` | MERGED in worktree, awaiting owner FF onto main |
+| `flux-enchanted` | 1+2+3+4+5+plan-path-patch | — | MERGE-ready pending Step-10 owner gate |
+| `generic-agent` | 1+2+3+4+5 | — | high (Phase 8 owner-review gate) |
+| `memto` | 1+**2 P1a/b/c/d** (bug-fix `74ec0ef` + 4 phase commits) | — | **MERGE-ready** (Phase D pending) — was mis-printed as "blocked" through sessions 6–13 |
+
+memto's own next steps per `session_handoff_memto_p1bcd.md` § A/B/C remain valid: (A) push (owner-gated), (B) confirm plc Phase 2 ambient marker disposition, (C) optional follow-on steal work (`memory_synthesizer.py` ↔ `prompt_sampler.py` integration + `claude -p` timeout wiring) — none are blockers, all are post-merge.
+
+#### Lessons from session 14
+
+- **Sub-handoffs that move faster than the umbrella handoff create stale-by-omission status drift.** The `memto_p1bcd.md` per-topic handoff was authoritative as of 2026-04-20; the pipeline-handoff lagged seven days because pipeline sessions 6/9/10/11/12/13 never routed through memto. Future pipeline-handoff entries should either (a) re-poll each in-flight worktree's `git log --oneline branch-base..HEAD` before printing the status table, or (b) link out to the per-topic handoff and skip duplicating the row for any topic with its own active sub-handoff. Duplicating mutable state in two places without a sync rule is the root cause.
+- **"Detour-debug bug X" prompts must be no-op-tolerant.** When the worktree disagrees with the prompt's premise (bug already fixed, work already shipped), the right action is to verify-and-document, not to fabricate a placeholder commit so the prompt's literal expectations are met. Commitment Hierarchy rank-1 authorizes this push-back without owner re-confirmation; CLAUDE.md "Push back when needed" makes it explicit.
+- **Per-topic handoff naming carries the truth.** `session_handoff_memto_p1bcd.md` literally names the four phase-2 sub-steps it closed (`p1bcd` = P1b/c/d, with P1a in the same body). Grepping `SOUL/public/prompts/session_handoff_memto*.md` at the start of any memto-touching session would have surfaced the staleness without a worktree round-trip. Adding "list per-topic handoffs for the touched topic" to the pipeline-session checklist would have caught this in session 6.
+
+#### Main tree hygiene at session-14 end
+
+- Branch (main tree): `main`, still at `0ff5819` (unmoved). No worktree mutation. No new commits on `steal/memto`.
+- Tracked dirty in main: `M SOUL/public/prompts/session_handoff_worktree_pipeline_phase_c.md` (this entry) plus pre-existing `M .claude/settings.json` carry-over.
+- `steal-memto` worktree: clean, 6 commits ahead of branch-base, ready for Phase D merge train alongside plc/millhouse/flux.
+- Two merge worktrees still stacked for owner FF (no change from session 13): `merge/plc` + `merge/millhouse`.
+
+#### Next session — directive (revised)
+
+The Phase D merge-train candidate set expands from 3 → 4 (plc done in session 12 + millhouse done in session 13 + flux-after-Step-10 + **memto**). memto has zero conflict surface with the other three (touches `SOUL/tools/indexer.py` + `SOUL/tools/scorer.py` + new `SOUL/tools/prompt_sampler.py` + new `SOUL/tools/spawn_utils.py` + `.claude/skills/memto/SKILL.md`; none of the other three Phase D candidates touches these files), so it can merge in any order — recommend slotting it **after owner FFs plc + millhouse onto main** and **before flux's post-Step-10 Phase D**, as a low-risk warm-up before the conflict-prone flux merge that touches verification-gate split.
+
+Owner-gate items unchanged: flux Step-10 (CLAUDE.md restructure), generic-agent Phase 8 (review). `r38-sandbox-retro` stays SKIP.
