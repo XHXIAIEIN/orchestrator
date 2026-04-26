@@ -12,6 +12,14 @@ source_version: "2026-04-26"
 > Full spec: `SOUL/public/prompts/triviality_filter.md`
 <!-- triviality-filter:end -->
 
+## Pre-Read Discipline
+
+Before reading any reviewer output or review file:
+1. Read `SOUL/public/prompts/rationalization-immunity.md` (specifically the "Review Dismissal" and "Pre-Load Rule" sections).
+2. Only then open the review file.
+
+Skipping step 1 means you have already formed rationalizations. The review is worthless.
+
 ```
 IRON LAW: NO IMPLEMENTATION WITHOUT A VERIFIABLE SUCCESS CRITERION. Vague goals produce unverifiable work.
 ```

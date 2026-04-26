@@ -53,6 +53,11 @@ The following phrases are banned in plan steps. Each must be replaced with speci
 - Each step: 2-5 minutes of work, starts with an action verb, has an explicit verify command.
 - Dependencies declared explicitly: `depends on: step N`. Implicit ordering is not allowed.
 - File paths are absolute. "that config file" is not a valid target.
+- **File change declarations required**: Every step that creates or modifies a file must include:
+  - `- creates: <absolute/path>` for new files
+  - `- modifies: <absolute/path>` for existing files being changed
+  - `- reads: <absolute/path>` for files read but not changed (generates no DAG edge)
+  Run `python SOUL/tools/plan_dag.py <plan.md>` after writing the plan to detect write conflicts and cycles.
 
 ### Step Format Reference
 
@@ -60,7 +65,17 @@ Good:
 ```
 1. Create `src/validators/email.py` with `validate_email(addr: str) -> bool`
    that checks RFC 5322 format using `re.fullmatch(EMAIL_PATTERN, addr)`
+   - creates: src/validators/email.py
+   - reads: (none)
+   - modifies: (none)
    → verify: python -c "from src.validators.email import validate_email; assert validate_email('a@b.com'); assert not validate_email('bad')"
+
+2. Add route `/api/users` in `app/routes.py` that calls `validate_email`
+   - creates: (none)
+   - reads: src/validators/email.py
+   - modifies: app/routes.py
+   - depends on: step 1
+   → verify: curl -X POST localhost:8000/api/users -d '{"email":"bad"}' | grep 400
 ```
 
 Bad:
