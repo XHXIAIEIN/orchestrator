@@ -17,8 +17,10 @@ Core mindset (from 39 rounds of practice):
 
 ## Pre-flight
 
-1. **Worktree gate** *(hard rule — no exceptions)*: Steal work MUST run in a dedicated **git worktree** on a `steal/*` branch. **Never switch the main workspace's branch.** Running `git checkout -b steal/<topic>` in the main repo is forbidden — it hijacks the caller's working branch and strands their uncommitted work.
-   - **Check current setup first**: `git rev-parse --show-toplevel` and `git branch --show-current`. If you're already inside a `.claude/worktrees/steal-*` path on a `steal/*` or `round/*` branch, the gate is satisfied — skip to step 2.
+1. **Load schema**: Read `SOUL/public/schemas/artifact-frontmatter.md` to load the canonical frontmatter schema.
+
+2. **Worktree gate** *(hard rule — no exceptions)*: Steal work MUST run in a dedicated **git worktree** on a `steal/*` branch. **Never switch the main workspace's branch.** Running `git checkout -b steal/<topic>` in the main repo is forbidden — it hijacks the caller's working branch and strands their uncommitted work.
+   - **Check current setup first**: `git rev-parse --show-toplevel` and `git branch --show-current`. If you're already inside a `.claude/worktrees/steal-*` path on a `steal/*` or `round/*` branch, the gate is satisfied — skip to the next step.
    - **Otherwise create one in a single shot**:
      ```
      git worktree add .claude/worktrees/steal-<topic> -b steal/<topic>
@@ -36,11 +38,11 @@ Core mindset (from 39 rounds of practice):
    - The dispatch-gate hook also blocks `[STEAL]` work when the current directory's branch is not `steal/*` or `round/*` as a safety net — it fires against the *current* `git branch --show-current`, so being inside a worktree on `steal/<topic>` passes naturally.
    - **Broadcast round to statusline**: after entering the worktree, run `bash .claude/scripts/sl-tag.sh "R<N> <topic>"`. The tag renders in magenta brackets on the statusline so the owner can see at a glance which round/phase this session is on. Update it as phases advance (e.g., `sl-tag.sh "R<N> <topic> phase2"`). Run `sl-tag.sh --clear` when the steal is finished.
 
-2. **Identify target**: URL, repo name, or local path. If user gave multiple links, process ALL — don't skip any for seeming "unrelated" (breadth rule: a traffic sign detector's tiling strategy might be exactly what a UI detector needs).
+3. **Identify target**: URL, repo name, or local path. If user gave multiple links, process ALL — don't skip any for seeming "unrelated" (breadth rule: a traffic sign detector's tiling strategy might be exactly what a UI detector needs).
 
-3. **Check prior art**: Search `docs/steal/` and the steal consolidated index in memory for existing reports on this target. If found, this is a **follow-up** — build on existing analysis, don't duplicate.
+4. **Check prior art**: Search `docs/steal/` and the steal consolidated index in memory for existing reports on this target. If found, this is a **follow-up** — build on existing analysis, don't duplicate.
 
-4. **Determine target type** — this shapes your analysis angle:
+5. **Determine target type** — this shapes your analysis angle:
 
 | Type | Examples | Analysis Focus |
 |------|----------|---------------|
@@ -221,7 +223,18 @@ The default "freeform text" approach lets analysts write vague summaries. These 
 
 Write to `docs/steal/<date>-<topic>-steal.md`:
 
+Every steal report saved to `docs/steal/` MUST open with a YAML frontmatter block conformant to the steal schema defined in `SOUL/public/schemas/artifact-frontmatter.md`. The `gaps[]` field must list any upstream phase gaps discovered during this steal round. If none, write `gaps: []`.
+
 ```markdown
+---
+phase: steal
+status: in-progress
+round: <N>
+source_url: <repo URL>
+evidence: artifact
+verdict: null
+gaps: []
+---
 # R<next_round> — <Project Name> Steal Report
 
 **Source**: <repo URL> | **Stars**: <count> | **License**: <license>
