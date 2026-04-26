@@ -46,6 +46,8 @@ CODE_BLOCK_RE = re.compile(r'```[\s\S]*?```')
 TOOL_MARKERS = [
     'tool_use', 'tool_result', '<system-reminder>',
     '<function_calls>', '<invoke',
+    '<environment_context>', '<command-message>',
+    'Sender (untrusted metadata)', '# AGENTS.md instructions',
 ]
 
 
@@ -200,8 +202,13 @@ def score_exchange(user_text: str, assistant_text: str) -> tuple[int, list[str]]
         score -= 3
         tags.append('terse')
 
-    # Skill 加载/系统提示
-    if 'Base directory for this skill' in user_text or '<system-reminder>' in user_text:
+    # Skill 加载/系统提示（R78 memto: 扩展 chrome 检测）
+    if ('Base directory for this skill' in user_text
+            or '<system-reminder>' in user_text
+            or '<environment_context>' in user_text
+            or '<command-message>' in user_text
+            or 'Sender (untrusted metadata)' in user_text
+            or '# AGENTS.md instructions' in user_text):
         score -= 15
         tags.append('system_noise')
 
