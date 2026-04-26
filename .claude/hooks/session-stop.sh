@@ -252,5 +252,8 @@ except Exception:
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 rm -f "$(dirname "$0")/state/turn-"*.txt
 
+# P0-5: Memory GC candidate report (non-blocking; script written in future session)
+python3 "$PROJECT_DIR/SOUL/tools/memory_gc_report.py" 2>/dev/null || true
+
 # Return immediately — background process handles the rest
 exit 0
