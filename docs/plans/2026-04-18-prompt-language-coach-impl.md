@@ -283,3 +283,26 @@ print('IDEMPOTENT PASS')
 2. 恢复 session-start.sh：`git diff .claude/hooks/session-start.sh` 确认变更，`git checkout .claude/hooks/session-start.sh` 还原（需 owner 显式授权此 rollback）
 3. 如 CLAUDE.md 备份也被污染：`git show HEAD:path/to/original` 追溯版本历史（CLAUDE.md 不在 git 追踪则依赖 .bak）
 4. `marker_upsert.py` 的 `_backup_once` 在首次 touch 时已创建 `.bak`，仅当 `.bak` 不存在时才写——多次调用不会覆盖原始备份
+
+## Completion Log
+
+Phase 5 + Phase 6 finisher session — 2026-04-26.
+
+| Step | Phase | Action | Verify | Commit |
+|---|---|---|---|---|
+| 7 | 5 | Insert triviality-filter block in `verification-spec/SKILL.md` + `verification-check/SKILL.md` (replaces plan's stale `verification-gate/SKILL.md` target — gate was split on commit `5a66a7b`) | `grep -c 'triviality-filter:start' .claude/skills/verification-{spec,check}/SKILL.md` → both `1` | `eb550c8` |
+| 8 | 5 | Insert triviality-filter block in `.claude/skills/steal/SKILL.md` (now a 22-line `@import` shell after tlotp merge `dfe78fb`) | `grep -c 'triviality-filter:start' .claude/skills/steal/SKILL.md` → `1` | `d60396e` |
+| 9 | 6 | Run `session-start.sh`, confirm hook output ≤ 10 lines + `orchestrator:ambient:start` marker count = 1 in `~/.claude/CLAUDE.md` | hook lines = 9 ✓; marker count = 1 ✓ | `5ff8eaf` (verify doc `docs/verify/2026-04-26-plc-step9.md`) |
+| 10 | 6 | `marker_upsert.py` idempotency: call upsert twice, assert exactly one marker block | `IDEMPOTENT PASS` ✓; marker count = 1 ✓ | `145e52b` (verify doc `docs/verify/2026-04-26-plc-step10.md`) |
+
+### Deviations (plan vs actual)
+
+- **Step 7 target rewrite**: plan named `.claude/skills/verification-gate/SKILL.md`, but that skill was split into `verification-spec/SKILL.md` + `verification-check/SKILL.md` on commit `5a66a7b` (2026-04-26). Block inserted into both new SKILL files. Branch was first merged with `main` (commit `27def2f`) so the worktree could see the split files.
+- **Step 8 anchor change**: plan said insert "before the first `##` heading", but `steal/SKILL.md` was rewritten to a 22-line `@import` shell during the session-8 tlotp merge (`dfe78fb`). The first `##` heading no longer exists. Block inserted right after H1 + intro paragraph and before the first `@skills/steal/sections/...` `@import` line.
+- **Step 10 boot path substitution**: plan one-liner reads boot content from `SOUL/public/boot.md`, but that path is not yet created (compiler outputs to `.claude/boot.md`). Substituted `.claude/boot.md` for the idempotency test. Test is content-agnostic — substitution does not weaken the assertion. Detail in `docs/verify/2026-04-26-plc-step10.md`.
+- **Pre-finisher merge of `main`**: branch was 5 commits ahead of `9215530` but missing the `verification-gate` split + `steal/SKILL.md` `@import` rewrite. Merged `main` into branch (commit `27def2f`) before steps 7-10 ran. This adds one merge commit ahead of plan; Phase D will still merge cleanly.
+
+### Phase D readiness
+
+`steal/prompt-language-coach` is now MERGE-ready: 9 commits ahead of `main` (1 merge + 4 step-commits + 4 prior Phase 1-4 commits already there pre-finisher were already counted; actual finisher delta from `9215530` = 1 merge commit + 4 step-commits + this completion-log commit).
+
