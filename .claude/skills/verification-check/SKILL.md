@@ -1,33 +1,26 @@
 ---
-name: verification-gate
-description: "Evidence-gated completion check. Use before committing, creating PRs, or claiming work is done."
-origin: "Orchestrator — earned through direct practice (see commit history)"
-source_version: "2026-04-18"
+name: verification-check
+description: "Evidence-gated completion check. Use before committing, creating PRs, or claiming work is done. Pairs with verification-spec at task start."
+origin: "Orchestrator — split from verification-gate (2026-04-26)"
+source_version: "2026-04-26"
 ---
 
-# Verification Gate Protocol
+# Verification Check Protocol
 
 ```
 IRON LAW: NO COMPLETION CLAIM WITHOUT EVIDENCE. "Should work" IS NOT EVIDENCE.
 ```
 
-Before declaring ANY task complete, you MUST pass all five steps in order:
+This is the post-implementation gate. It pairs with `verification-spec` (task-start gate that produces the Goal/Verify/Assume block). If you skipped `verification-spec`, you do not have a `Verify:` command yet — go state one before running this gate.
 
-## Pre-Flight: DECLARE ASSUMPTIONS
-
-Before the first line of code or the first destructive command, say the assumptions out loud — one line per assumption, no padding.
-
-- Not "do you approve?" — a verifiable claim the owner can diff against reality.
-- Format: `Assume: <X is Y>` / `Assume: <user wants A, not B>` / `Assume: <this file is the entry point>`.
-- If two plausible interpretations exist, list both and pick one with a reason. Don't stall — announce the pick, proceed, let the owner overrule.
-- Skip only for trivial read-only ops (ls, grep, git status). Any write / run / install / network call: declare first.
-
-Why this exists: post-hoc verification catches broken code, not broken premises. Stating the assumption moves the gate earlier — the owner can intercept a wrong premise in 2 seconds instead of debugging the wrong implementation for an hour.
+Before declaring ANY task complete, pass all five steps in order.
 
 ## The Five Steps
 
 ### Step 1: IDENTIFY
-What verification command(s) need to run?
+Pull the `Verify:` line from the spec block emitted at task start. If the task surfaced new verification needs (e.g. an adversarial probe revealed a sub-feature), add them here.
+
+If you somehow have no spec, name the verification commands now:
 - Tests? Which test suite / file?
 - Build? What build command?
 - Lint? Type check?
@@ -53,7 +46,7 @@ Read the complete output. Not the first line. Not "it looks green". The full out
 - Any unexpected output?
 
 ### Step 4: CONFIRM
-Does the output match expectations?
+Does the output match the goal stated in the spec block?
 - All tests green? Or are there unrelated failures?
 - Build succeeded without warnings?
 - The specific behavior changed as requested?
@@ -143,3 +136,7 @@ This gate does NOT apply to:
 - Research / exploration tasks (no code changed)
 - Questions / explanations (nothing to verify)
 - Planning (plans are verified during execution)
+
+## Pairs With
+
+- `verification-spec` — emits the Goal/Verify/Assume block at task start; this gate consumes the `Verify:` command

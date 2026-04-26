@@ -20,6 +20,6 @@
   "handoff": {
     "completion_signal": "Return root cause, fix applied, and verification evidence.",
     "artifacts": [],
-    "follow_up": ["verification-gate"]
+    "follow_up": ["verification-check"]
   }
 }

@@ -20,6 +20,6 @@
   "handoff": {
     "completion_signal": "Return fix commit or diagnosis if infrastructure failure.",
     "artifacts": [],
-    "follow_up": ["verification-gate"]
+    "follow_up": ["verification-check"]
   }
 }

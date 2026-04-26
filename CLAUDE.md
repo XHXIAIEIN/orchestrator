@@ -140,7 +140,8 @@ If your inner monologue matches any excuse in the left column, you are rationali
 | Topic | Lives in |
 |-------|----------|
 | UI / file org / Docker conventions | `SOUL/public/prompts/project-conventions.md` |
-| Verification gate (5-step evidence chain) | `.claude/skills/verification-gate/SKILL.md` |
+| Verification — pre-task (Goal/Verify/Assume) | `.claude/skills/verification-spec/SKILL.md` |
+| Verification — post-task (5-step evidence chain) | `.claude/skills/verification-check/SKILL.md` |
 | Memory evidence tier system | `.claude/skills/memory-evidence/SKILL.md` |
 | Skill authoring & per-skill constraints | `.claude/skills/README.md` |
 | Plan template | `SOUL/public/prompts/plan_template.md` |

@@ -23,7 +23,7 @@ The agents, skills, hooks, and SOUL system work directly in Claude Code — no D
 ```
 orchestrator/
 ├── .claude/agents/     # 8 agents: engineer, architect, reviewer, sentinel, operator, analyst, inspector, verifier
-├── .claude/skills/     # /steal, /doctor, /status, /collect, verification-gate, etc.
+├── .claude/skills/     # /steal, /doctor, /status, /collect, verification-spec, verification-check, etc.
 ├── .claude/hooks/      # guard rules, audit logging
 ├── SOUL/               # Identity persistence framework
 └── CLAUDE.md           # Project-level instructions
@@ -90,7 +90,8 @@ For multi-step workflows, skills like `subagent-driven-development` orchestrate 
 | `/status` | Runtime status and recent collection summary |
 | `/collect` | Manually trigger a data collection run |
 | `/analyze-ui` | UI detection via cvui pipeline |
-| `verification-gate` | Five-step evidence chain before declaring any task complete |
+| `verification-spec` | Pre-task gate: emit Goal/Verify/Assume block before the first write |
+| `verification-check` | Post-task gate: five-step evidence chain before declaring any task complete |
 | `systematic-debugging` | Structured debugging: investigate → isolate → fix → verify |
 
 ## Collectors

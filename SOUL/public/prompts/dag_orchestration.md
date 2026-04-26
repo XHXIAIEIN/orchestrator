@@ -161,7 +161,7 @@ This is a loop, not a pure DAG. Implement with the loop node type.
 - **Disk State Loop** (`disk_state_loop.md`): Use for loop nodes within a DAG
 - **Approval Gate** (`approval.py`): Use for approval nodes
 - **Sub-agent dispatch**: Use for parallel layer execution
-- **Verification Gate** (`verification-gate`): Use as the final node
+- **Verification Check** (`verification-check`): Use as the final node (paired with `verification-spec` at the start)
 
 ## Anti-Patterns
 

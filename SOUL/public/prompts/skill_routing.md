@@ -19,8 +19,11 @@ Task arrives
 ├─ Is it trivial? (<10 LOC change, single-command fix, answering a question)
 │  └─ No skill needed. Execute directly.
 │
+├─ Owner hands over a code/build/test/deploy/UI task? (before first write)
+│  └─ verification-spec — emit Goal/Verify/Assume block, then proceed
+│
 ├─ Bug / Error / Stack trace / Unexpected behavior?
-│  └─ systematic-debugging → then verification-gate
+│  └─ systematic-debugging → then verification-check
 │
 ├─ CI red / PR checks failing?
 │  └─ babysit-pr
@@ -45,7 +48,7 @@ Task arrives
 │     then exit Plan Mode to execute. Pairs with plan_template.md.
 │
 ├─ About to claim "done" on any non-trivial task?
-│  └─ verification-gate (mandatory)
+│  └─ verification-check (mandatory)
 │
 ├─ Read bot chat history?
 │  ├─ Telegram → /bot-tg
@@ -86,7 +89,8 @@ Match intent, not keywords:
 | "CI failed", "checks red", PR number | babysit-pr | systematic-debugging |
 | "check the system", "is everything ok" | /doctor | systematic-debugging |
 | "study this repo", GitHub URL + learning intent | /steal | general browsing |
-| "is it done?", "verify", before commit | verification-gate | — |
+| starting code/build/test/UI work | verification-spec (state Goal/Verify/Assume up front) | jumping into Edit |
+| "is it done?", "verify", before commit | verification-check | — |
 | "practice", "exam", "Clawvard" | /clawvard-practice | manual Q&A |
 | change spans >2 files, structural refactor | Plan Mode (Shift+Tab) first | jumping straight to Edit |
 
@@ -97,7 +101,7 @@ N/A — reference document. The agent reads this to decide which skill to invoke
 ## Quality Bar
 
 - Most tasks need 0-1 skills. If you're chaining 3+ skills, you're over-routing.
-- verification-gate before completion claims is the one non-negotiable routing rule.
+- verification-spec at task start + verification-check before completion claims is the one non-negotiable routing rule.
 - Trivial tasks must skip skill invocation entirely — overhead exceeds value.
 
 ## Boundaries

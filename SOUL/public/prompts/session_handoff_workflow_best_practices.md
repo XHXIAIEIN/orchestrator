@@ -1,6 +1,6 @@
 # Handoff: Claude Code Best Practices — Phase B (remaining gaps)
 
-**Source sessions**: 2026-04-26 (Phase A landed at `1d95ed6`, Gap 2 landed at `6a2c6ee`)
+**Source sessions**: 2026-04-26 (Phase A landed at `1d95ed6`, Gap 2 landed at `6a2c6ee`, Gap 1 landed in this session)
 **Source documents**:
 - https://code.claude.com/docs/en/best-practices
 - https://agentskills.io/skill-creation/best-practices
@@ -24,23 +24,18 @@
 - `CLAUDE.md`: Plan Mode bullet at the top of Planning Discipline (`### Planning Discipline → Plan Mode for >2 files`)
 - +6 lines total, block-protect region untouched
 
-## What's left (Phase B — two independent work items)
+### Gap 1 — landed in this session (split verification gate)
 
-### Gap 1: Verification timing is inverted
+- New `.claude/skills/verification-spec/{SKILL.md,workflow.json,.skill_id}` — pre-task gate, emits Goal/Verify/Assume block before first write
+- New `.claude/skills/verification-check/{SKILL.md,workflow.json,.skill_id}` — post-task 5-step evidence chain (Pre-Flight section moved into spec)
+- `babysit-pr`, `systematic-debugging`, `steal` workflow.json `follow_up` updated to `verification-check`
+- `CLAUDE.md` See-also rows split into pre-task / post-task entries (block-protect untouched)
+- `SOUL/public/prompts/skill_routing.md` decision tree + Routing Signals + Quality Bar all reference the split
+- `README.md` skill table split into two rows
+- `SOUL/public/skill_store.jsonl` retired old + imported two new
+- Old `.claude/skills/verification-gate/` moved to `.trash/2026-04-26-gap1/`
 
-**Problem**: `.claude/skills/verification-gate/SKILL.md` is a *post-hoc* check (run after work claims to be done). Anthropic's best practices flag verification as "the single highest-leverage thing" and recommend stating success criteria *up front*, before any code is written.
-
-**Proposed split**:
-- `verification-spec` skill — invoked at task start. Forces "what does success look like? what command proves it?" before any write/run tool call.
-- `verification-check` skill — current 5-step evidence chain, kept as the post-completion gate.
-
-**Files to touch**:
-- `.claude/skills/verification-gate/SKILL.md` → rename to `verification-check/`, trim to post-hoc only
-- New: `.claude/skills/verification-spec/SKILL.md` — frontmatter description: "Use at task start when the owner hands over a code/build/test/UI request, before the first write or destructive command"
-- Update `SOUL/public/prompts/skill_routing.md` to route both
-- Update `CLAUDE.md` See-also row
-
-**Estimated**: 1 session, ~150 LOC of skill content.
+## What's left (Phase B — one independent work item)
 
 ### Gap 3: Subagent role audit
 
@@ -57,11 +52,11 @@
 ## Suggested order
 
 1. ~~Gap 2~~ ✅ landed at `6a2c6ee`
-2. Gap 1 next (highest ROI per Anthropic's framing)
+2. ~~Gap 1~~ ✅ landed in this session
 3. Gap 3 last (requires reading all agent definitions)
 
 ## Opening prompt for next session
 
 ```
-Read SOUL/public/prompts/session_handoff_workflow_best_practices.md, then start Gap 1.
+Read SOUL/public/prompts/session_handoff_workflow_best_practices.md, then start Gap 3.
 ```
