@@ -9,7 +9,8 @@ Implement the 5 P0 patterns from R80 (Conduct module decomposition, 14-code fail
 - Steal report: `docs/steal/R80-flux-enchanted-steal.md`
 - Source: https://github.com/enchanted-plugins/flux (MIT, 2026-04)
 - Effort budget: ~9h total across 5 P0 patterns
-- CLAUDE.md in this worktree is 196 lines (worktree copy, not the main repo's 670-line version — steps that touch CLAUDE.md operate on the **main repo** copy at `/d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md`)
+- All file paths in this plan are **worktree-relative** — every step targets the file at the same path inside `.claude/worktrees/steal-flux-enchanted/`. The 2026-04-26 plan-path patch (`feat(steal/flux-enchanted): patch plan paths to worktree-relative`) rewrote the original absolute `/d/Users/Administrator/Documents/GitHub/orchestrator/` prefix to empty so subagents and the main session both write to the worktree, never the main tree (this was the cross-tree pollution mode that produced `.trash/2026-04-19-flux-enchanted-tree-mismatch/` in session 2).
+- CLAUDE.md edits (Step 10, Step 20) target `CLAUDE.md` inside this worktree. Step 10 is **deferred behind an owner-review gate** — it converts six full sections to one-line `@`-import stubs, which is a substantive restructure of the global ruleset; owner approves the direction before that step runs. Phase 4 Step 20 operates on the **pre-Step-10** state (the full sections still inline) — it just relocates the `<critical>` block; functionally identical regardless of Step 10's status.
 - Existing memory: `SOUL/public/skill_executions.jsonl`, `SOUL/public/skill_store.jsonl` — no structured `learnings.json` yet
 - Existing hooks: `.claude/hooks/guard-rules.conf` is load-bearing (must NOT be touched); other post-hooks are advisory candidates
 - Existing failure notes: free-text in `.remember/` (path may not exist in main repo — see ASSUMPTION A1)
@@ -40,7 +41,7 @@ Implement the 5 P0 patterns from R80 (Conduct module decomposition, 14-code fail
 | `SOUL/public/conduct/planning-discipline.md` | Create | P0-1 |
 | `SOUL/public/conduct/surgical-changes.md` | Create | P0-1 |
 | `SOUL/public/conduct/failure-modes.md` | Create | P0-1 + P0-2 (F-codes live here) |
-| `/d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md` | Modify — extract 6 sections into @-imports, keep `<critical>` block headers as one-line stubs + @-import | P0-1 + P0-4 (U-curve reorder) |
+| `CLAUDE.md` | Modify — extract 6 sections into @-imports, keep `<critical>` block headers as one-line stubs + @-import | P0-1 + P0-4 (U-curve reorder) |
 | `SOUL/public/learnings/` | Create directory | P0-3 |
 | `SOUL/public/learnings/schema.json` | Create — canonical 7-field schema with field definitions | P0-3 |
 | `SOUL/public/learnings/learnings.json` | Create — empty seed with all 7 fields initialized | P0-3 |
@@ -56,33 +57,33 @@ Implement the 5 P0 patterns from R80 (Conduct module decomposition, 14-code fail
 
 ### Phase 1 — Conduct Module Extraction (~2h)
 
-**Step 1.** Read `/d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md` lines 1-250 in full to establish exact section boundaries before any edit.
-→ verify: `wc -l /d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md` returns a line count; Read tool returns content without error.
+**Step 1.** Read `CLAUDE.md` lines 1-250 in full to establish exact section boundaries before any edit.
+→ verify: `wc -l CLAUDE.md` returns a line count; Read tool returns content without error.
 
 **Step 2.** Create directory `SOUL/public/conduct/` (main repo).
-→ verify: `ls /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/`
+→ verify: `ls SOUL/public/conduct/`
 
 **Step 3.** Create `SOUL/public/conduct/context.md` containing the exact text of the `### Context Management` section extracted from CLAUDE.md (lines ~44-48), plus a header `# Conduct: Context Management` and a footer `<!-- source: CLAUDE.md §Context Management, extracted 2026-04-18 -->`.
-→ verify: `wc -c /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/context.md` returns non-zero; section text matches original verbatim.
+→ verify: `wc -c SOUL/public/conduct/context.md` returns non-zero; section text matches original verbatim.
 
 **Step 4.** Create `SOUL/public/conduct/planning-discipline.md` containing the exact text of `### Planning Discipline` (lines ~49-56) with header `# Conduct: Planning Discipline`.
-→ verify: `grep "No Placeholder Iron Rule" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/planning-discipline.md`
+→ verify: `grep "No Placeholder Iron Rule" SOUL/public/conduct/planning-discipline.md`
 - depends on: step 2
 
 **Step 5.** Create `SOUL/public/conduct/surgical-changes.md` containing the exact text of `### Surgical Changes` (lines ~57-63) with header `# Conduct: Surgical Changes`.
-→ verify: `grep "Edit Integrity" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/surgical-changes.md`
+→ verify: `grep "Edit Integrity" SOUL/public/conduct/surgical-changes.md`
 - depends on: step 2
 
 **Step 6.** Create `SOUL/public/conduct/git-safety.md` containing the exact text of `### Git Safety` section inside `<critical>` (lines ~66-71) with header `# Conduct: Git Safety`.
-→ verify: `grep "Stage first, push later" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/git-safety.md`
+→ verify: `grep "Stage first, push later" SOUL/public/conduct/git-safety.md`
 - depends on: step 2
 
 **Step 7.** Create `SOUL/public/conduct/deletion.md` containing the exact text of `### Deletion = Move to .trash/` section (lines ~72-78) with header `# Conduct: Deletion Policy`.
-→ verify: `grep "\.trash/" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/deletion.md`
+→ verify: `grep "\.trash/" SOUL/public/conduct/deletion.md`
 - depends on: step 2
 
 **Step 8.** Create `SOUL/public/conduct/verification.md` containing the exact text of `### Verification Gate` section (lines ~151+) with header `# Conduct: Verification Gate`.
-→ verify: `grep "Identify.*Execute.*Read.*Confirm.*Declare" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/verification.md`
+→ verify: `grep "Identify.*Execute.*Read.*Confirm.*Declare" SOUL/public/conduct/verification.md`
 - depends on: step 2
 
 **Step 9.** Create `SOUL/public/conduct/failure-modes.md` with:
@@ -103,21 +104,21 @@ Implement the 5 P0 patterns from R80 (Conduct module decomposition, 14-code fail
   - F13 Orphan Creation — leaves unused imports/vars/files after own edits; counter: run grep for own symbol names post-edit; 3+ instances
   - F14 Version Drift — uses API/syntax from training data that has since changed; counter: Read actual file before assuming signature; single instance escalates
 - Footer: `<!-- adapted from enchanted-plugins/flux failure-modes taxonomy, 2026-04-18 -->`
-→ verify: `grep -c "^| F" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/failure-modes.md` returns `14`
+→ verify: `grep -c "^| F" SOUL/public/conduct/failure-modes.md` returns `14`
 - depends on: step 2
 
-**Step 10.** Edit `/d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md`: replace each of the 6 extracted sections (`### Context Management`, `### Planning Discipline`, `### Surgical Changes`, `### Git Safety`, `### Deletion = Move to .trash/`, `### Verification Gate`) with a one-line stub + @-import:
+**Step 10.** Edit `CLAUDE.md`: replace each of the 6 extracted sections (`### Context Management`, `### Planning Discipline`, `### Surgical Changes`, `### Git Safety`, `### Deletion = Move to .trash/`, `### Verification Gate`) with a one-line stub + @-import:
 ```
 ### Context Management
 @SOUL/public/conduct/context.md
 ```
 (repeat pattern for each section). The `<critical>` wrapper block must be preserved; only the section body text is replaced with the @-import line.
-→ verify: `wc -l /d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md` returns a count at least 80 lines fewer than before; `grep "@SOUL/public/conduct/" /d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md | wc -l` returns `6`
+→ verify: `wc -l CLAUDE.md` returns a count at least 80 lines fewer than before; `grep "@SOUL/public/conduct/" CLAUDE.md | wc -l` returns `6`
 - depends on: steps 3, 4, 5, 6, 7, 8
 
 --- PHASE GATE: Extraction → Taxonomy ---
 [ ] Deliverable: 7 files exist in `SOUL/public/conduct/` (6 conduct modules + failure-modes.md)
-[ ] Acceptance: `ls /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/ | wc -l` returns `7`
+[ ] Acceptance: `ls SOUL/public/conduct/ | wc -l` returns `7`
 [ ] Acceptance: CLAUDE.md contains 6 `@SOUL/public/conduct/` import lines
 [ ] No open questions: ASSUMPTION A2 (@-import syntax) must be confirmed by owner before Step 10 is executed
 [ ] Owner review: required — Step 10 edits the main CLAUDE.md; confirm @-import syntax first
@@ -135,7 +136,7 @@ Implement the 5 P0 patterns from R80 (Conduct module decomposition, 14-code fail
 Every entry written to memory or `.remember/` that describes a failure MUST include a `[Fxx]` tag matching the closest code above. Format: `[F02] Fabricated path docs/foo.md — Read showed it didn't exist`.
 If no code fits exactly, use the nearest + note "partial match".
 ```
-→ verify: `grep "Tagging Rule" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/conduct/failure-modes.md`
+→ verify: `grep "Tagging Rule" SOUL/public/conduct/failure-modes.md`
 - depends on: step 9
 
 **Step 13.** Add a "Failure Tag Aggregation" section to `SOUL/public/learnings/schema.json` (see Step 17 — schema creation). This is a placeholder note; actual wiring happens in Step 17.
@@ -145,11 +146,11 @@ If no code fits exactly, use the nearest + note "partial match".
 
 ### Phase 3 — Deep Learnings JSON (~3h)
 
-**Step 14.** Resolve ASSUMPTION A1: run `find /d/Users/Administrator/Documents/GitHub/orchestrator -name "now.md" -path "*remember*" 2>/dev/null` and `ls /d/Users/Administrator/Documents/GitHub/orchestrator/.remember/ 2>/dev/null` to discover actual memory file paths.
+**Step 14.** Resolve ASSUMPTION A1: run `find /d/Users/Administrator/Documents/GitHub/orchestrator -name "now.md" -path "*remember*" 2>/dev/null` and `ls .remember/ 2>/dev/null` to discover actual memory file paths.
 → verify: command output shows either file paths or "no such file" — either outcome is valid; record result.
 
 **Step 15.** Create directory `SOUL/public/learnings/` in the main repo.
-→ verify: `ls /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/learnings/`
+→ verify: `ls SOUL/public/learnings/`
 
 **Step 16.** Create `SOUL/public/learnings/schema.json` with this exact structure:
 ```json
@@ -174,7 +175,7 @@ If no code fits exactly, use the nearest + note "partial match".
   }
 }
 ```
-→ verify: `python3 -c "import json; json.load(open('/d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/learnings/schema.json'))"` exits 0
+→ verify: `python3 -c "import json; json.load(open('SOUL/public/learnings/schema.json'))"` exits 0
 - depends on: step 15
 
 **Step 17.** Create `SOUL/public/learnings/learnings.json` as the live data file, seeded with empty structures per schema:
@@ -191,7 +192,7 @@ If no code fits exactly, use the nearest + note "partial match".
   "recommendations": []
 }
 ```
-→ verify: `python3 -c "import json; d=json.load(open('/d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/learnings/learnings.json')); assert len(d['sessions'])==0"` exits 0
+→ verify: `python3 -c "import json; d=json.load(open('SOUL/public/learnings/learnings.json')); assert len(d['sessions'])==0"` exits 0
 - depends on: step 16
 
 **Step 18.** Create `SOUL/public/learnings/update-learnings.sh` — a bash script that:
@@ -200,19 +201,19 @@ If no code fits exactly, use the nearest + note "partial match".
 3. Prints `updated learnings.json: <field> now has <N> entries`
 
 Script must use `python3 -c` inline for JSON manipulation (no external deps). Include `set -euo pipefail` at top.
-→ verify: `bash /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/learnings/update-learnings.sh --session topic=test-run outcome=pass` exits 0 and `python3 -c "import json; d=json.load(open('/d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/public/learnings/learnings.json')); assert len(d['sessions'])==1"` exits 0
+→ verify: `bash SOUL/public/learnings/update-learnings.sh --session topic=test-run outcome=pass` exits 0 and `python3 -c "import json; d=json.load(open('SOUL/public/learnings/learnings.json')); assert len(d['sessions'])==1"` exits 0
 - depends on: step 17
 
 ---
 
 ### Phase 4 — U-curve Placement + Checkpoint (~1h)
 
-**Step 19.** Read `/d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md` again (post-step-10 state) to confirm current section order and identify where Gate Functions and `<critical>` block currently sit relative to file start/end.
+**Step 19.** Read `CLAUDE.md` again (post-step-10 state) to confirm current section order and identify where Gate Functions and `<critical>` block currently sit relative to file start/end.
 → verify: Read tool returns content; note line numbers of `<critical>` open and close tags.
 - depends on: step 10
 
-**Step 20.** Edit `/d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md`: move the entire `<critical>...</critical>` block (containing Gate Functions + Git Safety stub + Deletion stub) to be the **first major section** after the "## Rules" header and "### Commitment Hierarchy" section — before `### Execution`. This places `<critical>` content in the first-200 token zone.
-→ verify: `grep -n "<critical>" /d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md` returns a line number < 60
+**Step 20.** Edit `CLAUDE.md`: move the entire `<critical>...</critical>` block (containing Gate Functions + Git Safety stub + Deletion stub) to be the **first major section** after the "## Rules" header and "### Commitment Hierarchy" section — before `### Execution`. This places `<critical>` content in the first-200 token zone.
+→ verify: `grep -n "<critical>" CLAUDE.md` returns a line number < 60
 - depends on: step 19
 
 **Step 21.** Edit `.claude/skills/verification-gate/SKILL.md` in the main repo: add a "Checkpoint Protocol" section after the existing five-step evidence chain:
@@ -232,7 +233,7 @@ When context usage reaches approximately 50%, emit a `<checkpoint>` block before
 
 After emitting, treat checkpoint as the truth source. Earlier conversation context may be ignored for decisions already captured here.
 ```
-→ verify: `grep "Checkpoint Protocol" /d/Users/Administrator/Documents/GitHub/orchestrator/.claude/skills/verification-gate/SKILL.md`
+→ verify: `grep "Checkpoint Protocol" .claude/skills/verification-gate/SKILL.md`
 - depends on: step 8
 
 ---
@@ -251,20 +252,23 @@ Each entry: command that failed | why it failed | what worked instead | signal t
 
 <!-- entries below, newest first -->
 ```
-→ verify: `grep "Self-observed" /d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/private/precedent-log.md`
+→ verify: `grep "Self-observed" SOUL/private/precedent-log.md`
 
 **Step 23.** Confirm `SOUL/private/` is gitignored by checking `.gitignore` in the main repo for a `SOUL/private/` entry. If missing, add `SOUL/private/` to `.gitignore`.
-→ verify: `grep "SOUL/private" /d/Users/Administrator/Documents/GitHub/orchestrator/.gitignore`
+→ verify: `grep "SOUL/private" .gitignore`
 - depends on: step 22
 
-**Step 24.** Create `.claude/hooks/pre-bash.sh` in the main repo with:
+**Step 24.** Create `.claude/hooks/pre-bash.sh` in the worktree with:
 ```bash
 #!/usr/bin/env bash
 # pre-bash hook: grep precedent-log before executing any bash command
 # Runs in ≤10ms for typical log size (<500 entries)
 set -uo pipefail
 
-PRECEDENT_LOG="/d/Users/Administrator/Documents/GitHub/orchestrator/SOUL/private/precedent-log.md"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/../.." || exit 0  # advisory only — never block on repo-root resolution
+
+PRECEDENT_LOG="SOUL/private/precedent-log.md"
 COMMAND="${CLAUDE_TOOL_INPUT:-}"  # CC injects the bash command here
 
 if [[ -f "$PRECEDENT_LOG" && -n "$COMMAND" ]]; then
@@ -281,11 +285,11 @@ fi
 exit 0  # always exit 0 — advisory only, never block
 ```
 Make executable: `chmod +x .claude/hooks/pre-bash.sh`
-→ verify: `bash /d/Users/Administrator/Documents/GitHub/orchestrator/.claude/hooks/pre-bash.sh` exits 0 (no error even when CLAUDE_TOOL_INPUT is unset)
+→ verify: `bash .claude/hooks/pre-bash.sh` exits 0 (no error even when CLAUDE_TOOL_INPUT is unset)
 - depends on: step 22
 
 **Step 25.** Verify `.claude/hooks/whitelist.conf` (if it exists) does not inadvertently block the pre-bash hook's internal `grep` call. Read the file; if it contains a rule that would match `grep -i` against the precedent log, add an exemption line `allow	grep.*precedent-log	precedent-log self-lookup`.
-→ verify: `bash /d/Users/Administrator/Documents/GitHub/orchestrator/.claude/hooks/pre-bash.sh` still exits 0 after any whitelist changes
+→ verify: `bash .claude/hooks/pre-bash.sh` still exits 0 after any whitelist changes
 - depends on: step 24
 
 --- PHASE GATE: Implementation → Done ---
@@ -315,7 +319,7 @@ All changes are new files + markdown edits. No database migrations, no compiled 
 
 If any step produces a broken state:
 
-1. `git diff /d/Users/Administrator/Documents/GitHub/orchestrator/CLAUDE.md` to see exact CLAUDE.md changes
+1. `git diff CLAUDE.md` to see exact CLAUDE.md changes
 2. `git stash` to save all WIP
 3. Individual files in `SOUL/public/conduct/`, `SOUL/public/learnings/`, `SOUL/private/` can be deleted directly (they are new, no prior content to restore)
 4. `.claude/hooks/pre-bash.sh` can be deleted directly (new file)
