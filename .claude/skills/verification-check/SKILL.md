@@ -7,6 +7,14 @@ source_version: "2026-04-26"
 
 # Verification Check Protocol
 
+## Pre-Read Discipline
+
+Before reading any reviewer output or review file:
+1. Read `SOUL/public/prompts/rationalization-immunity.md` (specifically the "Review Dismissal" and "Pre-Load Rule" sections).
+2. Only then open the review file.
+
+Skipping step 1 means you have already formed rationalizations. The review is worthless.
+
 ```
 IRON LAW: NO COMPLETION CLAIM WITHOUT EVIDENCE. "Should work" IS NOT EVIDENCE.
 ```

@@ -1,0 +1,22 @@
+# Atomic worker definitions
+# Fields: name, provider, model, effort, dispatch_mode
+# dispatch_mode: tool-use (worker reads files via Read tool) | bulk (files inlined into prompt)
+
+workers:
+  sonnet-tool:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    effort: medium
+    dispatch_mode: tool-use
+
+  opus-tool:
+    provider: anthropic
+    model: claude-opus-4-5
+    effort: high
+    dispatch_mode: tool-use
+
+  sonnet-bulk:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    effort: medium
+    dispatch_mode: bulk
