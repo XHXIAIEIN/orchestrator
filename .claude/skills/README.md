@@ -59,15 +59,42 @@ Example: `.claude/skills/steal/constraints/worktree-isolation.md`.
 
 ## When to create a skill vs other primitives
 
-| Use this | When |
-|----------|------|
-| **Hook** | Action must happen every time, with zero exceptions. Deterministic. (`.claude/hooks/`) |
-| **Skill** | Domain knowledge or reusable workflow. Loaded on demand based on description match. |
-| **Subagent** | Heavy intermediate output that would pollute the main context — only the conclusion matters. (`.claude/agents/`) |
-| **MCP server** | External service integration (DB query, design tool, monitoring). |
-| **CLAUDE.md rule** | High-frequency project-wide default that applies to nearly every session. |
+| Use this | When | Example |
+|----------|------|---------|
+| **Hook** | Action must happen every time, with zero exceptions. Deterministic. (`.claude/hooks/`) | `block-protect` enforcing identity iron rules; `dispatch-gate` blocking `[STEAL]` work outside `steal/*` branches |
+| **Skill** | Domain knowledge or reusable workflow. Loaded on demand based on description match. | `verification-spec`, `memory-evidence`, `steal` |
+| **Subagent** | Heavy intermediate output that would pollute the main context — only the conclusion matters. (`.claude/agents/`) | `reviewer` returning ranked findings; `engineer` dispatched into a worktree, main thread reads only the final commits |
+| **MCP server** | External service integration (DB query, design tool, monitoring). | Future: SQLite query gateway, Qdrant inspector |
+| **CLAUDE.md rule** | High-frequency project-wide default that applies to nearly every session. | Git Safety, Surgical Changes, Skill Routing pointer |
 
 If a rule is being violated despite living in CLAUDE.md, it's probably the wrong primitive — promote it to a hook (deterministic) or demote to a skill (loaded only when relevant).
+
+### Subagent dispatch test
+
+Before calling `Agent(subagent_type=...)`, ask:
+
+1. **Will the main thread need the intermediate output later?** Yes → don't dispatch, do it directly. The conversation context is the working memory.
+2. **Is the work read-only research (audit, scan, review)?** Yes → dispatch makes sense (`analyst`/`inspector`/`reviewer`/`sentinel`/`verifier`).
+3. **Is the work execution (writes/edits)?** Only dispatch if it runs in an isolated workspace (e.g. `isolation: "worktree"`) and the main thread truly only needs the final conclusion. Otherwise the main thread should execute and keep context coherent.
+
+A subagent is **not** a way to offload "I don't feel like reading these files" — that just relocates the same work and adds a serialization round-trip.
+
+## Subagent roster
+
+Six project-local subagents live in `.claude/agents/`. Three out-of-the-box agents (`Plan`, `Explore`, `general-purpose`) and plugin agents (`codex:codex-rescue`, `prompt-maker:prompt-linter`) are also available.
+
+| Agent | Type | Tools | When to dispatch |
+|-------|------|-------|------------------|
+| `analyst` | research, READ-ONLY | Read/Glob/Grep/Bash | Metrics scan, anomaly triage, baseline comparisons |
+| `inspector` | research, READ-ONLY | Read/Glob/Grep | Doc rot, config drift, stale TODO sweeps |
+| `reviewer` | research, READ-ONLY | Read/Glob/Grep | Code review with confidence-scored findings |
+| `sentinel` | research, READ-ONLY | Read/Glob/Grep/Bash | Security audit (OWASP top 10 against this codebase) |
+| `verifier` | research, runs tests but does not modify | Read/Glob/Grep/Bash | 5-step evidence chain before declaring completion |
+| `engineer` | execution, **worktree-isolated only** | Read/Write/Edit/Bash/Glob/Grep/Agent | Steal pilots, worktree pipeline impl runs — see `SOUL/public/prompts/steal_pilot_dispatch.md` |
+
+Retired (moved to `.trash/2026-04-26-gap3/`):
+- `architect` — superseded by Plan Mode (Shift+Tab) for multi-file structural work; see `SOUL/public/prompts/skill_routing.md`.
+- `operator` — infra ops belong on the main thread; the dispatcher needs the live state (container, DB, GPU) to make follow-up decisions, so isolation is a net loss.
 
 ## Skill quality bar
 
