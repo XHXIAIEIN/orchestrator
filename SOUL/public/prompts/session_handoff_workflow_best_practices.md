@@ -1,6 +1,7 @@
-# Handoff: Claude Code Best Practices — Phase B (remaining gaps)
+# Handoff: Claude Code Best Practices — Phase B (COMPLETE)
 
-**Source sessions**: 2026-04-26 (Phase A landed at `1d95ed6`, Gap 2 landed at `6a2c6ee`, Gap 1 landed in this session)
+**Status**: ✅ COMPLETE — all three gaps landed (Phase A `1d95ed6`, Gap 2 `6a2c6ee`, Gap 1 `5a66a7b`, Gap 3 `449cb85`).
+**Source sessions**: 2026-04-26
 **Source documents**:
 - https://code.claude.com/docs/en/best-practices
 - https://agentskills.io/skill-creation/best-practices
@@ -35,28 +36,15 @@
 - `SOUL/public/skill_store.jsonl` retired old + imported two new
 - Old `.claude/skills/verification-gate/` moved to `.trash/2026-04-26-gap1/`
 
-## What's left (Phase B — one independent work item)
+### Gap 3 — `449cb85` `refactor(agents): retire architect+operator, scope engineer to worktree dispatch`
 
-### Gap 3: Subagent role audit
+- Audited 8 project-local subagents against best-practices "research not execution" rule
+- Kept 5 research-type (analyst, inspector, reviewer, sentinel, verifier) — all READ-ONLY
+- Kept `engineer` but tightened description to worktree-isolated dispatch only (steal pilots, worktree pipeline)
+- Retired `architect` (superseded by Plan Mode added in Gap 2) and `operator` (infra ops need live state on main thread, isolation is net loss)
+- `.claude/skills/README.md` gained: dispatch 3-question test, full Subagent Roster table, retired list with rationale
+- Files moved to `.trash/2026-04-26-gap3/`
 
-**Problem**: best practices says subagents are for *research* (heavy intermediate output, only conclusion matters), not parallel *execution*. Our 13 project subagents (engineer, operator, verifier, sentinel, inspector, analyst, architect, reviewer, Plan, Explore, general-purpose, codex:codex-rescue, prompt-maker:prompt-linter) include several execution-oriented ones.
+## Phase B closed
 
-**Action**:
-- Read each `.claude/agents/*.md` (and `~/.claude/agents/` if present)
-- Classify research vs execution
-- For execution-type subagents that just shadow main-thread work, either delete or document the specific case where context isolation pays off
-- Update `.claude/skills/README.md` "When to create a skill vs other primitives" table with concrete examples
-
-**Estimated**: 1 session.
-
-## Suggested order
-
-1. ~~Gap 2~~ ✅ landed at `6a2c6ee`
-2. ~~Gap 1~~ ✅ landed in this session
-3. Gap 3 last (requires reading all agent definitions)
-
-## Opening prompt for next session
-
-```
-Read SOUL/public/prompts/session_handoff_workflow_best_practices.md, then start Gap 3.
-```
+No further gaps from the source documents are tracked. Future workflow improvements should open a fresh handoff.
