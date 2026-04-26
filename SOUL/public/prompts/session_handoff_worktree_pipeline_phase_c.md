@@ -559,13 +559,233 @@ Phase D merged commits (this round, alphabetical):
 - Global file delta (outside repo): `C:/Users/test/.claude/CLAUDE.md` orchestrator marker block continues to be re-upserted by plc Phase 2 hook every session-start. Idempotent; no drift.
 - Worktrees touched this session: all 3 clean (`millhouse`, `prompt-language-coach`, `generic-agent`). Untouched worktrees (`flux-enchanted`, `memto`) retain their session-5 state (memto still has `M SOUL/tools/indexer.py` WIP).
 
-<!-- Next session options (owner picks):
-     A. Phase D/E/F/G burst — push the 2 already-merged topics now to land them on origin, then Phase F cleanup + Phase G receipt for those 2. The 5 in-flight topics defer to a follow-up round.
-     B. Keep draining Phase C — finishers for any subset:
-        - `prompt-language-coach` Phase 5+6 (4 steps total, smallest remaining; very likely MERGE-ready after)
-        - `millhouse` Phase E (Ensemble Reviewer; multi-step, may need split)
-        - `generic-agent` Phase 6 (6 steps; right at the ceiling; doable in one finisher)
-        - `flux-enchanted` Phase 4+5 (REQUIRES plan-path patch first to remove `/d/...` absolute paths from steps 15-18, 19-21, 22, 24)
-        - `memto` P1a (REQUIRES `indexer.py` `CLAUDE_PROJECTS_ROOT` ordering bug-fix detour first)
-     C. Mixed: push the 2 ready merges (option A's first half), then continue Phase C drains (option B subset) in parallel rounds.
+<!-- Session 6 footer (resolved by session 7 → Option A picked) -->
+
+### 2026-04-26 session 7 — Phase E/F/G closure for the 2 merged topics (Option A)
+
+**Owner directive**: Per session-6 footer, parent picked Option A — push the 2 already-merged topics + Phase F cleanup + Phase G receipt. 5 in-flight topics defer to a follow-up round. Owner's "pick A/B/C and execute" message authorized push.
+
+**Pre-flight state**:
+- main: clean tracked, untracked = baseline + session-handoff carry-overs.
+- `origin/main..main`: 0 commits. `main..origin/main`: 56 commits unpushed (9 merges + 47 misc docs/plans/refactors from prior sessions and rounds; merges include the 2 from this round + 7 from the prior rescue-steal round that never got pushed).
+
+#### Phase E — push (executed)
+- `git push origin main` → `97c5ec8..8697c18  main -> main`. 56 commits landed on origin.
+- Post-push fetch: `origin/main..main` empty, `main..origin/main` empty (0/0). Synced.
+
+#### Phase F — worktree + branch cleanup (ready list = andrej-karpathy-skills + loki-skills-cli)
+
+| Step | Result |
+|---|---|
+| F1 archive-tag check (READY topics) | Both KEPT (`archive/steal-andrej-karpathy-skills-20260419` + `archive/steal-loki-skills-cli-20260419`) |
+| F2 Step 1 `git worktree remove` (×2) | Both `WT OK` |
+| F2 Step 2 `git branch -D` (×2) | `Deleted branch steal/andrej-karpathy-skills (was 4b0e9b9)`; `Deleted branch steal/loki-skills-cli (was e19dc9a)` |
+| F2 Step 3 GONE check | Both `head=GONE wt=GONE archive=KEPT` |
+
+#### Phase G — terminal-state snapshot
+
+```
+Phase D merged commits (this round, alphabetical):
+| Commit   | Topic                        | Batch | Archive tag                                        |
+|----------|------------------------------|-------|----------------------------------------------------|
+| 93d3840  | merge: steal/andrej-karpathy-skills | B    | archive/steal-andrej-karpathy-skills-20260419      |
+| 0c9129b  | merge: steal/loki-skills-cli        | B    | archive/steal-loki-skills-cli-20260419             |
+
+Phase E pushed: origin/main (56 commits = 2 this-round merges + 7 prior-round merges + 47 misc)
+Phase F removed: 2 worktree + 2 branch
+Phase F preserved: 9 archive/steal-*-20260419 tag (7 prior-round + 2 this round) + 7 prior-round steal/*-old branches
+SKIP list (this round, deferred to next round):
+  - eureka                  (Batch A, smoke PASS in session 1, NEVER MERGED — see ⚠ below)
+  - tlotp-monorepo          (Batch A, smoke PASS in session 1, NEVER MERGED — see ⚠ below)
+  - x1xhlol-system-prompts  (Batch A, smoke PASS in session 1, NEVER MERGED — see ⚠ below)
+  - flux-enchanted          (Batch B, Phase 1+2+3 done; Phase 4+5 + plan-path patch + Step-10 owner gate pending)
+  - generic-agent           (Batch B, Phase 1-5 done; Phase 6+7+8 pending; Phase 8 owner-review gate)
+  - memto                   (Batch B, Phase 1 done; Phase 2 P1a WIP blocked on pre-existing indexer.py bug)
+  - millhouse               (Batch B, Phase A+B+C+D done; Phase E+F+G pending)
+  - prompt-language-coach   (Batch B, Phase 1+2+3+4 done; Phase 5+6 pending — smallest remaining scope)
+  - r38-sandbox-retro       (Batch A→B downgrade, owner SKIP this round; governance code — not subagent-eligible)
+```
+
+#### ⚠ Discrepancy flagged for next round
+
+**Batch A's 3 topics (eureka / tlotp-monorepo / x1xhlol-system-prompts) were classified MERGE-ready in session 1 (smoke evidence in this handoff lines 27-30) but never actually merged.** Sessions 2-6 all focused on Batch B Phase C drain; session 4's Phase D only ran for andrej + loki. So Batch A's 3 worktrees still sit on disk with their `steal/<topic>` branches, no `archive/steal-<topic>-20260419` tag, no merge commit. They are entirely independent of the 2 topics this session pushed/cleaned.
+
+**For the next round**: re-validate the smoke evidence (it's a week stale — repo evolved between session 1 and now), then run their Phase D merges (D2 / D10 / D11 in master plan letter ordering). Probability of conflict is low (no overlap with andrej/loki content noted in session-1 file map), but a fresh `merge-tree` pairwise dry-run is prudent.
+
+#### Main tree hygiene at session-7 end
+
+- Branch: `main`. Tracked dirty: empty. `main` and `origin/main` synced.
+- Untracked baseline unchanged + same session-handoff/plan/`.trash/` carry-overs from prior sessions:
+  - `.claude/bin/`, `.claude/skills/claude-at/`, `plans/`
+  - `SOUL/public/prompts/session_handoff_*` (memto / rescue-compare / steal-pilot-dispatch)
+  - `docs/superpowers/plans/2026-04-19-*` (rescue-steal-main-landing + worktree-pipeline-closure + this handoff)
+  - `.trash/2026-04-19-flux-enchanted-tree-mismatch/` (session-2 cross-tree pollution awaiting owner disposition)
+- Worktrees on disk: 9 steal-* (8 in-flight/SKIP + r38) + r83-trust-tagging + wgh-refactor + 4 locked agent-* (out of scope) + main.
+- Global file delta (outside repo): `~/.claude/CLAUDE.md` `orchestrator:ambient` marker block continues to be re-upserted by plc Phase 2 hook on session-start. Idempotent.
+
+#### Round-1 closure summary
+
+This handoff has been the canonical log for Phase A→G across 7 sessions. Round 1 lands here:
+
+- **Merged + pushed + cleaned (2 topics)**: andrej-karpathy-skills, loki-skills-cli.
+- **Deferred to round 2 (8 topics)**: eureka, tlotp-monorepo, x1xhlol-system-prompts (Batch A oversight) + flux-enchanted, generic-agent, memto, millhouse, prompt-language-coach (Batch B in-flight) + r38-sandbox-retro (governance, owner-decided defer).
+- **Out of scope (preserved as-is)**: r83-trust-tagging, wgh-refactor, 4 locked agent worktrees, 7 prior-round `steal/*-old` archive branches.
+
+#### Next session — directive (no choice; execute as written)
+
+**Goal**: Close out Batch A's 3 stalled topics (eureka / tlotp-monorepo / x1xhlol-system-prompts) — they passed smoke in session 1 but never got merged. Mechanical Phase D→E→F→G run, no subagent dispatch.
+
+**Constraints**:
+- Do NOT touch the 5 in-flight Batch B topics (flux-enchanted / generic-agent / memto / millhouse / prompt-language-coach) — those are a separate round.
+- Do NOT touch r38-sandbox-retro (governance code, owner-decided defer).
+- Push is authorized in advance for this round (Batch A merges + any incidental commits on main).
+
+**Execution order**:
+
+1. **Pre-flight (Phase A re-smoke, sanity-only)** —
+   - For each of `eureka` / `tlotp-monorepo` / `x1xhlol-system-prompts`:
+     - `git -C .claude/worktrees/steal-<topic> status --porcelain` → expect empty
+     - `git -C .claude/worktrees/steal-<topic> log --oneline main..HEAD | head -10` → expect ≥4 commits ending in `docs(plan): ... completion log`
+     - Re-verify the smoke evidence from session 1 (lines 27-30 of this handoff): file presence + commit subjects.
+   - Pairwise file-overlap check between the 3 topics (using the `comm -12` recipe from session 4 D0 lessons): list shared files between every pair to predict conflicts.
+
+2. **Phase D — merge in alphabetical order** (eureka → tlotp-monorepo → x1xhlol-system-prompts):
+   - `git merge --no-ff steal/<topic> -m "merge: steal/<topic> — <subject>"` using the verbatim subjects from this handoff lines 23-25.
+   - Immediately after each successful merge: `git tag archive/steal-<topic>-20260419 steal/<topic>`.
+   - On conflict: resolve manually (refer to session 4 D5 conflict-resolve recipe for `rationalization-immunity.md`-style append conflicts), then `git commit --no-edit`.
+   - After all 3 merges: D12 cross-topic integration check (compiler.py + CLAUDE.md line/heading delta + bash -n hooks + docker compose config --quiet).
+
+3. **Phase E — push** (pre-authorized for this round):
+   - `git log --oneline origin/main..main` to confirm only the 3 new merges + any incidental docs commits.
+   - `git push origin main`.
+   - `git fetch origin main && git log --oneline origin/main..main` should be empty.
+
+4. **Phase F — cleanup the 3 merged topics**:
+   - For each topic: archive-tag presence check → `git worktree remove` → `git branch -D` → GONE check (use the 4-line printf table from session 7).
+
+5. **Phase G — receipt + handoff append**:
+   - Snapshot: `git worktree list`, `git tag -l 'archive/steal-*-20260419' | sort`, `git branch --list 'steal/*-old' | sort`, `git log --oneline origin/main..main`.
+   - Generate the merge-commit table for these 3 topics (Batch A column).
+   - Append session 8 entry to this handoff documenting the run; update the round-2 directive at file end to point at the next chunk of work (see "Round 2 next directive" below — write it in absolute terms, no menu).
+
+**Round 2 next directive (after Batch A closeout, for whoever reads next)**: After Batch A is closed, the remaining 5 in-flight Batch B topics need finishers. Next-next session should target `prompt-language-coach` Phase 5+6 first (smallest scope, 4 steps, very likely MERGE-ready after one finisher dispatch). Write a fresh handoff after Batch A closeout that names that topic + scope + dispatch prompt explicitly — same "no menu" discipline.
  -->
+
+### 2026-04-26 session 8 — Batch A closeout (Phase D/E/F/G in one shot)
+
+**Owner directive**: Per session-7 footer (lines 634-671), execute the mechanical D→E→F→G run for the 3 stalled Batch A topics (`eureka` / `tlotp-monorepo` / `x1xhlol-system-prompts`) in alphabetical order. Push pre-authorized for this round. No subagent dispatch.
+
+#### Phase A re-smoke (sanity)
+
+| Topic | dirty | ahead | last commit | smoke files |
+|---|---|---|---|---|
+| eureka | 0 | 7 | `cca6f3f docs(plan): eureka — completion log` | ✓ schema + override-log + plan_template |
+| tlotp-monorepo | 0 | 8 | `5451475 docs(plan): tlotp-monorepo — completion log` | ✓ 5 sections + 5 imports + prompt-lint.yml |
+| x1xhlol-system-prompts | 0 | 8 | `2aa4b19 docs(plan): x1xhlol-system-prompts — completion log` | ✓ voice + plan_template + skill_routing |
+
+**Pairwise file overlap (real, merge-base..HEAD)**: eureka 8 / tlotp 13 / x1xhlol 7 files. Real intersections:
+- eureka ∩ tlotp = `.claude/skills/steal/SKILL.md`
+- eureka ∩ x1xhlol = `.claude/skills/steal/SKILL.md` + `CLAUDE.md` + `SOUL/public/prompts/plan_template.md`
+- tlotp ∩ x1xhlol = `.claude/skills/steal/SKILL.md`
+
+All 3 touched `.claude/skills/steal/SKILL.md` → predicted as the structural collision point (and was — see D2/D3 below).
+
+#### Phase D — merge in alphabetical order
+
+##### D1 — merge steal/eureka (one conflict, resolved manually)
+
+- `git merge --no-ff steal/eureka -m "merge: steal/eureka — eureka — completion log"` → CONFLICT in `.claude/skills/steal/SKILL.md` (Pre-flight section: HEAD has rich Worktree gate; eureka added old "Branch gate" + new "Load schema" step). Auto-merged clean: `CLAUDE.md`, `SOUL/public/prompts/plan_template.md`.
+- **Resolution**: kept eureka's "Load schema" as new step 1 (the new content), kept HEAD's full Worktree gate as step 2 (the rich version), discarded eureka's stale "Branch gate" wording. Renumbered cleanly. Surgical Edit op replaced the conflict block.
+- 0 conflict markers post-resolve. `git commit --no-edit` → **`f9b0aa2`**.
+- Tag: `archive/steal-eureka-20260419` → HEAD of steal/eureka (`cca6f3f`).
+
+##### D2 — merge steal/tlotp-monorepo (structural rewire — full SKILL.md replaced)
+
+- `git merge --no-ff steal/tlotp-monorepo -m "merge: steal/tlotp-monorepo — tlotp-monorepo — completion log"` → CONFLICT in `.claude/skills/steal/SKILL.md` (HEAD = post-eureka 388-line monolith; tlotp = 22-line @import shell pointing at `.claude/skills/steal/sections/0[1-5]-*.md`). Auto-merged clean: `SOUL/public/prompts/clarification.md`.
+- **Resolution**: tlotp's whole feature was the modularization. Kept tlotp's @import shell (the refactor's point) BUT regenerated the 5 section files from HEAD's post-eureka body content (so eureka's "Load schema" step survives in `01-preflight.md`, and any other prior-round drift in HEAD body also survives).
+  - Section boundaries match exactly: HEAD body ## Pre-flight (lines 18-83) → 01, ## Phase 1 (84-134) → 02, ## Phase 2 (135-221) → 03, ## Phase 3 (222-330) → 04, ## Phase 4 + Common Rationalizations + Rules (331-388) → 05. Total 371 lines split.
+  - Recipe: `git show HEAD:.claude/skills/steal/SKILL.md` → split via `sed -n 'N,Mp'` → overwrite the AM-staged tlotp section files → write 22-line @import SKILL.md → `git add` all 6 files (SKILL.md + 5 sections).
+- `git commit --no-edit` → **`dfe78fb`**.
+- Tag: `archive/steal-tlotp-monorepo-20260419` → HEAD of steal/tlotp-monorepo (`5451475`).
+
+##### D3 — merge steal/x1xhlol-system-prompts (Mini-Prompt block reroute + plan_template append)
+
+- `git merge --no-ff steal/x1xhlol-system-prompts -m "merge: steal/x1xhlol-system-prompts — x1xhlol-system-prompts — completion log"` → 2 conflicts:
+  - `.claude/skills/steal/SKILL.md`: HEAD = @import shell, x1xhlol = 388-line monolith with new Phase-5 "Mini-Prompt: Target Type Classifier (Haiku-compatible)" subsection inserted between target-type table and `### Adaptive Execution by Target Type`.
+  - `SOUL/public/prompts/plan_template.md`: HEAD trailing line + x1xhlol's 46-line `## Phase Gate Contract Document` append. Both pure appends.
+  - Auto-merged clean: `CLAUDE.md`, `SOUL/public/prompts/skill_routing.md`, `SOUL/examples/orchestrator-butler/voice.md`.
+- **Resolution**:
+  - SKILL.md: `git checkout --ours` (keep tlotp's @import shell). Patched the new x1xhlol Mini-Prompt block (22 lines from x1xhlol commit `06da4e7`) into `.claude/skills/steal/sections/01-preflight.md` between target-type table and `### Adaptive Execution by Target Type`. This way the @import shell stays AND the Phase-5 content lands in the right modular file.
+  - plan_template.md: kept HEAD's trailing line, kept x1xhlol's `## Phase Gate Contract Document` append, dropped the conflict markers. Pure ordered concatenation.
+- `git add` all 3 + `git commit --no-edit` → **`37b8bce`**.
+- Tag: `archive/steal-x1xhlol-system-prompts-20260419` → HEAD of steal/x1xhlol-system-prompts (`2aa4b19`).
+
+#### D12 cross-topic integration check
+
+| Step | What | Expected | Actual | Status |
+|------|------|----------|--------|--------|
+| 1 | `origin/main..main` count | ≥ 3 new merges | 26 commits (3 merges + 23 prep commits from the 3 topics) | ✅ |
+| 2 | `python SOUL/tools/compiler.py` | boot.md compile success | `[compiler] 已编译 boot.md (5380 chars, ~1345 tokens)` + 4 context packs | ✅ |
+| 4 | CLAUDE.md line/heading | sane | 172 L / 16 H (eureka +13 + x1xhlol +13 lines vs `1d95ed6` slim baseline) | ✅ |
+| 5 | `bash -n` on all `.claude/hooks/*.sh` | no SYNTAX ERROR | clean | ✅ |
+| 7 | `docker compose config --quiet` | silent | silent | ✅ |
+
+Step 3 (md-lint) skipped — same Python 3.14 + Windows pathlib tool-env bug from session 4 D12.3, unrelated to merges.
+
+#### Phase E — push (executed)
+
+- `git push origin main` → `8697c18..37b8bce  main -> main`. 26 commits landed.
+- Post-push fetch: `origin/main..main` empty. Synced.
+
+#### Phase F — worktree + branch cleanup (3 topics)
+
+| Step | Result |
+|---|---|
+| F1 archive-tag check (×3) | All 3 KEPT |
+| F2 `git worktree remove` (×3) | Silent OK on all 3 |
+| F2 `git branch -D` (×3) | `Deleted branch steal/eureka (was cca6f3f)`; `Deleted branch steal/tlotp-monorepo (was 5451475)`; `Deleted branch steal/x1xhlol-system-prompts (was 2aa4b19)` |
+| F2 GONE check | All 3 `worktree=GONE branch=GONE tag=PRESENT` |
+
+#### Phase G — terminal-state snapshot
+
+```
+Phase D merged commits (this round, alphabetical):
+| Commit   | Topic                        | Batch | Archive tag                                        |
+|----------|------------------------------|-------|----------------------------------------------------|
+| f9b0aa2  | merge: steal/eureka                   | A | archive/steal-eureka-20260419                       |
+| dfe78fb  | merge: steal/tlotp-monorepo           | A | archive/steal-tlotp-monorepo-20260419               |
+| 37b8bce  | merge: steal/x1xhlol-system-prompts   | A | archive/steal-x1xhlol-system-prompts-20260419       |
+
+Phase E pushed: origin/main (26 commits = 3 this-round merges + 23 prep commits from the 3 topics)
+Phase F removed: 3 worktree + 3 branch
+Phase F preserved: 12 archive/steal-*-20260419 tags (9 prior + 3 this round) + 7 prior-round steal/*-old branches
+Round 1 final: All 3 Batch A topics now CLOSED. The 5 in-flight Batch B topics + r38 SKIP carry into round 2.
+```
+
+#### Lessons from session 8
+
+- **Real overlap matters, not raw `comm -12`**. The session-1 directive said "use `comm -12` recipe from session 4 D0". On `git diff main..HEAD` lists, that recipe yields 90+ "shared" files per pair — pure noise from main moving forward. Switch to `git diff $(merge-base main steal/<topic>)..steal/<topic>` and `comm -12` collapses to 1-3 actual files. **Use merge-base diff, not main diff, for overlap prediction.**
+- **Structural rewire conflicts (whole-file replaced) are tractable when the rewire is to-imports.** D2's "tlotp moves body to 5 sections" looked nasty (388-line conflict) but resolved cleanly: split HEAD's post-eureka body using tlotp's section boundaries, write to the AM-staged section files, accept tlotp's @import shell. The trick is realizing the section files in tlotp's branch are stale snapshots — rewrite them from HEAD body, don't merge them.
+- **Phase-5-style additions in monolithic files survive modularization with one Edit.** D3's x1xhlol "Mini-Prompt block" addition was originally inserted into the monolith Pre-flight section. Once tlotp moved Pre-flight → `01-preflight.md`, x1xhlol's addition just needed to land there instead. Single `Edit` insertion at the same anchor (target-type table → `### Adaptive Execution by Target Type`).
+- **CRLF warnings are noise on Windows.** Every git command emits `LF will be replaced by CRLF the next time Git touches it` warnings. Don't chase them — they're a configured-encoding artifact, not a content issue.
+
+#### Main tree hygiene at session-8 end
+
+- Branch: `main`. Tracked dirty: only `M SOUL/public/prompts/session_handoff_worktree_pipeline_phase_c.md` (this very file, in-progress edit). `main` and `origin/main` synced.
+- Untracked baseline unchanged + same session-handoff/plan/`.trash/` carry-overs. New `.trash/2026-04-26-batch-a-closeout/_tmp_overlap/` added (scratch from D0 overlap analysis + D2 section split — owner can prune).
+- Worktrees on disk: 6 (main + 5 in-flight Batch B + r38 SKIP) + r83-trust-tagging + wgh-refactor + 4 locked agent-* (out of scope). **Down from 9 steal-* to 6 steal-* this session** (eureka / tlotp-monorepo / x1xhlol-system-prompts gone).
+
+#### Round-2 status — Batch B in-flight finishers
+
+5 topics remain in-flight from Batch B (all on `steal/*` branches in `.claude/worktrees/steal-*`, all per session-6 SKIP-partial classifications):
+
+| Topic | Phases done | Phases pending | Plan-defect blockers |
+|---|---|---|---|
+| `prompt-language-coach` | 1+2+3+4 | **5+6 (4 steps total)** | none — smallest remaining scope |
+| `flux-enchanted` | 1+2+3 | 4+5 + plan-path patch + Step-10 owner gate | medium |
+| `millhouse` | A+B+C+D | E+F+G | medium (Phase E Ensemble Reviewer scope) |
+| `generic-agent` | 1+2+3+4+5 | 6+7+8 (Phase 8 owner-review gate) | high (owner gate) |
+| `memto` | 1 | 2 P1a WIP blocked on indexer.py bug + 3 onward | blocked on pre-existing bug |
+
+**Next session — directive**: Read `SOUL/public/prompts/session_handoff_plc_phase56.md` (fresh handoff for the smallest in-flight topic), then dispatch a single finisher subagent for `prompt-language-coach` Phase 5+6. No menu, no choice — that file is absolute. r38-sandbox-retro stays SKIP (governance code, owner-decided).
+
