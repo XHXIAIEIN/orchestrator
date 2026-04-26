@@ -15,6 +15,11 @@ Core mindset (from 39 rounds of practice):
 - Output = "what can we learn, how to improve ourselves" — not "should we adopt it"
 - Even if we have similar features, diff the implementations — theirs may handle edge cases we miss
 
+<!-- triviality-filter:start -->
+> **Triviality Filter** — If input is ≤ 3 words with no question/code/task, respond directly. Skip full protocol.
+> Full spec: `SOUL/public/prompts/triviality_filter.md`
+<!-- triviality-filter:end -->
+
 @skills/steal/sections/01-preflight.md
 @skills/steal/sections/02-deep-dive.md
 @skills/steal/sections/03-extraction.md

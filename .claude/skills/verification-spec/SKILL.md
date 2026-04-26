@@ -7,6 +7,11 @@ source_version: "2026-04-26"
 
 # Verification Spec — Pre-Task Gate
 
+<!-- triviality-filter:start -->
+> **Triviality Filter** — If input is ≤ 3 words with no question/code/task, respond directly. Skip full protocol.
+> Full spec: `SOUL/public/prompts/triviality_filter.md`
+<!-- triviality-filter:end -->
+
 ```
 IRON LAW: NO IMPLEMENTATION WITHOUT A VERIFIABLE SUCCESS CRITERION. Vague goals produce unverifiable work.
 ```
