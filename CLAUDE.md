@@ -22,15 +22,10 @@ When these conflict, higher rank wins. Frequent permission-seeking is not respec
 <critical>
 
 ### Git Safety
-- **Stage first, push later**: `commit` and `push` are two separate steps. Don't auto-push.
-- Prefer working on a local branch rather than committing directly to main/master.
-- **Steal work requires `[STEAL]` tag + dedicated branch**: When dispatching agents for steal/偷师 tasks, the agent prompt MUST include `[STEAL]` at the start. The dispatch-gate hook will block `[STEAL]` work unless the current branch matches `steal/*` or `round/*`. Create a branch first: `git checkout -b steal/<topic>`.
-- **Rollback is a no-go zone**: When stuck on a bug, diagnose with `git diff` and targeted fixes — these preserve all uncommitted work. Rollback commands (`git reset --hard`, `git checkout -- .`, `git restore .`, `git clean -f`) are only allowed when the owner explicitly says "roll back" or "reset". If a rollback is requested, backup first (`git stash` or `git diff > backup.patch`), report backup location, then execute.
+@SOUL/public/conduct/git-safety.md
 
 ### Deletion = Move to .trash/, Not Delete
-- Files being deleted/replaced/cleaned up → `mv` to `.trash/` (organized by date or task)
-- After completing the full task, report what's in `.trash/`. Owner decides what stays and what goes.
-- **Exception**: Build artifacts (`node_modules/`, `__pycache__/`, `.pyc`) and clearly temporary files can be deleted directly.
+@SOUL/public/conduct/deletion.md
 
 ### Gate Functions — Mandatory Pre-Checks
 
@@ -114,24 +109,13 @@ For multi-step tasks, state a brief plan with verification:
 ```
 
 ### Context Management
-- **Rewind over Correction**: When Claude goes off-track after reading files or producing bad output, hit Esc Esc (`/rewind`) back to the branch point and re-prompt with what you learned — don't send "that's wrong, try X". Failed attempts' tool output keeps polluting context and distracting attention.
-- **Proactive Compact**: Don't wait for autocompact. Trigger `/compact` yourself with direction (e.g. `/compact focus on auth refactor, drop test debugging`). Autocompact fires at context rot peak — the model is at its least intelligent moment when deciding what to keep, so guide it explicitly.
-- **Subagent heuristic**: Before delegating, ask "will I need this tool output again, or just the conclusion?" Just the conclusion → subagent. Heavy intermediate output that would pollute the parent's context is the primary trigger, not task complexity alone. Context rot starts ~300-400k tokens on the 1M model — "still has space" ≠ "still sharp"; new task = new session.
+@SOUL/public/conduct/context.md
 
 ### Planning Discipline
-- All multi-step plans MUST follow `SOUL/public/prompts/plan_template.md` format.
-- **File Map first**: List every file that will be touched before writing any step.
-- **Atomic steps**: Each step is 2-5 minutes, starts with an action verb, has an explicit verify command.
-- **No Placeholder Iron Rule**: Never write vague steps. Banned: "implement the logic", "add appropriate error handling", "update as needed", "etc.", "similar to X", bare "refactor"/"clean up"/"optimize". Every step must specify exact targets, exact changes, exact verification.
-- **Explicit dependencies**: If step N depends on step M, write `depends on: step M`. Implicit ordering is not allowed.
-- **Delete Before Rebuild**: For files >300 LOC undergoing structural refactor, first remove dead code (unused exports/imports/props/debug logs) and commit separately. Then start the real work with a clean token budget.
+@SOUL/public/conduct/planning-discipline.md
 
 ### Surgical Changes
-- Every changed line must trace directly to the user's request. If it doesn't, revert it.
-- Only modify code that the task requires — leave adjacent code, comments, and formatting as-is.
-- Match existing style, even if you'd do it differently.
-- Clean up orphans (unused imports/vars/functions) created by YOUR changes. Leave pre-existing dead code alone unless asked.
-- **Edit Integrity**: Before every edit, re-read the file. After editing, read it again to confirm the change applied. The Edit tool fails silently when old_string doesn't match stale context. Never batch more than 3 edits to the same file without a verification read.
+@SOUL/public/conduct/surgical-changes.md
 
 ### UI/Frontend
 - Match existing page style exactly. No extra borders, shadows, or decorative elements unless asked
@@ -149,11 +133,7 @@ For multi-step tasks, state a brief plan with verification:
 - detection.py/visualize.py are thin re-exports from cvui package
 
 ### Verification Gate
-- Before declaring any task complete, pass the five-step evidence chain: **Identify** → **Execute** → **Read** → **Confirm** → **Declare**
-- Every completion claim must reference actual command output, not assumptions
-- Banned phrases in completion declarations: "should pass", "should work", "probably fine", "I believe this is correct", "Based on the changes, this should..."
-- If verification is impossible, say so explicitly and list what the owner should verify manually — do NOT claim completion
-- Full protocol: `.claude/skills/verification-gate/SKILL.md`
+@SOUL/public/conduct/verification.md
 
 ### Memory Evidence Grading *(R42 — Evidence Tier System)*
 When writing memory files, add an `evidence` field to frontmatter indicating source reliability:
