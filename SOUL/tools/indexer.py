@@ -17,6 +17,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from scorer import Exchange, score_exchanges
 
 
+# Claude projects 根目录
+CLAUDE_PROJECTS_ROOT = Path.home() / '.claude' / 'projects'
+
+# 输出路径
+SOUL_DIR = Path(__file__).parent.parent
+CALIBRATION_PATH = SOUL_DIR / 'private' / 'calibration.jsonl'
+
+
 # Orchestrator project dir names (auto-discovered)
 def _find_orchestrator_project_dirs() -> list[str]:
     """Find Claude project dirs that contain orchestrator conversations."""
@@ -27,13 +35,6 @@ def _find_orchestrator_project_dirs() -> list[str]:
             if d.is_dir() and 'orchestrator' in d.name.lower()]
 
 ORCHESTRATOR_PROJECT_DIRS = _find_orchestrator_project_dirs()
-
-# Claude projects 根目录
-CLAUDE_PROJECTS_ROOT = Path.home() / '.claude' / 'projects'
-
-# 输出路径
-SOUL_DIR = Path(__file__).parent.parent
-CALIBRATION_PATH = SOUL_DIR / 'private' / 'calibration.jsonl'
 
 
 def find_session_files(
@@ -99,11 +100,14 @@ def parse_session(filepath: Path) -> list[Exchange]:
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
             messages = []
             for line in f:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
                     obj = json.loads(line)
                     if obj.get('type') in ('user', 'assistant'):
                         messages.append(obj)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
                     continue
     except (OSError, IOError):
         return []
@@ -144,6 +148,15 @@ def parse_session(filepath: Path) -> list[Exchange]:
         if '<task-notification>' in u_text:
             continue
         if u_text.strip().startswith('<') and u_text.strip().endswith('>'):
+            continue
+        # memto R78: 扩展 chrome 过滤（原 memto isSystemPrompt 5 条规则）
+        if '<environment_context>' in u_text:
+            continue
+        if 'Sender (untrusted metadata)' in u_text:
+            continue
+        if '<command-message>' in u_text:
+            continue
+        if '# AGENTS.md instructions' in u_text:
             continue
 
         exchanges.append(Exchange(
