@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "workflow_id": "verification-gate",
+  "workflow_id": "verification-check",
   "category": "review",
   "entry_intents": [
     "verify task completion",

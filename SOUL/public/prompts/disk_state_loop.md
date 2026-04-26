@@ -1,3 +1,4 @@
+<!-- TL;DR: Manage disk state changes in a read-modify-write loop with rollback. -->
 # Disk State Loop Pattern
 
 Pattern for long-running iterative tasks that exceed context window limits. Each iteration is stateless — all state lives on disk.

@@ -1,3 +1,4 @@
+<!-- TL;DR: Eval-driven iteration: score → fix worst issue → re-eval → repeat. -->
 # Evaluator-Fix Loop Protocol
 
 Source: yoyo-evolve self-evolving-agent (Round 28 steal)

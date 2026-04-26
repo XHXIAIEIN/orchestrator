@@ -1,3 +1,4 @@
+<!-- TL;DR: Identify compounding feedback loops; amplify positives, dampen negatives. -->
 # Growth Loops
 
 > **Who consults this**: The chat agent (chat.md) and any session-level agent. **When**: At session start, to activate passive observation loops alongside primary task execution.

@@ -1,3 +1,4 @@
+<!-- TL;DR: Route to correct methodology (debug/plan/audit/ship) by task type. -->
 # Methodology Router
 
 > **Who consults this**: The Governor, when selecting a thinking framework for task dispatch.

@@ -41,12 +41,27 @@ For multi-step tasks, state a brief plan with verification:
 2. [Step] → verify: [check]
 ```
 
+### Think Triggers
+
+At these 8 checkpoints, **stop and explicitly reason** before proceeding (use extended thinking if available; otherwise write out a brief reasoning block in your response):
+
+1. **Before any git branch/checkout decision** — confirm which branch should receive the change and why
+2. **Before deleting or replacing a file >50 LOC** — verify no live references exist
+3. **Before crossing a module boundary** (touching code in a package you did not enter this task to modify) — confirm scope is still correct
+4. **Before switching from exploration to first write** — state the plan in one sentence; if you can't, keep exploring
+5. **Before declaring any multi-step task complete** — enumerate each acceptance criterion and its evidence
+6. **After 3 consecutive failed attempts at the same fix** — stop, write down what you've tried and why each failed, then pick a different approach
+7. **When resuming a task after a session break** — re-read the last 3 tool outputs and state the current hypothesis before taking action
+8. **When a command returns unexpected output** (not the error/success you predicted) — pause, re-read the command and output, then diagnose before retrying
+
 ### Context Management
+- **`/clear` between unrelated tasks**: Highest-ROI habit. When the next request has nothing to do with the previous one, clear context. Long sessions with stale tool output degrade reasoning more than people expect.
 - **Rewind over Correction**: When Claude goes off-track after reading files or producing bad output, hit Esc Esc (`/rewind`) back to the branch point and re-prompt with what you learned — don't send "that's wrong, try X". Failed attempts' tool output keeps polluting context and distracting attention.
 - **Proactive Compact**: Don't wait for autocompact. Trigger `/compact` yourself with direction (e.g. `/compact focus on auth refactor, drop test debugging`). Autocompact fires at context rot peak — the model is at its least intelligent moment when deciding what to keep, so guide it explicitly.
 - **Subagent heuristic**: Before delegating, ask "will I need this tool output again, or just the conclusion?" Just the conclusion → subagent. Heavy intermediate output that would pollute the parent's context is the primary trigger, not task complexity alone. Context rot starts ~300-400k tokens on the 1M model — "still has space" ≠ "still sharp"; new task = new session.
 
 ### Planning Discipline
+- **Plan Mode for >2 files**: For changes spanning >2 files or cross-module refactors, enter Plan Mode (Shift+Tab) before the first write. Produce the plan, exit Plan Mode, then execute.
 - All multi-step plans MUST follow `SOUL/public/prompts/plan_template.md` format.
 - **File Map first**: List every file that will be touched before writing any step.
 - **Atomic steps**: Each step is 2-5 minutes, starts with an action verb, has an explicit verify command.
@@ -66,7 +81,7 @@ For multi-step tasks, state a brief plan with verification:
 ### Git Safety
 - **Stage first, push later**: `commit` and `push` are two separate steps. Don't auto-push.
 - Prefer working on a local branch rather than committing directly to main/master.
-- **Steal work requires `[STEAL]` tag + dedicated branch**: When dispatching agents for steal/偷师 tasks, the agent prompt MUST include `[STEAL]` at the start. The dispatch-gate hook will block `[STEAL]` work unless the current branch matches `steal/*` or `round/*`. Create a branch first: `git checkout -b steal/<topic>`.
+- **Steal work requires `[STEAL]` tag + dedicated worktree**: When dispatching agents for steal/偷师 tasks, the agent prompt MUST include `[STEAL]` at the start. The dispatch-gate hook blocks `[STEAL]` work unless `git branch --show-current` returns a `steal/*` or `round/*` branch. **Create a worktree, not a branch in the main repo** — `git checkout -b steal/<topic>` on the main workspace is forbidden (it hijacks the caller's branch). Correct setup: `git worktree add .claude/worktrees/steal-<topic> -b steal/<topic> && cd .claude/worktrees/steal-<topic>`. For sub-agent dispatch, also pass `isolation: "worktree"` in the Agent tool call. Full rules: `.claude/skills/steal/constraints/worktree-isolation.md`.
 - **Rollback is a no-go zone**: When stuck on a bug, diagnose with `git diff` and targeted fixes — these preserve all uncommitted work. Rollback commands (`git reset --hard`, `git checkout -- .`, `git restore .`, `git clean -f`) are only allowed when the owner explicitly says "roll back" or "reset". If a rollback is requested, backup first (`git stash` or `git diff > backup.patch`), report backup location, then execute.
 
 ### Deletion = Move to .trash/, Not Delete
@@ -121,6 +136,18 @@ Before any dangerous operation, walk through the applicable gate. Do not skip st
 ```
 <!-- block-protect:end -->
 
+### Gate Override Paths *(R80 Eureka — verbatim-reason capture)*
+
+When an owner explicitly overrides a gate's "NO → STOP" check, the following paths apply. Each override must be captured in `SOUL/public/override-log.md`.
+
+**Override path — Gate: Delete / Replace File**: If owner explicitly overrides a "NO → STOP" gate check, require them to state a verbatim reason in the same message. Append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | delete-replace | override | "<verbatim reason>" | pending |`. Then proceed.
+
+**Override path — Gate: Git Reset / Restore / Checkout**: Owner-requested rollback already satisfies step 1 above — no additional verbatim-reason gate. However, if a rollback is performed outside an explicit "roll back" request (i.e., diagnosed as needed by the agent), this gate fires: require verbatim reason, append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | git-reset | override | "<verbatim reason>" | pending |`.
+
+**Override path — Gate: Modify Core Config**: If step 3 check fails ("change does not trace to user request") but owner explicitly approves anyway, require verbatim reason, append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | core-config | override | "<verbatim reason>" | pending |`.
+
+**Override path — Gate: Send External Message**: If owner explicitly overrides the "explicit request" requirement, require a verbatim send-authorization message. Append to `SOUL/public/override-log.md`: `| <ISO-timestamp> | external-message | override | "<verbatim reason>" | pending |`.
+
 ### Skill Routing
 
 When a task arrives, consult `SOUL/public/prompts/skill_routing.md` for the decision tree.
@@ -133,64 +160,13 @@ If your inner monologue matches any excuse in the left column, you are rationali
 
 </critical>
 
-### UI/Frontend
-- Match existing page style exactly. No extra borders, shadows, or decorative elements unless asked
-- Before modifying dashboard/ or any frontend file, Read neighboring components first
-- Minimal diff — don't redesign what already works
+### See also (load on demand)
 
-### File Organization
-- Check private/ vs public/ directories before writing files
-- Sensitive/private content goes to SOUL/private/ (gitignored). Public content goes to SOUL/public/ (tracked).
-
-### desktop_use — GUI Automation
-→ Full architecture: `docs/architecture/modules/desktop-use.md` (types, ABCs, detection stages, perception layers)
-- Use `/analyze-ui` skill for UI detection testing, don't hand-write mss/ctypes screenshot code
-- cvui Stages can be composed; don't rewrite existing logic
-- detection.py/visualize.py are thin re-exports from cvui package
-
-### Verification Gate
-- Before declaring any task complete, pass the five-step evidence chain: **Identify** → **Execute** → **Read** → **Confirm** → **Declare**
-- Every completion claim must reference actual command output, not assumptions
-- Banned phrases in completion declarations: "should pass", "should work", "probably fine", "I believe this is correct", "Based on the changes, this should..."
-- If verification is impossible, say so explicitly and list what the owner should verify manually — do NOT claim completion
-- Full protocol: `.claude/skills/verification-gate/SKILL.md`
-
-### Memory Evidence Grading *(R42 — Evidence Tier System)*
-When writing memory files, add an `evidence` field to frontmatter indicating source reliability:
-
-```yaml
----
-name: ...
-description: ...
-type: user | feedback | project | reference
-evidence: verbatim | artifact | impression
----
-```
-
-| Tier | Definition | Example |
-|------|-----------|---------|
-| `verbatim` | Direct quote or observed behavior | User said "不要补丁式修正，直接重写" |
-| `artifact` | Derived from public work product (code, commits, docs) | Commit history shows 3am pushes for 5 consecutive days |
-| `impression` | Inferred from context, not directly observed | User seems to prefer functional style |
-
-**Merge rule**: When two memories conflict, higher-tier evidence wins (`verbatim` > `artifact` > `impression`). Same-tier conflicts → preserve both with timestamps; owner resolves.
-
-**Default**: If `evidence` is omitted, treat as `impression` (lowest confidence).
-
-### Per-Skill Constraints (Layer 0) *(R42 — Hard Rules per Skill)*
-Each skill MAY have a `constraints/` directory containing non-negotiable rules for that skill. These override all other instructions when the skill is active.
-
-```
-.claude/skills/<skill-name>/
-├── SKILL.md            # Main skill definition
-└── constraints/        # Layer 0 hard rules (optional)
-    └── *.md            # Each file = one inviolable constraint
-```
-
-**Priority**: Skill constraints > SKILL.md instructions > general CLAUDE.md rules.
-**When to create**: When a skill has failure modes that prompt-level "don't do X" cannot prevent. Hard constraints belong here; soft preferences stay in SKILL.md.
-
-### Docker & Environment
-- Before Docker rebuilds, check if one is truly needed
-- Before GPU-heavy tasks, run `nvidia-smi` to check VRAM availability
-- Check `docker ps` to avoid port/resource conflicts
+| Topic | Lives in |
+|-------|----------|
+| UI / file org / Docker conventions | `SOUL/public/prompts/project-conventions.md` |
+| Verification — pre-task (Goal/Verify/Assume) | `.claude/skills/verification-spec/SKILL.md` |
+| Verification — post-task (5-step evidence chain) | `.claude/skills/verification-check/SKILL.md` |
+| Memory evidence tier system | `.claude/skills/memory-evidence/SKILL.md` |
+| Skill authoring & per-skill constraints | `.claude/skills/README.md` |
+| Plan template | `SOUL/public/prompts/plan_template.md` |

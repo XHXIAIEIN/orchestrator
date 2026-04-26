@@ -7,3 +7,6 @@
 {"event": "IMPORTED", "skill_id": "steal__imp_a0fd4083", "name": "steal", "timestamp": "2026-04-14T09:03:47Z", "generation": 0}
 {"event": "IMPORTED", "skill_id": "systematic-debugging__imp_1e9ad67e", "name": "systematic-debugging", "timestamp": "2026-04-14T09:03:47Z", "generation": 0}
 {"event": "IMPORTED", "skill_id": "verification-gate__imp_8c4e0610", "name": "verification-gate", "timestamp": "2026-04-14T09:03:47Z", "generation": 0}
+{"event": "RETIRED", "skill_id": "verification-gate__imp_8c4e0610", "name": "verification-gate", "timestamp": "2026-04-26T00:00:00Z", "reason": "split into verification-spec (pre) + verification-check (post)"}
+{"event": "IMPORTED", "skill_id": "verification-spec__imp_2026042601", "name": "verification-spec", "timestamp": "2026-04-26T00:00:00Z", "generation": 0}
+{"event": "IMPORTED", "skill_id": "verification-check__imp_2026042602", "name": "verification-check", "timestamp": "2026-04-26T00:00:00Z", "generation": 0}

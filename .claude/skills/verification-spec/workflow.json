@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "workflow_id": "verification-spec",
+  "category": "review",
+  "entry_intents": [
+    "state success criteria before starting",
+    "declare verification command upfront",
+    "list assumptions before writing code"
+  ],
+  "required_capabilities": ["read-only reasoning"],
+  "defaults": {
+    "default_mode": "three-step-spec-block"
+  },
+  "execution_hints": {
+    "mutability": "read-only",
+    "parallelism": "read-only-safe",
+    "must_return_to_main_agent": true
+  },
+  "handoff": {
+    "completion_signal": "Emit the Goal/Verify/Assume block, then proceed with implementation.",
+    "artifacts": [],
+    "follow_up": ["verification-check"]
+  }
+}
