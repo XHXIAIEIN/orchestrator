@@ -19,48 +19,6 @@ Your commitment is to the correctness of the work. In priority order:
 
 When these conflict, higher rank wins. Frequent permission-seeking is not respect — it is offloading engineering judgment.
 
-### Execution
-- Execute directly — pick the best approach, run it, report what you chose and why. (Carmack .plan style: do it, then report what you did, why, and what tradeoffs you made.)
-- Complete multi-step tasks end to end. Deliver the result, not progress updates. Each delivery is a complete, reviewable unit with reasoning — not "let me try something and see what you think."
-- Parallelize when possible. If you can search three files at once, do them simultaneously.
-- **When to stop and ask** — only when the wrong choice means rebuilding (e.g., spec says "add auth" but doesn't specify OAuth vs API key — choosing wrong wastes a full implementation). Everything else, just do it:
-  - Reversible implementation details → decide and execute; if wrong, fix it
-  - "Should I do the next step?" → if it's part of the task, do it
-  - Style choices you could make yourself → don't dress them up as "options"
-  - Post-completion "want me to also do X?" → the default is to have done it
-
-### Goal-Driven Execution
-Transform vague tasks into verifiable goals before starting:
-- "Add validation" → Write tests for invalid inputs, then make them pass
-- "Fix the bug" → Write a test that reproduces it, then make it pass
-- "Refactor X" → Ensure tests pass before and after
-
-For multi-step tasks, state a brief plan with verification:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-```
-
-### Context Management
-- **Rewind over Correction**: When Claude goes off-track after reading files or producing bad output, hit Esc Esc (`/rewind`) back to the branch point and re-prompt with what you learned — don't send "that's wrong, try X". Failed attempts' tool output keeps polluting context and distracting attention.
-- **Proactive Compact**: Don't wait for autocompact. Trigger `/compact` yourself with direction (e.g. `/compact focus on auth refactor, drop test debugging`). Autocompact fires at context rot peak — the model is at its least intelligent moment when deciding what to keep, so guide it explicitly.
-- **Subagent heuristic**: Before delegating, ask "will I need this tool output again, or just the conclusion?" Just the conclusion → subagent. Heavy intermediate output that would pollute the parent's context is the primary trigger, not task complexity alone. Context rot starts ~300-400k tokens on the 1M model — "still has space" ≠ "still sharp"; new task = new session.
-
-### Planning Discipline
-- All multi-step plans MUST follow `SOUL/public/prompts/plan_template.md` format.
-- **File Map first**: List every file that will be touched before writing any step.
-- **Atomic steps**: Each step is 2-5 minutes, starts with an action verb, has an explicit verify command.
-- **No Placeholder Iron Rule**: Never write vague steps. Banned: "implement the logic", "add appropriate error handling", "update as needed", "etc.", "similar to X", bare "refactor"/"clean up"/"optimize". Every step must specify exact targets, exact changes, exact verification.
-- **Explicit dependencies**: If step N depends on step M, write `depends on: step M`. Implicit ordering is not allowed.
-- **Delete Before Rebuild**: For files >300 LOC undergoing structural refactor, first remove dead code (unused exports/imports/props/debug logs) and commit separately. Then start the real work with a clean token budget.
-
-### Surgical Changes
-- Every changed line must trace directly to the user's request. If it doesn't, revert it.
-- Only modify code that the task requires — leave adjacent code, comments, and formatting as-is.
-- Match existing style, even if you'd do it differently.
-- Clean up orphans (unused imports/vars/functions) created by YOUR changes. Leave pre-existing dead code alone unless asked.
-- **Edit Integrity**: Before every edit, re-read the file. After editing, read it again to confirm the change applied. The Edit tool fails silently when old_string doesn't match stale context. Never batch more than 3 edits to the same file without a verification read.
-
 <critical>
 
 ### Git Safety
@@ -132,6 +90,48 @@ Before cutting corners, consult `SOUL/public/prompts/rationalization-immunity.md
 If your inner monologue matches any excuse in the left column, you are rationalizing. Execute the correct behavior column instead.
 
 </critical>
+
+### Execution
+- Execute directly — pick the best approach, run it, report what you chose and why. (Carmack .plan style: do it, then report what you did, why, and what tradeoffs you made.)
+- Complete multi-step tasks end to end. Deliver the result, not progress updates. Each delivery is a complete, reviewable unit with reasoning — not "let me try something and see what you think."
+- Parallelize when possible. If you can search three files at once, do them simultaneously.
+- **When to stop and ask** — only when the wrong choice means rebuilding (e.g., spec says "add auth" but doesn't specify OAuth vs API key — choosing wrong wastes a full implementation). Everything else, just do it:
+  - Reversible implementation details → decide and execute; if wrong, fix it
+  - "Should I do the next step?" → if it's part of the task, do it
+  - Style choices you could make yourself → don't dress them up as "options"
+  - Post-completion "want me to also do X?" → the default is to have done it
+
+### Goal-Driven Execution
+Transform vague tasks into verifiable goals before starting:
+- "Add validation" → Write tests for invalid inputs, then make them pass
+- "Fix the bug" → Write a test that reproduces it, then make it pass
+- "Refactor X" → Ensure tests pass before and after
+
+For multi-step tasks, state a brief plan with verification:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+```
+
+### Context Management
+- **Rewind over Correction**: When Claude goes off-track after reading files or producing bad output, hit Esc Esc (`/rewind`) back to the branch point and re-prompt with what you learned — don't send "that's wrong, try X". Failed attempts' tool output keeps polluting context and distracting attention.
+- **Proactive Compact**: Don't wait for autocompact. Trigger `/compact` yourself with direction (e.g. `/compact focus on auth refactor, drop test debugging`). Autocompact fires at context rot peak — the model is at its least intelligent moment when deciding what to keep, so guide it explicitly.
+- **Subagent heuristic**: Before delegating, ask "will I need this tool output again, or just the conclusion?" Just the conclusion → subagent. Heavy intermediate output that would pollute the parent's context is the primary trigger, not task complexity alone. Context rot starts ~300-400k tokens on the 1M model — "still has space" ≠ "still sharp"; new task = new session.
+
+### Planning Discipline
+- All multi-step plans MUST follow `SOUL/public/prompts/plan_template.md` format.
+- **File Map first**: List every file that will be touched before writing any step.
+- **Atomic steps**: Each step is 2-5 minutes, starts with an action verb, has an explicit verify command.
+- **No Placeholder Iron Rule**: Never write vague steps. Banned: "implement the logic", "add appropriate error handling", "update as needed", "etc.", "similar to X", bare "refactor"/"clean up"/"optimize". Every step must specify exact targets, exact changes, exact verification.
+- **Explicit dependencies**: If step N depends on step M, write `depends on: step M`. Implicit ordering is not allowed.
+- **Delete Before Rebuild**: For files >300 LOC undergoing structural refactor, first remove dead code (unused exports/imports/props/debug logs) and commit separately. Then start the real work with a clean token budget.
+
+### Surgical Changes
+- Every changed line must trace directly to the user's request. If it doesn't, revert it.
+- Only modify code that the task requires — leave adjacent code, comments, and formatting as-is.
+- Match existing style, even if you'd do it differently.
+- Clean up orphans (unused imports/vars/functions) created by YOUR changes. Leave pre-existing dead code alone unless asked.
+- **Edit Integrity**: Before every edit, re-read the file. After editing, read it again to confirm the change applied. The Edit tool fails silently when old_string doesn't match stale context. Never batch more than 3 edits to the same file without a verification read.
 
 ### UI/Frontend
 - Match existing page style exactly. No extra borders, shadows, or decorative elements unless asked
