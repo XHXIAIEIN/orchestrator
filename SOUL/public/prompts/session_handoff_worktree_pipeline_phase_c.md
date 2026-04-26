@@ -852,3 +852,61 @@ Verification spot-check from main session after agent return: all 3 SKILL files 
 | `memto` | 1 | 2 P1a WIP blocked on indexer.py bug + 3 onward | blocked on pre-existing bug |
 
 **Next session — directive**: drive `steal/millhouse` from Phase A+B+C+D done to MERGE-ready by completing Phase E+F+G. Write a fresh per-topic handoff (`SOUL/public/prompts/session_handoff_millhouse_phase_efg.md`) following the plc-handoff shape — verify state at start, list each step's action + verify command, note any plan-vs-reality drift since the topic's original plan was written. Use the same `round/<batch>` helper branch + `isolation: "worktree"` dispatch protocol. r38-sandbox-retro stays SKIP. Phase D merge of plc (or any topic) is a separate session per CLAUDE.md "Phase Separation: One Phase Per Session".
+
+### 2026-04-26 session 10 — millhouse Phase E+F+G finisher
+
+**Goal**: drive `steal/millhouse` from "Phase A+B+C+D done" to MERGE-ready by completing Phase E (steps 6, 7, 8) + Phase F (steps 9, 10) + Phase G (step 11), plus the standard `docs(plan): millhouse — completion log` close-out, plus a `merge: origin/main` between step 10 and step 11 to clear the verification-gate split + plan_template drift. Per `session_handoff_millhouse_phase_efg.md`.
+
+**State at session-9 close** (verified at start): worktree `.claude/worktrees/steal-millhouse`, branch `steal/millhouse`, HEAD `a67e5ba`, 8 commits ahead of merge-base `b0a0cb6`, dirty=none.
+
+#### Dispatch protocol (same workaround as sessions 2/3/9)
+
+Created helper branch `round/phase-c-batch4` on main tree at HEAD `96fd70b` (no commits), dispatched engineer with `isolation: "worktree"`, restored main + deleted helper at session end.
+
+#### Agent dispatch outcome (steps 6-10 only)
+
+| Attempt | Agent ID | Result |
+|---|---|---|
+| #1 | `acc5afb113f73c713` | landed all 5 step-commits (`32d6ce5`, `d3fd398`, `4f8a1b4`, `89bec4f`, `a6a5f0e`), all 5 verify commands passed, worktree clean. One self-reported deviation: initially packed step-9 + step-10 into a single commit, then `git commit --amend`-ed step 9 to drop the self-tests and committed step 10 separately. End state matches the one-commit-per-step rule. |
+
+Took over manually for the merge + step 11 + completion log per the handoff's split-shape recommendation (preserved tool budget on the agent for the mechanically-uniform commits).
+
+#### Steps 6-11 + merge + completion log (8 commits delta)
+
+| Step | Phase | Commit | Note |
+|---|---|---|---|
+| 6  | E | `32d6ce5` | `.claude/reviewers/workers.yaml` — 3 workers: sonnet-tool / opus-tool / sonnet-bulk |
+| 7  | E | `d3fd398` | `.claude/reviewers/reviewers.yaml` — `sonnet-x2-opus-handler` ensemble |
+| 8  | E | `4f8a1b4` | `SOUL/tools/ensemble.py` — load_registry + run_worker mock + run_ensemble asyncio fan-out + DEGRADED_FATAL on total failure + synthesize_handler stub + write_review_to_disk; CLI subprocess marked TODO |
+| 9  | F | `89bec4f` | `SOUL/tools/plan_dag.py` — CycleError + build_dag (explicit + implicit write-conflict edges; reads: no edge) + extract_layers (Kahn's + DFS cycle path) + validate_plan_file |
+| 10 | F | `a6a5f0e` | plan_dag.py inline self-tests — linear / write-conflict / cycle; `python SOUL/tools/plan_dag.py` → `All DAG tests passed.` |
+| (merge) | — | `2a74299` | `merge: origin/main` — git rename detection auto-mapped Phase D step 5's Pre-Read Discipline edits to `verification-check/SKILL.md`; manually re-applied the same block to `verification-spec/SKILL.md`; `rationalization-immunity.md` resolved as additive (main's Code-Level Examples + Jump Tracker first, then branch's Review Dismissal + Pre-Load Rule) |
+| 11 | G | `b08b327` | `SOUL/public/prompts/plan_template.md` — Step Requirements gains "File change declarations required" bullet; "Good" example extended from one to two steps demonstrating creates/reads/modifies/depends-on combined |
+| log | — | `9f02183` | `docs(plan): millhouse — completion log` — appended completion table + verify outputs to topic plan |
+
+Verification spot-check from main session after agent return: `git -C .claude/worktrees/steal-millhouse log --oneline a67e5ba..HEAD` → 8 commits matching the table; status clean; `python SOUL/tools/plan_dag.py` re-run from main → `All DAG tests passed.`; `grep -c 'Pre-Read Discipline'` → 1 in each of verification-spec + verification-check.
+
+#### Lessons from session 10
+
+- **The "agent-does-uniform-steps, main-handles-split-conflict" division worked cleanly**. Splitting at the merge boundary saved ~10–15 tool uses on the agent (no need to teach it the verification-gate split history) and let the main session handle the path-rename + additive merge with full context. Future Phase D-eligible-after-conflict topics should default to this split, not try to teach the agent the conflict story.
+- **`git` rename detection rescued the verification-gate conflict for free**. The handoff anticipated a `delete-by-them, modified-by-us` conflict on `verification-gate/SKILL.md`; in practice `git merge` rename-detected the file → `verification-check/SKILL.md` mapping (≥50% similarity) and auto-applied our Phase D step 5 edits there. Only manual work was re-applying the same block to `verification-spec/SKILL.md` so both halves of the split enforce the rule. Worth noting that the rename heuristic is path-and-content-based — if a future split also reorders content significantly, the auto-merge may not catch it.
+- **Engineer agent self-amend is a healthy correction**. Agent reported the step 9+10 packing mistake honestly and amended without prompting. End state was correct. Trust-but-verify confirmed clean (5 distinct commits visible in log). Continue accepting self-corrected deviations as long as the committed-state invariant holds.
+- **A 7-commit-on-branch finisher fits the session-10 envelope**. Not a tool-budget concern when the 5-commit batch is dispatched and the 3 follow-ups (merge + step 11 + log) are inline. Total tool uses for the manual portion: ~25.
+
+#### Main tree hygiene at session-10 end
+
+- Branch: `main`. Helper `round/phase-c-batch4` deleted (was at SHA `96fd70b`, identical to main).
+- Tracked dirty: `M SOUL/public/prompts/session_handoff_worktree_pipeline_phase_c.md` (this entry).
+- Worktrees on disk: unchanged from session-9. millhouse now MERGE-ready pending Phase D.
+
+#### Round-2 status — Batch B in-flight finishers (post-session-10)
+
+| Topic | Phases done | Phases pending | Status |
+|---|---|---|---|
+| `prompt-language-coach` | 1+2+3+4+5+6 | — | **MERGE-ready** (Phase D pending) |
+| `millhouse` | A+B+C+D+**E+F+G** | — | **MERGE-ready** (Phase D pending) |
+| `flux-enchanted` | 1+2+3 | 4+5 + plan-path patch + Step-10 owner gate | medium |
+| `generic-agent` | 1+2+3+4+5 | 6+7+8 (Phase 8 owner-review gate) | high (owner gate) |
+| `memto` | 1 | 2 P1a WIP blocked on indexer.py bug + 3 onward | blocked on pre-existing bug |
+
+**Next session — directive**: drive `steal/flux-enchanted` from Phase 1+2+3 done to MERGE-ready by patching the plan-path defect, completing Phase 4+5, and resolving the Step-10 owner-gate. Write a fresh per-topic handoff (`SOUL/public/prompts/session_handoff_flux_enchanted_phase45.md`) following the millhouse-handoff shape — verify state at start, list each step's action + verify command, document the plan-path patch up front (the in-flight rescue work it interrupts), note any drift since the original plan landed. Use the same `round/<batch>` helper branch + `isolation: "worktree"` dispatch protocol. Reasoning for picking flux over generic-agent or memto: smallest remaining scope after a single plan-path patch; generic-agent's Phase 8 needs an owner-review gate first (separate session); memto is blocked on a pre-existing `indexer.py` bug that warrants a detour-debug session before the topic itself can move. r38-sandbox-retro stays SKIP. Phase D merges of plc + millhouse are a separate session per CLAUDE.md "Phase Separation: One Phase Per Session".
