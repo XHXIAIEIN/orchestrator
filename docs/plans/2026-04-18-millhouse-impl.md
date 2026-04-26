@@ -376,3 +376,27 @@ No existing data files are modified. No hooks are modified. No boot.md is modifi
 [ ] No banned placeholder phrases: all steps have exact targets, exact regex/code, exact verify commands
 [ ] ASSUMPTION gaps declared: 7 assumptions documented
 [ ] Owner review: required — ensemble.py `run_worker` stub leaves Claude CLI integration open; owner must confirm dispatch_mode→CLI mapping before real fan-out works
+
+---
+
+## Completion Log (2026-04-26 — session 10 finisher)
+
+| Step | Phase | Commit | Note |
+|---|---|---|---|
+| 6  | E | `32d6ce5` | workers.yaml — sonnet-tool / opus-tool / sonnet-bulk (3 dispatch_mode entries) |
+| 7  | E | `d3fd398` | reviewers.yaml — `sonnet-x2-opus-handler` ensemble |
+| 8  | E | `4f8a1b4` | ensemble.py — `load_registry`, `run_worker` mock, `run_ensemble` asyncio fan-out + `DEGRADED_FATAL`, `synthesize_handler` stub, `write_review_to_disk`; Claude CLI subprocess marked TODO at the integration boundary |
+| 9  | F | `89bec4f` | plan_dag.py — `CycleError`, `build_dag` (explicit + implicit write-conflict edges; `reads:` no edge), `extract_layers` (Kahn's + cycle path extraction), `validate_plan_file` |
+| 10 | F | `a6a5f0e` | plan_dag.py inline self-tests — linear A→B→C, write-conflict implicit edge, cycle detection; `python SOUL/tools/plan_dag.py` prints `All DAG tests passed.` |
+| merge | — | `2a74299` | merge `origin/main` — git rename detection mapped Phase D step 5's Pre-Read Discipline edits to `verification-check/SKILL.md` automatically; manually re-applied the same block to `verification-spec/SKILL.md`; `rationalization-immunity.md` resolved as additive (main's Code-Level Examples + Jump Tracker first, then branch's Review Dismissal + Pre-Load Rule) |
+| 11 | G | `b08b327` | plan_template.md — Step Requirements gains "File change declarations required" bullet; "Good" example extended from one to two steps demonstrating creates / reads / modifies / depends-on combined |
+
+Verify outcomes (re-runnable):
+- Step 6: `python -c "import yaml; d=yaml.safe_load(open('.claude/reviewers/workers.yaml')); assert 'sonnet-tool' in d['workers']; print('workers.yaml ok')"` → `workers.yaml ok`
+- Step 7: `grep "sonnet-x2-opus-handler" .claude/reviewers/reviewers.yaml` → `  sonnet-x2-opus-handler:`
+- Step 8: `python -c "import sys; sys.path.insert(0,'.'); import asyncio; from SOUL.tools.ensemble import run_ensemble; r=asyncio.run(run_ensemble('sonnet-x2-opus-handler','test payload')); assert r.get('verdict') != 'DEGRADED_FATAL'; print('ensemble ok')"` → `ensemble ok`
+- Step 9: `python -c "import sys; sys.path.insert(0,'.'); from SOUL.tools.plan_dag import build_dag, extract_layers, CycleError; dag={'A':set(),'B':{'A'}}; layers=extract_layers(dag); assert layers==[['A'],['B']]; print('dag ok')"` → `dag ok`
+- Step 10: `python SOUL/tools/plan_dag.py` → `All DAG tests passed.`
+- Step 11: `grep -n "creates:" SOUL/public/prompts/plan_template.md | head -5` → 3 matches (Step Requirements bullet + 2 in Good example)
+
+Topic now Phase D-eligible: `steal/millhouse` is 7 commits ahead of `a67e5ba` (8 ahead of merge-base `b0a0cb6`); worktree clean. Phase D (merge to main) deferred to a separate session per CLAUDE.md "Phase Separation" rule. Real Claude CLI subprocess integration in `ensemble.py` and `_phase/status.md` schema wiring remain explicit Non-Goals.
