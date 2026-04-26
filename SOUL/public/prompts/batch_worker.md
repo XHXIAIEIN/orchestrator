@@ -1,3 +1,4 @@
+<!-- TL;DR: Process items in parallel batches; report failures without halting batch. -->
 # Batch Worker Prompt Template
 
 > **Purpose**: Self-contained prompt for sub-agents running in parallel batch mode.

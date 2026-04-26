@@ -1,6 +1,8 @@
 ---
 name: babysit-pr
 description: "Autonomously monitor and fix PR CI failures. Trigger on 'CI is red', 'fix CI', 'babysit this PR'."
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 # babysit-pr — Autonomous PR Monitoring

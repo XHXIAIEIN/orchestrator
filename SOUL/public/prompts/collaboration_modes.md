@@ -1,3 +1,4 @@
+<!-- TL;DR: Three collaboration modes (plan/execute/review); scope and budget per mode. -->
 # Collaboration Modes
 
 ## Identity

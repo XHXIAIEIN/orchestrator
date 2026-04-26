@@ -20,6 +20,6 @@
   "handoff": {
     "completion_signal": "Return steal report with patterns, gap analysis, and adaptation plan.",
     "artifacts": ["SOUL/public/steal/<date>-<topic>.md"],
-    "follow_up": ["verification-gate"]
+    "follow_up": ["verification-check"]
   }
 }

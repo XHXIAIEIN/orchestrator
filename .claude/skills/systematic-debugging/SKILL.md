@@ -1,6 +1,8 @@
 ---
 name: systematic-debugging
 description: "Structured root-cause debugging protocol. Use when encountering any bug, test failure, or unexpected behavior."
+origin: "Orchestrator — earned through direct practice (see commit history)"
+source_version: "2026-04-18"
 ---
 
 # Systematic Debugging Protocol

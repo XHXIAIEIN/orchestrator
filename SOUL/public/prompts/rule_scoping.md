@@ -1,3 +1,4 @@
+<!-- TL;DR: Scope rules to the narrowest applicable context; global rules are last resort. -->
 # Rule Scoping by Path
 
 > **Purpose**: Rules declare which file paths they apply to, instead of being global.

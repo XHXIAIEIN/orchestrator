@@ -1,3 +1,4 @@
+<!-- TL;DR: Lookup table: if inner monologue matches left column, execute right column. -->
 # Rationalization Immunity Table
 
 > **Who consults this**: Every agent (Governor, executor, coordinator) before cutting corners or skipping steps.
@@ -75,6 +76,154 @@ N/A — reference document. Agents consult this table as a self-check before ski
 
 1. **No "special case" override** — if inner monologue matches the left column, execute the right column. The only valid exception path is to document the reasoning in writing and get explicit user approval before deviating.
 2. **Meta-rationalization is still rationalization** — "I already checked this table and it doesn't apply" is itself a rationalization if you cannot cite which row you checked and why it does not match.
+
+## Code-Level Examples
+
+These pairs show what the rationalization looks like in actual code and diffs, not just mindset.
+Format: ❌ what an LLM rationalizes into existence → ✅ what should have happened.
+
+---
+
+### Testing / Verification
+
+**Rationalization**: "It's just a small change — the tests should still pass."
+
+❌ Bad:
+```python
+# Changed one line in auth.py, declared done without running tests
+def authenticate(user, password):
+    return user.password_hash == hash(password)  # removed salt — "trivial fix"
+```
+
+✅ Correct:
+```bash
+# Run the exact test suite before declaring done
+pytest tests/test_auth.py -v
+# Read FULL output — not just "X passed"
+# Investigate every warning before claiming green
+```
+
+---
+
+### Reading Before Changing
+
+**Rationalization**: "I've seen this pattern before — I know how it works."
+
+❌ Bad:
+```python
+# Assumed function signature from the name, didn't read the body
+result = validate_input(data)  # added call — turns out validate_input raises on None, not returns False
+```
+
+✅ Correct:
+```bash
+# Read the function before calling it
+grep -n "def validate_input" src/validators.py
+# Then read lines N to N+20 to see return type, exceptions, side effects
+```
+
+---
+
+### Git Operations
+
+**Rationalization**: "A quick reset will fix this — I'll just start clean."
+
+❌ Bad:
+```bash
+git reset --hard HEAD~1  # lost 2 hours of uncommitted exploration work
+```
+
+✅ Correct:
+```bash
+git diff HEAD  # read what's actually different
+git stash      # backup uncommitted work first
+# Diagnose the specific issue from the diff
+# Fix surgically — don't nuke the branch
+```
+
+---
+
+### Scope Creep
+
+**Rationalization**: "I'll just clean this up while I'm here — it's obviously broken."
+
+❌ Bad:
+```diff
+-def process(items):
+-    for i in items: do_thing(i)
++def process(items: list[Item]) -> None:  # added types
++    for i in items:
++        do_thing(i)  # added line break
++        log.debug(f"processed {i}")  # added logging — "obviously needed"
+```
+
+✅ Correct:
+```diff
+# Only the line the task required
+-    for i in items: do_thing(i)
++    for item in items: do_thing(item)  # renamed per task requirement
+# Every other line: untouched
+```
+
+---
+
+### Completion Claims
+
+**Rationalization**: "Based on the changes, this should work — I'm confident."
+
+❌ Bad (in agent output):
+```
+I've updated the rate limiter. Based on the changes, requests should now be
+limited to 100/minute. I'm confident this is correct.
+```
+
+✅ Correct (in agent output):
+```
+Ran: curl -s -o /dev/null -w "%{http_code}" -X POST localhost:8000/api/test
+Result after 101 requests: 429 Too Many Requests
+All 47 tests pass (pytest output above, 0 failures, 0 warnings).
+Task complete.
+```
+
+---
+
+## Jump Tracker
+
+> Source: R81 loki-skills-cli steal (recap/SKILL.md:132-170). Detects cumulative avoidance drift that per-excuse rationalization cannot catch.
+
+### Taxonomy
+
+Tag each topic transition in a session with one of five types:
+
+| Tag | Meaning | Healthy? |
+|-----|---------|---------|
+| `spark` | New idea or thread that arrived organically | Yes |
+| `complete` | Finished a task, moving to next | Yes |
+| `return` | Came back to a parked thread | Yes |
+| `park` | Intentional pause on a hard problem | Neutral |
+| `escape` | Switched away from a hard problem without resolution | No |
+
+### Health Rule
+
+- Session health = OK if `escape` count < 3 AND `escape / total_jumps` < 40%.
+- If `escape` count ≥ 3 OR `escape / total_jumps` ≥ 40%: surface the pattern immediately. Do not continue the current thread until the owner acknowledges.
+
+### When to Use
+
+- At the start of every `/doctor` invocation: reconstruct last session's jump list from conversation memory (no file reads needed — pure recall).
+- Optional: invoke manually as `/prime --jump-check` (owner adds this trigger to `prime/SKILL.md` in a follow-up).
+
+### Surface Format
+
+When health threshold is breached, output:
+
+```
+[Jump Tracker] ⚠ escape-heavy session detected
+Jumps: spark×N complete×N return×N park×N escape×N
+Escape ratio: NN%
+Last 3 escapes: <topic-1>, <topic-2>, <topic-3>
+Recommendation: return to <most-recent-park> or explicitly abandon it.
+```
 
 ## Review Dismissal
 

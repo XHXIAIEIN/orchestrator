@@ -386,10 +386,30 @@ def compile_voice_pack(output_dir: Path, calibration_n: int = 5) -> Path:
 
 
 def compile_learnings_pack(output_dir: Path) -> Path:
-    """编译教训详情 context pack — 从 DB 读取，保留完整证据链"""
+    """编译教训详情 context pack — 从 DB 读取，过滤噪音，按主题分片写入子目录。
+
+    噪音过滤：跳过 correction-task-notification-* 和 feat-* 条目
+    （这些是 raw user prompt dump，无工程价值，占原文件 ~60% 体积）。
+
+    输出：
+      learnings.md          — 索引 stub（指向子文件）
+      learnings/exam-eval.md   — 考试/自评模式
+      learnings/engineering.md — 工程规则
+      learnings/agent-ops.md   — agent 调度 / context 管理
+    """
+    # Noise key prefixes to skip — raw prompt dumps, no actionable content
+    NOISE_PREFIXES = ('correction-task-notification-', 'feat-')
+
     db = _get_learnings_db()
-    errors = db.get_learnings_for_compilation(entry_type='error') if db else []
-    learnings = db.get_learnings_for_compilation(entry_type='learning') if db else []
+    errors_raw = db.get_learnings_for_compilation(entry_type='error') if db else []
+    learnings_raw = db.get_learnings_for_compilation(entry_type='learning') if db else []
+
+    def is_noise(e: dict) -> bool:
+        key = e.get('pattern_key', '')
+        return any(key.startswith(p) for p in NOISE_PREFIXES)
+
+    errors = [e for e in errors_raw if not is_noise(e)]
+    learnings = [e for e in learnings_raw if not is_noise(e)]
 
     # 按 status 分组排序：validated > pending > promoted > subsumed
     status_order = {'validated': 0, 'pending': 1, 'promoted': 2}
@@ -417,13 +437,29 @@ def compile_learnings_pack(output_dir: Path) -> Path:
             lines.append(detail)
         return '\n'.join(lines)
 
-    sections = []
-    if errors:
-        sections.append("## Errors (诊断模式)\n")
-        sections.extend(format_entry(e) for e in errors)
-    if learnings:
-        sections.append("\n## Learnings (修复策略)\n")
-        sections.extend(format_entry(e) for e in learnings)
+    # Thematic routing: exam-eval / engineering / agent-ops
+    EXAM_PREFIXES = (
+        'agent-output-budget', 'agent-reflection', 'agent-performative',
+        'agent-tooling', 'tooling-regex', 'agent-math', 'agent-eq',
+        'agent-spec', 'dept-dispatch', 'external-api:answer',
+    )
+    AGENT_OPS_PREFIXES = (
+        'three-tier-compaction', 'fork-agent-cache', 'tool-truncation',
+        'context-decay', 'execution:verify',
+    )
+
+    def route(e: dict) -> str:
+        key = e.get('pattern_key', '')
+        if any(key.startswith(p) for p in EXAM_PREFIXES):
+            return 'exam-eval'
+        if any(key.startswith(p) for p in AGENT_OPS_PREFIXES):
+            return 'agent-ops'
+        return 'engineering'
+
+    buckets: dict[str, list[str]] = {'exam-eval': [], 'engineering': [], 'agent-ops': []}
+    all_entries = errors + learnings
+    for entry in all_entries:
+        buckets[route(entry)].append(format_entry(entry))
 
     # Cross-references from related_keys
     cross_refs = []
@@ -432,19 +468,66 @@ def compile_learnings_pack(output_dir: Path) -> Path:
         for rk in (l.get('related_keys') or []):
             if rk in err_keys:
                 cross_refs.append(f"- `{l['pattern_key']}` fixes `{rk}`")
+    cross_ref_text = (
+        "\n## Cross-references\n\n" + '\n'.join(cross_refs) + '\n'
+        if cross_refs else ''
+    )
 
-    cross_ref_text = ''
-    if cross_refs:
-        cross_ref_text = "\n## Cross-references\n\n" + '\n'.join(cross_refs) + '\n'
+    # Write themed sub-files into learnings/ subdirectory
+    sub_dir = output_dir / 'learnings'
+    sub_dir.mkdir(parents=True, exist_ok=True)
+
+    shard_meta = {
+        'exam-eval': (
+            '# Learnings: Exam & Evaluation Patterns',
+            '<!-- Context pack — 考试、自评、Clawvard 维度得分分析时加载 -->',
+        ),
+        'engineering': (
+            '# Learnings: Engineering Rules',
+            '<!-- Context pack — 调试、工程规则、工具选择、基础设施时加载 -->',
+        ),
+        'agent-ops': (
+            '# Learnings: Agent Operations & Context Management',
+            '<!-- Context pack — agent 调度、context 管理、缓存、多实例协作时加载 -->',
+        ),
+    }
+
+    for shard, entries in buckets.items():
+        title, comment = shard_meta[shard]
+        body = '\n\n'.join(entries) if entries else '(No entries yet.)'
+        extra = cross_ref_text if shard == 'exam-eval' else ''
+        (sub_dir / f'{shard}.md').write_text(
+            f"{title}\n{comment}\n\n{body}{extra}\n",
+            encoding='utf-8',
+        )
+
+    # Write index stub (replaces the old monolithic learnings.md)
+    index_rows = [
+        '| `learnings/exam-eval.md` | 考试维度：output budget、reflection、tooling、math、EQ | 做考试、分析得分、自评时 |',
+        '| `learnings/engineering.md` | 工程规则：git、CLI错误、prompt budget、docker、性能 | 调试、工具选择、基础设施时 |',
+        '| `learnings/agent-ops.md` | Agent操作：context compaction、缓存共享、截断、多步验证 | 派遣agent、context管理时 |',
+    ]
+    entry_counts = {k: len(v) for k, v in buckets.items()}
+    total = sum(entry_counts.values())
+    filtered = len(errors_raw) + len(learnings_raw) - total
+
+    index_content = (
+        f"# Learnings Index\n"
+        f"<!-- 索引文件 — 按需 Read 子文件，不要全量加载 -->\n"
+        f"<!-- 编译产物由 compiler.py 生成。共 {total} 条有效条目，已过滤 {filtered} 条噪音 -->\n\n"
+        f"## 子文件索引\n\n"
+        f"| 文件 | 内容 | 何时加载 |\n"
+        f"|------|------|----------|\n"
+        + '\n'.join(index_rows)
+        + f"\n\n## 用法\n\n"
+        f"直接 Read 相关子文件，不要 Read 本文件（本文件只是目录）。\n\n"
+        f"例：考试前 → Read `.claude/context/learnings/exam-eval.md`\n"
+        f"调试 → Read `.claude/context/learnings/engineering.md`\n"
+        f"agent 分析 → Read `.claude/context/learnings/agent-ops.md`\n"
+    )
 
     out = output_dir / 'learnings.md'
-    out.write_text(
-        f"# Learnings Detail\n"
-        f"<!-- Context pack — 自评、考试、调试反复出现的模式时加载 -->\n\n"
-        + '\n\n'.join(sections)
-        + cross_ref_text,
-        encoding='utf-8',
-    )
+    out.write_text(index_content, encoding='utf-8')
     return out
 
 
@@ -576,8 +659,12 @@ def compile_boot(
     # 2. 关系状态（slim: 去掉与 identity 重复的信任等级/禁区）
     relationship = read_relationship(slim=True)
 
-    # 3. 教训一句话版（promoted learnings — 快速提醒）
-    plearnings = promoted_learnings()
+    # 3. 教训一句话版（promoted learnings — 快速提醒，过滤 raw prompt dump 噪音）
+    _NOISE_PREFIXES = ('correction-task-notification-', 'feat-')
+    plearnings = [
+        e for e in promoted_learnings()
+        if not any(e.get('pattern_key', '').startswith(p) for p in _NOISE_PREFIXES)
+    ]
     learnings_text = format_learnings_section(plearnings)
 
     # 4. 经历计数（详情在 context pack）
@@ -593,7 +680,10 @@ def compile_boot(
 |------|------|---------|
 | management.md | 10 条决策原则 + 4 种认知模式 | 派遣任务、架构决策、战略规划 |
 | voice.md | 声音校准样本 + 说话指导 | 人设变冷、compaction 后、长对话 |
-| learnings.md | 教训详情（证据链 + 边界条件） | 自评、考试、调试反复出现的模式 |
+| learnings.md | 教训索引（指向 learnings/ 子文件，按需 Read 子文件） | 查看索引时 |
+| learnings/exam-eval.md | 考试维度：output budget、reflection、tooling | 考试、自评时 |
+| learnings/engineering.md | 工程规则：git、CLI、prompt budget、docker | 调试、基础设施时 |
+| learnings/agent-ops.md | Agent 操作：context compaction、缓存、截断 | agent 调度时 |
 | experiences.md | 近期经历（扩展版） | 回顾历史、建立关系 |
 | `SOUL/public/prompts/growth_loops.md` | 三环反馈指南（好奇/模式/追踪） | SessionStart 自动注入状态；需要行为指南时读 |
 

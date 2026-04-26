@@ -15,7 +15,7 @@ PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty' 2>/dev/null)
 if echo "$PROMPT" | grep -qF '[STEAL]'; then
     BRANCH=$(git branch --show-current 2>/dev/null || echo "")
     if ! echo "$BRANCH" | grep -qiE '(steal|round)'; then
-        echo '{"decision":"block","reason":"[STEAL] tagged work requires a dedicated branch. Run: git checkout -b steal/<topic>"}'
+        echo '{"decision":"block","reason":"[STEAL] tagged work must run in a dedicated worktree on steal/*. Do NOT switch the main workspace. Create one first: git worktree add .claude/worktrees/steal-<topic> -b steal/<topic> && cd .claude/worktrees/steal-<topic>. For sub-agent dispatch, also pass isolation: worktree in the Agent tool call."}'
         exit 0
     fi
 fi
