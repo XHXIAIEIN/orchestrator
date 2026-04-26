@@ -144,3 +144,49 @@ Override: If the user says "just do it" or grants blanket approval, all gates be
 - A plan with any banned placeholder phrase is incomplete and must not proceed to implementation.
 
 > Section headings above are starting points. Rename, reorder, or add sections to match how the content actually unfolded.
+
+## Phase Gate Contract Document
+
+When a plan crosses a phase boundary (Spec → Plan, Plan → Implement, Implement → Verify, or any custom phase), the transitioning agent **must** produce a contract file before the next phase begins.
+
+### Contract File Convention
+
+- Path: `.phase-gate/<from-phase>-to-<to-phase>.md` (relative to project root)
+- Example: `.phase-gate/plan-to-implement.md`
+- Created by: the agent completing the **outgoing** phase
+- Read by: the agent starting the **incoming** phase (mandatory, not optional)
+
+### Contract File Template
+
+```markdown
+# Phase Gate: {from} → {to}
+
+**Date**: {YYYY-MM-DD}
+**Plan reference**: {path/to/plan.md}
+
+## Assumptions
+<!-- List every assumption made in {from} phase that the {to} phase will rely on -->
+- [ ] {Assumption 1}
+- [ ] {Assumption 2}
+
+## Interface Contracts
+<!-- APIs, file formats, data shapes, environment variables agreed upon -->
+| Name | Type | Value / Shape | Owner |
+|------|------|---------------|-------|
+| {interface} | {api\|file\|env\|type} | {description} | {who produces it} |
+
+## Verification Points
+<!-- How does the {to} phase know it succeeded? -->
+- [ ] {Criterion 1} → checked by: {command or manual step}
+- [ ] {Criterion 2} → checked by: {command or manual step}
+
+## Open Questions
+<!-- Unresolved items deferred to {to} phase — must be resolved before phase ends -->
+- [ ] {Question} — assigned to: {owner\|agent}
+```
+
+### Gate Rules
+
+1. **No contract = no phase transition.** If the contract file does not exist at the start of the incoming phase, create it before writing any code or making any decisions.
+2. **Contract conflicts with plan = STOP.** If the contract contradicts the current plan, surface the conflict to the owner before proceeding.
+3. **Contract is a living document** during the phase — update it when assumptions are validated or invalidated. Mark resolved items with `[x]`.
