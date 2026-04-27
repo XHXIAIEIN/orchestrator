@@ -189,6 +189,21 @@
             "type": "command",
             "command": "bash .claude/hooks/error-detector.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/content-trust.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/content-trust.sh",
+            "timeout": 5
           }
         ]
       },
