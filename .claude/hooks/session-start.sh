@@ -26,6 +26,11 @@ fi
 
 # ── 0.5 注册会话 + 同步记忆索引 ──
 SESSION_ID="cli-$(date +%s)-$$"
+# P0-1: Initialize per-session turn counter
+echo "0" > "$(dirname "$0")/state/turn-${SESSION_ID}.txt"
+# P0-5: Bootstrap file_access_stats.json if missing
+STATS="$PROJECT_DIR/SOUL/public/memory/file_access_stats.json"
+[ ! -f "$STATS" ] && mkdir -p "$(dirname "$STATS")" && echo '{}' > "$STATS"
 python3 -c "
 import sys
 sys.path.insert(0, '$PROJECT_DIR')

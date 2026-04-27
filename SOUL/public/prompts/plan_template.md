@@ -58,6 +58,7 @@ The following phrases are banned in plan steps. Each must be replaced with speci
   - `- modifies: <absolute/path>` for existing files being changed
   - `- reads: <absolute/path>` for files read but not changed (generates no DAG edge)
   Run `python SOUL/tools/plan_dag.py <plan.md>` after writing the plan to detect write conflicts and cycles.
+- **Last step of every plan with ≥5 steps MUST be**: `Dispatch verify-subagent with verify_sop.md → verify: agent response contains 'VERDICT: PASS'`
 
 ### Step Format Reference
 
@@ -143,6 +144,7 @@ Override: If the user says "just do it" or grants blanket approval, all gates be
 - [ ] No unrelated changes in `git diff`
 - [ ] Orphaned imports/vars from your changes are cleaned up
 - [ ] If tests exist, they pass
+- [ ] Verify-subagent dispatched and returned `VERDICT: PASS` (required for plans ≥ 5 steps)
 
 ## Quality Bar
 

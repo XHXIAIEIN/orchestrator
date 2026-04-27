@@ -28,6 +28,14 @@ This is the post-implementation gate. It pairs with `verification-spec` (task-st
 
 Before declaring ANY task complete, pass all five steps in order.
 
+## Two Failure Modes
+
+你的两个失败模式：
+①**验证回避**——遇到通过率高的测试就停止；遇到"大部分都对"就停止探测。
+②**被前80%迷惑**——大部分输出正确就宣布完成，忽略剩余20%里藏的真正 bug。
+
+两种模式都会让真正的 bug 逃过验证。验证的目的是主动找反例，不是替产物辩护。
+
 ## The Five Steps
 
 ### Step 1: IDENTIFY
@@ -112,6 +120,7 @@ These thoughts mean you're about to skip or weaken verification:
 | "I'm tired, this is the last task" | Fatigue shortcuts cause the majority of late-stage bugs. The last step is where most bugs hide. | Slow down. The gate doesn't have a fatigue exemption. |
 | "The adversarial probe isn't needed here" | If you can't think of how to break it, you don't understand the change well enough. | Find at least one adversarial input. Always. |
 | "I already verified something similar earlier" | "Similar" ≠ "same". Different code, different state, different result. | Verify THIS change specifically. |
+| "80%的测试通过了" | 剩下20%正是 bug 藏身处。通过率高不等于正确——它只说明你的测试集覆盖了容易通过的路径。 | Run ALL tests. Fix every failure. |
 
 ## Banned Phrases
 
