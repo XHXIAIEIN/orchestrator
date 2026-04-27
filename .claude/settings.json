@@ -126,6 +126,16 @@
           },
           {
             "type": "command",
+            "command": "bash .claude/hooks/turn-cadence-gate.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/no-tool-gate.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/session-stop.sh",
             "timeout": 5
           },
@@ -142,6 +152,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash .claude/hooks/turn-counter.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
             "command": "bash .claude/hooks/persona-anchor.sh",
             "timeout": 3
           },
@@ -153,6 +168,11 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/post-compact.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/subagent-channel.sh",
             "timeout": 3
           }
         ]
