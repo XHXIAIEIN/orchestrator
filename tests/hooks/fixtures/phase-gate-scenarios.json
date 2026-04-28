@@ -1,0 +1,20 @@
+[
+  {
+    "label": "block-src",
+    "phase_state": {"phase": 0, "validated_at": null, "env_fingerprint": null},
+    "tool_payload": {"tool_name": "Edit", "tool_input": {"file_path": "src/foo.py", "old_string": "x", "new_string": "y"}},
+    "expected": "block"
+  },
+  {
+    "label": "allow-pyproject",
+    "phase_state": {"phase": 0, "validated_at": null, "env_fingerprint": null},
+    "tool_payload": {"tool_name": "Edit", "tool_input": {"file_path": "pyproject.toml", "old_string": "a", "new_string": "b"}},
+    "expected": "allow"
+  },
+  {
+    "label": "allow-after-advance",
+    "phase_state": {"phase": 1, "validated_at": "2026-04-19T10:00:00Z", "env_fingerprint": "abc123"},
+    "tool_payload": {"tool_name": "Write", "tool_input": {"file_path": "src/foo.py", "content": "print(1)"}},
+    "expected": "allow"
+  }
+]

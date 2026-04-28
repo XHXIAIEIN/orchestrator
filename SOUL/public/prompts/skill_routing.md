@@ -60,6 +60,7 @@ Task arrives
 │
 ├─ New repo / unfamiliar project → `/awaken`
 │  └─ Goal: force local convention discovery before any code changes
+│  └─ Phase gating: SOUL/public/prompts/phase-gate.md (run `bash scripts/phase-advance.sh` before first source edit)
 │
 ├─ Steal / study external repo?
 │  └─ /steal (requires steal/* branch)

@@ -81,6 +81,11 @@
             "type": "command",
             "command": "bash .claude/hooks/block-protect.sh check",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/phase-gate.sh",
+            "timeout": 3
           }
         ]
       },
