@@ -68,6 +68,18 @@ Rationalizations feel like reasonable judgment calls. They are not. This table i
 | "I'm being too careful, this is slowing me down" | Recklessness that causes rework is slowness. Caution is not. | Stay careful. Speed comes from skill, not from skipping steps. |
 | "The table says X but this is a special case" | Every rationalization feels like a special case. That is what makes it a rationalization. | Follow the table. If truly special, document the exception in writing before proceeding. |
 
+## Data Fabrication
+
+| Rationalization | Rebuttal | Correct Behavior |
+|---|---|---|
+| "I'll use mock data for now" | "For now" never gets replaced. Mock data ships, real data never arrives. | Stop. Get real data or tell the owner explicitly what's blocked and why. |
+| "Stubbed this out, will return real later" | You will not return. The stub becomes the implementation. | Stop. Implement the real thing or surface the blocker. |
+| "Assuming the API returns X" | Assumptions baked into code are bugs waiting to be discovered in production. | Run the API call and handle its actual response, or block on inability to reach it. |
+| "For now let's just hardcode this" | "Just hardcoding" is a commitment with an invisible expiry date that always passes. | Use the real source or declare the dependency explicitly as unresolved. |
+| "Placeholder value, will fill in later" | Placeholders accumulate. There is no "later" in an agent's execution. | Fill it now with real data, or state to the owner that you cannot proceed without it. |
+| "TODO: implement this properly later" | A TODO in committed code is a lie: you committed something unfinished and claimed it done. | Either implement it now or do not commit the file. |
+| "Mocking \<service\> since I can't reach it" | Mocking an unreachable service produces a test that can never fail in a way that matters. | Tell the owner the service is unreachable and what that means for progress. Do not fake the interaction. |
+
 ## Output Format
 
 N/A — reference document. Agents consult this table as a self-check before skipping steps; it does not produce standalone output.
