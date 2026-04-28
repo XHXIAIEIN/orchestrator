@@ -5,6 +5,8 @@ SOUL/private/
 .claude/skills/persona/
 .claude/worktrees/
 .claude/hooks/state/
+# Runtime state
+.claude/phase-state.json
 .claude/boot.md
 .claude/context/
 .remember/
