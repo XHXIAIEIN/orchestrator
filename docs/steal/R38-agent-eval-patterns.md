@@ -285,13 +285,19 @@ async def consistency_check(task: str, agent_fn, n_runs: int = 5) -> dict:
 
 ## 2. Sandboxing Patterns
 
+> **Retrospective correction (2026-04-17)**: This section originally used absolute
+> claims ("Docker is not a sandbox") and unsourced performance metrics. It has been
+> softened to distinguish threat models and mark unverified numbers. The core
+> technical observations (kernel sharing, MicroVM isolation levels) remain valid;
+> the framing has been downgraded from prescriptive to descriptive.
+
 ### 2.1 Docker-Based Eval Sandboxes
 
 **What**: Run agent evaluation in Docker containers with controlled environments.
 
 **Why it matters**: Agents that execute code, modify files, or make network calls need isolation. Without sandboxing, a bad eval run can corrupt the host system.
 
-**Critical insight from 2025 consensus**: **Docker is not a sandbox.** Docker containers share the host kernel. A container escape vulnerability gives full host access. Docker is sufficient for *reproducibility* (consistent environment) but not for *security* (untrusted code isolation).
+**On Docker isolation**: Docker is not a security sandbox for actively-malicious code — containers share the host kernel, so a container escape vulnerability gives full host access. For *reproducibility* (consistent environment) and "agent does something dumb" threat models, it's sufficient — see the use-case note in 2.1 below. The distinction between threat models matters: reproducibility vs. true untrusted-code isolation are different requirements.
 
 **What Docker IS good for in eval**:
 - Reproducible environments (same deps, same OS)
@@ -327,22 +333,22 @@ services:
 
 **What**: Hardware-level isolation using lightweight VMs instead of containers.
 
-**Why it matters**: When you need true isolation — each sandbox gets its own kernel. Container escapes become meaningless because there's nothing to escape to.
+**Why it matters**: When you need true isolation — each sandbox gets its own kernel. Container escapes become less impactful (VM escape still possible, but a higher bar) because the attack surface is narrower than shared-kernel containers.
 
 **Two dominant approaches (2025-2026)**:
 
 **Firecracker MicroVMs** (used by E2B, AWS Lambda):
 - Own kernel per workload
-- 3-5 MB memory overhead per instance
-- Boot in ≤125ms (from snapshot), ~160-180ms end-to-end
-- E2B processes 15M+ sandbox sessions/month with this tech
-- Manus AI uses E2B for "virtual computers" for their agents
+- ~3-5 MB memory overhead per instance (per Firecracker/E2B public materials, not independently verified)
+- Boot in sub-200ms typical (snapshot-based; ≤125ms and ~160-180ms end-to-end figures cited in E2B materials — [source needed for independent confirmation])
+- E2B reports processing large volumes of sandbox sessions/month with this technology (15M+ figure cited in their marketing — [source needed])
+- Manus AI has been reported to use E2B for agent "virtual computers" [unverified, based on 2025 third-party reporting]
 
 **gVisor** (used by Google GKE, Kubernetes Agent Sandbox):
 - User-space kernel that intercepts syscalls before they reach host kernel
 - Less isolation than Firecracker (shared host kernel, but syscall-filtered)
 - Lower overhead, no separate kernel boot
-- Google's [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) for K8s: declarative API for managing isolated pods with warm pools for sub-second startup
+- Google's Agent Sandbox for K8s (`kubernetes-sigs/agent-sandbox` — URL cited in sources but not independently verified at time of writing): declarative API for managing isolated pods with warm pools for sub-second startup
 
 **When to upgrade from Docker**: If/when the orchestrator starts executing untrusted code from external sources, or if eval tasks involve running code that could have side effects beyond the file system.
 
@@ -737,6 +743,8 @@ class CapabilityReport:
 
 ## 6. Key Repos to Watch
 
+> Repo URLs below are cited from survey sources (stars figures approximate, per public GitHub metadata at time of writing; not independently re-verified in this retrospective).
+
 | Repo | What | Stars | Why care |
 |------|------|-------|---------|
 | [safety-research/bloom](https://github.com/safety-research/bloom) | Anthropic's behavioral eval generator | ~2k | Auto-generates diverse eval scenarios |
@@ -759,3 +767,55 @@ class CapabilityReport:
 | Dataset | 4 (versioning, contamination, dynamic generation, difficulty calibration) |
 | Reporting | 4 (dashboards, regression, confidence intervals, per-capability) |
 | **Total** | **19 patterns** |
+
+---
+
+## 8. Known Failure Modes in This Document
+
+Recorded as part of retrospective correction (2026-04-17):
+
+| Failure mode | Where it appeared | How to avoid |
+|---|---|---|
+| **Absolute claims without sources** | Section 2 — "Docker is not a sandbox" stated as universal law without citing CVE frequency, threat model scope, or explicit source | Distinguish threat models upfront; qualify claims with scope (e.g. "for actively-malicious code") |
+| **Unsourced performance metrics** | Section 2.2 — specific boot latency (≤125ms, 160-180ms) and memory overhead (3-5 MB) and session volume (15M+/month) cited as facts | Mark vendor-reported metrics with `[source needed]` or `(per vendor materials, not independently verified)` |
+| **Marketing-style security framing** | Section 2.2 — "Container escapes become meaningless because there's nothing to escape to" | VM escape is still a real attack class; say "higher bar" not "meaningless" |
+| **Unverified external attribution** | Section 2.2 — "Manus AI uses E2B for virtual computers" stated as fact | Third-party product attribution needs source citation or explicit `[unverified]` tag |
+| **Unverified URL** | Section 2.2 — GitHub link to `kubernetes-sigs/agent-sandbox` cited without access verification | Note when links are cited-but-not-visited |
+
+---
+
+## 9. Pre-Flight Checklist for Future Steal Reports
+
+Added 2026-04-17 after retrospective. The deeper lesson from this document is not any individual absolute claim — it is **argumentation surplus**: 140 lines of threat scenarios culminating in "Docker is fine for now" means the threat rendering was PPT, not analysis. Run this checklist before writing or committing a steal report.
+
+| # | Check | Fail mode if skipped |
+|---|---|---|
+| 1 | **Write Orchestrator's threat model / use case for this topic in one paragraph before reading the source repo.** E.g. for sandboxing: "we evaluate our own sub-agents, not adversarial untrusted code." Everything in the report must map against this model. | Report ends up surveying generic best-practices instead of answering a project-specific question. This document's Section 2.2 (MicroVM) is a textbook case. |
+| 2 | **Every "X can do Y" must be paired with "do we need Y?"** If the answer is no, the paragraph about X is educational filler, not steal material — cut it or move it to a separate "reference" doc. | Reader cannot distinguish "stolen pattern" from "industry tour." Report becomes a link dump with prose around it. |
+| 3 | **Before commit, do the `src/` walk-through**: for each section, name the file path that will change (new or edited). Sections with no target file are either deleted, demoted to reference appendix, or converted to an explicit "not-yet-needed" note with the triggering condition. | Report claims to be a steal plan but 0 LOC of actual code changes trace to it. Detected retroactively on 2026-04-17 for this document — the `src/` walk yielded zero hits for Section 2 patterns. |
+
+**Self-test for this document**: Section 2 Sandboxing Patterns failed check 3 (no src/ path). It survives in the corpus as a reference appendix + failure-mode specimen, not as an active steal plan.
+
+---
+
+## 10. Exit Gate — The Mandatory Last Step of Any Steal Branch
+
+Added 2026-04-17. Before closing a steal branch, merging it, or marking a steal task complete, the owner (or the agent on the owner's behalf) **must** answer this question on the record:
+
+> **从这个分支中，我们得到了什么？**
+> *(What did we get from this branch?)*
+
+The answer must have three parts:
+
+| Part | What to record | Accepted answers |
+|---|---|---|
+| **1. Direct code output** | File paths and commits that changed `src/`, `docker-compose.yml`, skill definitions, or any runtime code as a result of this steal | `<list of paths + commit SHAs>` OR the literal word **zero** |
+| **2. Methodology output** | Rules, failure-mode specimens, checklists, or process artifacts added to `.claude/skills/`, `docs/steal/`, boot.md, or CLAUDE.md | `<list of paths>` OR **none** |
+| **3. Net verdict** | **positive** / **zero** / **negative**, plus the disposition: keep as active reference, demote to appendix, or move to `.trash/` | One word + one-line rationale |
+
+**Rationale**: Every finished steal branch gets asked this by the owner eventually. Answering it pre-merge surfaces low-value work before it accumulates into the corpus as "technically a steal report." R38's Section 2 only revealed its negative value when owner asked retrospectively on 2026-04-17 — making this the exit step prevents the same diagnosis happening days or weeks after the fact, by which point the low-value report has already been cross-linked and quoted as if it were a steal plan.
+
+**Self-test for this document**:
+- Part 1 = **zero** (no `src/` changes trace to Section 2's sandboxing patterns)
+- Part 2 = Section 8 failure-mode table + Section 9 pre-flight checklist + Section 10 exit gate (this section); written into `docs/steal/R38-agent-eval-patterns.md` on branch `steal/r38-sandbox-retro`
+- Part 3 = **net zero, kept as reference specimen** — the methodology artifacts (three checklists + five failure modes) outweigh the direct-code zero and justify keeping the report in-corpus rather than moving to `.trash/`
