@@ -1,0 +1,11 @@
+{
+  "_schema_version": "1.0",
+  "_last_updated": "2026-04-18",
+  "sessions": [],
+  "strategy_stats": {},
+  "fix_history": [],
+  "negative_examples": [],
+  "weakness_profile": {},
+  "confidence_scores": {},
+  "recommendations": []
+}

@@ -80,6 +80,21 @@ Only NOW can you say the task is complete. Reference the evidence:
 - "Build succeeds, no warnings"
 - "Verified endpoint returns 200 with expected payload"
 
+## Checkpoint Protocol (U-curve)
+
+When context usage reaches approximately 50%, emit a `<checkpoint>` block before continuing:
+
+```xml
+<checkpoint>
+  <goal>{one-sentence restatement of current task goal}</goal>
+  <decisions>{bullet list of choices made so far and their rationale}</decisions>
+  <open_questions>{bullet list of unresolved items}</open_questions>
+  <next_step>{exact next action}</next_step>
+</checkpoint>
+```
+
+After emitting, treat checkpoint as the truth source. Earlier conversation context may be ignored for decisions already captured here.
+
 ## Change-Type Verification Strategies
 
 Different change types demand different verification focus. Use this table to select probes:

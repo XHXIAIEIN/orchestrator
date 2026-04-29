@@ -1,0 +1,20 @@
+{
+  "_version": "1.0",
+  "_description": "Flux-pattern learnings schema. Adapted from enchanted-plugins/flux. 2026-04-18.",
+  "_fields": {
+    "sessions": "Array of {date, topic, outcome} — one entry per steal/round session",
+    "strategy_stats": "Object keyed by strategy_id: {applied, reverted, consecutive_failures, last_used}",
+    "fix_history": "Last 30 entries: {date, fcode, description, what_worked}",
+    "negative_examples": "Last 15 entries: {date, fcode, description, what_failed, why}",
+    "weakness_profile": "Object: {weakness_id: {description, co_occurring_with: [], count}}",
+    "confidence_scores": "Object keyed by strategy_id: {score_0_to_1, last_updated, decay_per_session: 0.10}",
+    "recommendations": "Array of {generated_date, basis_fcode, text, status: pending|accepted|rejected}"
+  },
+  "_patterns": {
+    "reliable": "strategy with confidence_score >= 0.8 and consecutive_failures == 0",
+    "unreliable": "strategy with consecutive_failures >= 2",
+    "stuck": "strategy applied >= 3 times with no revert but outcome unchanged",
+    "plateau": "confidence_score delta < 0.05 across last 3 sessions",
+    "co_occurring": "two weaknesses appearing together in >= 3 fix_history entries"
+  }
+}
